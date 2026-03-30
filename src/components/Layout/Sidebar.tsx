@@ -59,7 +59,12 @@ export default function Sidebar() {
   const nextTheme = { light: 'dark' as const, dark: 'system' as const, system: 'light' as const };
   const ThemeIcon = themeIcons[theme];
 
-  const visibleNavItems = navItems.filter((item) => !(desktopManaged && item.key === 'projects'));
+  const visibleNavItems = navItems.filter((item) => {
+    if (!desktopManaged) {
+      return true;
+    }
+    return item.key !== 'projects' && item.key !== 'sessions';
+  });
 
   return (
     <aside

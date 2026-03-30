@@ -3,6 +3,7 @@ import { accessSync, constants, existsSync, mkdirSync, readFileSync, writeFileSy
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createServer } from 'node:net';
 import { DEFAULT_DESKTOP_AGENT_TYPE, DEFAULT_DESKTOP_OPENCODE_MODEL } from '../shared/desktop.js';
 import type {
   ConfigFileState,
@@ -15,6 +16,8 @@ import type {
 import * as TOML from '@iarna/toml';
 
 const DEFAULT_PROJECT_NAME = 'desktop-demo';
+const MANAGEMENT_READY_TIMEOUT_MS = 20000;
+const MANAGEMENT_READY_POLL_MS = 300;
 
 const DEFAULT_CONFIG_TEMPLATE = `# Managed by cc-connect-desktop
 [log]
@@ -59,6 +62,12 @@ export class ServiceManager extends EventEmitter {
   private child: ChildProcessWithoutNullStreams | null = null;
   private state: DesktopServiceState = { status: 'stopped' };
   private settings: DesktopSettings;
+  private startPromise: Promise<DesktopServiceState> | null = null;
+  private stopping = false;
+  private terminatingForStartupError = false;
+  private appliedBinaryPath = '';
+  private appliedConfigPath = '';
+  private appliedConfigRaw = '';
 
   constructor(private readonly userDataPath: string) {
     super();
@@ -144,11 +153,22 @@ export class ServiceManager extends EventEmitter {
   }
 
   async start() {
-    if (this.child && this.state.status === 'running') {
+    if (this.child && (this.state.status === 'starting' || this.state.status === 'running')) {
       return this.getServiceState();
     }
+    if (this.startPromise) {
+      return this.startPromise;
+    }
 
+    this.startPromise = this.doStart().finally(() => {
+      this.startPromise = null;
+    });
+    return this.startPromise;
+  }
+
+  private async doStart() {
     await this.ensureConfigFile();
+    await this.ensureAvailablePorts();
     const configState = await this.readConfigState();
     if (!configState.parsed) {
       this.state = {
@@ -168,6 +188,7 @@ export class ServiceManager extends EventEmitter {
     this.emit('state');
 
     try {
+      const startedAt = new Date().toISOString();
       const child = spawn(binaryPath, ['--config', this.settings.configPath], {
         env: process.env,
         stdio: 'pipe',
@@ -179,35 +200,62 @@ export class ServiceManager extends EventEmitter {
 
       child.on('spawn', () => {
         this.state = {
-          status: 'running',
+          status: 'starting',
           pid: child.pid,
-          startedAt: new Date().toISOString(),
+          startedAt,
         };
         this.emit('state');
       });
 
       child.on('exit', (code, signal) => {
+        const stopping = this.stopping;
+        const terminatingForStartupError = this.terminatingForStartupError;
+        this.stopping = false;
+        this.terminatingForStartupError = false;
         this.child = null;
-        this.state = {
-          status: code === 0 || signal === 'SIGTERM' ? 'stopped' : 'error',
-          lastError:
-            code === 0 || signal === 'SIGTERM'
-              ? undefined
-              : `cc-connect exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}`,
-        };
+        if (terminatingForStartupError) {
+          this.emit('state');
+          return;
+        }
+        this.state = stopping || code === 0 || signal === 'SIGTERM'
+          ? { status: 'stopped' }
+          : {
+              status: 'error',
+              lastError: `cc-connect exited with code ${code ?? 'unknown'}${signal ? ` (${signal})` : ''}`,
+            };
         this.emit('state');
       });
 
       child.on('error', (error) => {
         this.child = null;
+        this.stopping = false;
+        this.terminatingForStartupError = false;
         this.state = { status: 'error', lastError: error.message };
         this.pushLog(error.message);
         this.emit('state');
       });
+
+      await this.waitForManagementReady();
+      this.appliedBinaryPath = this.settings.binaryPath;
+      this.appliedConfigPath = this.settings.configPath;
+      this.appliedConfigRaw = readFileSync(this.settings.configPath, 'utf8');
+      this.state = {
+        status: 'running',
+        pid: child.pid,
+        startedAt,
+      };
+      this.emit('state');
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.pushLog(message);
+      if (this.child) {
+        this.terminatingForStartupError = true;
+        this.child.kill('SIGTERM');
+        this.child = null;
+      }
       this.state = {
         status: 'error',
-        lastError: error instanceof Error ? error.message : String(error),
+        lastError: message,
       };
       this.emit('state');
     }
@@ -223,6 +271,7 @@ export class ServiceManager extends EventEmitter {
     }
 
     const child = this.child;
+    this.stopping = true;
     child.kill('SIGTERM');
     this.child = null;
     this.state = { status: 'stopped' };
@@ -236,13 +285,16 @@ export class ServiceManager extends EventEmitter {
   }
 
   async getRuntimeStatus(): Promise<DesktopRuntimeStatus> {
+    const configFile = await this.readConfigState();
     return {
       mode: 'desktop',
+      phase: 'stopped',
+      pendingRestart: this.computePendingRestart(configFile.raw),
       service: this.getServiceState(),
       bridge: { status: 'disconnected' },
       settings: this.getSettings(),
       managementBaseUrl: this.getManagementBaseUrl(),
-      configFile: await this.readConfigState(),
+      configFile,
       logs: this.getLogs(),
     };
   }
@@ -394,5 +446,109 @@ export class ServiceManager extends EventEmitter {
       this.logs.splice(0, this.logs.length - LOG_LIMIT);
     }
     this.emit('logs', this.getLogs());
+  }
+
+  private computePendingRestart(currentConfigRaw: string) {
+    if (this.state.status !== 'running') {
+      return false;
+    }
+    return (
+      this.settings.binaryPath !== this.appliedBinaryPath ||
+      this.settings.configPath !== this.appliedConfigPath ||
+      currentConfigRaw !== this.appliedConfigRaw
+    );
+  }
+
+  private async waitForManagementReady() {
+    const started = Date.now();
+    while (Date.now() - started < MANAGEMENT_READY_TIMEOUT_MS) {
+      if (!this.child) {
+        throw new Error('cc-connect exited before the management API became ready');
+      }
+      if (this.state.status === 'error') {
+        throw new Error(this.state.lastError || 'cc-connect failed while starting');
+      }
+      try {
+        const response = await fetch(`${this.getManagementBaseUrl()}/status`, {
+          headers: {
+            Authorization: `Bearer ${this.settings.managementToken}`,
+          },
+        });
+        if (response.ok) {
+          const payload = await response.json().catch(() => null);
+          if (payload?.ok) {
+            return;
+          }
+        }
+      } catch {
+        // Keep polling until the management API becomes available or startup fails.
+      }
+      await new Promise((resolve) => setTimeout(resolve, MANAGEMENT_READY_POLL_MS));
+    }
+    throw new Error('Timed out waiting for the management API to become ready');
+  }
+
+  private async ensureAvailablePorts() {
+    const nextManagementPort = await this.resolveAvailablePort(this.settings.managementPort, []);
+    const nextBridgePort = await this.resolveAvailablePort(this.settings.bridgePort, [nextManagementPort]);
+    if (
+      nextManagementPort === this.settings.managementPort &&
+      nextBridgePort === this.settings.bridgePort
+    ) {
+      return;
+    }
+    this.settings = {
+      ...this.settings,
+      managementPort: nextManagementPort,
+      bridgePort: nextBridgePort,
+    };
+    this.persistSettings();
+    this.pushLog(`Adjusted desktop runtime ports to management=${nextManagementPort}, bridge=${nextBridgePort}`);
+    this.emit('state');
+  }
+
+  private async resolveAvailablePort(preferredPort: number, exclude: number[]) {
+    if (!exclude.includes(preferredPort) && await this.isPortAvailable(preferredPort)) {
+      return preferredPort;
+    }
+    return this.findEphemeralPort(exclude);
+  }
+
+  private async isPortAvailable(port: number) {
+    return new Promise<boolean>((resolve) => {
+      const server = createServer();
+      server.unref();
+      server.once('error', () => resolve(false));
+      server.listen(port, () => {
+        server.close(() => resolve(true));
+      });
+    });
+  }
+
+  private async findEphemeralPort(exclude: number[]) {
+    return new Promise<number>((resolve, reject) => {
+      const server = createServer();
+      server.unref();
+      server.once('error', reject);
+      server.listen(0, () => {
+        const address = server.address();
+        const port = typeof address === 'object' && address ? address.port : 0;
+        server.close(async () => {
+          if (!port) {
+            reject(new Error('Could not allocate an ephemeral port'));
+            return;
+          }
+          if (exclude.includes(port)) {
+            try {
+              resolve(await this.findEphemeralPort(exclude));
+            } catch (error) {
+              reject(error);
+            }
+            return;
+          }
+          resolve(port);
+        });
+      });
+    });
   }
 }

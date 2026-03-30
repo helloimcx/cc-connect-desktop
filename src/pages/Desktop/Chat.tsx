@@ -4,6 +4,7 @@ import { Button, Card, EmptyState, Input } from '@/components/ui';
 import { ChatMarkdown } from '@/components/chat/ChatMarkdown';
 import { listProjects } from '@/api/projects';
 import { createSession, getSession, listSessions, type Session } from '@/api/sessions';
+import { useSearchParams } from 'react-router-dom';
 import {
   bridgeConnect,
   bridgeSendMessage,
@@ -41,16 +42,59 @@ function sessionMatchesDesktop(session: Session) {
   return session.platform === 'desktop' || session.session_key.startsWith('desktop:');
 }
 
-function toMessages(history: { role: string; content: string; timestamp: string }[]): ChatMessage[] {
+function toMessages(history: { role: string; content: string; kind?: string; timestamp: string }[]): ChatMessage[] {
   return history.map((message, index) => ({
     id: `${index}-${message.timestamp || message.role}`,
     role: message.role === 'user' ? 'user' : 'assistant',
     content: message.content,
-    kind: 'final',
+    kind: message.kind === 'progress' ? 'progress' : 'final',
   }));
 }
 
+function sortDesktopSessions(a: Session, b: Session) {
+  if (a.live !== b.live) {
+    return a.live ? -1 : 1;
+  }
+  return (b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || '');
+}
+
+function timeAgo(iso: string) {
+  if (!iso) {
+    return '';
+  }
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) {
+    return 'just now';
+  }
+  if (mins < 60) {
+    return `${mins}m`;
+  }
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) {
+    return `${hours}h`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
+
+function formatRuntimePhase(phase?: DesktopRuntimeStatus['phase']) {
+  switch (phase) {
+    case 'starting':
+      return 'starting runtime';
+    case 'api_ready':
+      return 'service ready';
+    case 'bridge_ready':
+      return 'ready';
+    case 'error':
+      return 'runtime error';
+    default:
+      return 'stopped';
+  }
+}
+
 export default function DesktopChat() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(null);
   const [projects, setProjects] = useState<string[]>([]);
   const [selectedProject, setSelectedProject] = useState('');
@@ -66,10 +110,13 @@ export default function DesktopChat() {
   const [bridgeError, setBridgeError] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
   const replyTimeoutRef = useRef<number | null>(null);
+  const lastSessionByProjectRef = useRef<Record<string, string>>({});
+  const requestedProject = searchParams.get('project') || '';
+  const requestedSessionId = searchParams.get('session') || '';
 
-  const serviceRunning = runtime?.service.status === 'running';
+  const serviceRunning = runtime?.phase === 'api_ready' || runtime?.phase === 'bridge_ready';
   const bridgeConnected = runtime?.bridge.status === 'connected';
-  const desktopSessions = useMemo(() => sessions.filter(sessionMatchesDesktop), [sessions]);
+  const desktopSessions = useMemo(() => [...sessions.filter(sessionMatchesDesktop)].sort(sortDesktopSessions), [sessions]);
 
   const clearReplyTimeout = useCallback(() => {
     if (replyTimeoutRef.current) {
@@ -89,10 +136,12 @@ export default function DesktopChat() {
   const refreshSessions = useCallback(async (project = selectedProject) => {
     if (!project || !serviceRunning) {
       setSessions([]);
-      return;
+      return [];
     }
     const data = await listSessions(project);
-    setSessions((data.sessions || []).filter(sessionMatchesDesktop));
+    const nextSessions = (data.sessions || []).filter(sessionMatchesDesktop).sort(sortDesktopSessions);
+    setSessions(nextSessions);
+    return nextSessions;
   }, [selectedProject, serviceRunning]);
 
   const loadActiveSession = useCallback(async (project: string, sessionId: string) => {
@@ -100,6 +149,7 @@ export default function DesktopChat() {
       return;
     }
     const detail = await getSession(project, sessionId, 200);
+    lastSessionByProjectRef.current[project] = detail.id;
     setActiveSessionId(detail.id);
     setActiveSessionKey(detail.session_key);
     setActiveSessionName(detail.name);
@@ -109,10 +159,10 @@ export default function DesktopChat() {
   const refreshRuntime = useCallback(async () => {
     const nextRuntime = await getRuntimeStatus();
     setRuntime(nextRuntime);
-    if (!nextRuntime.service.lastError && nextRuntime.settings.defaultProject && !selectedProject) {
-      setSelectedProject(nextRuntime.settings.defaultProject);
+    if (!nextRuntime.service.lastError && !selectedProject) {
+      setSelectedProject(requestedProject || nextRuntime.settings.defaultProject);
     }
-  }, [selectedProject]);
+  }, [requestedProject, selectedProject]);
 
   const refreshProjects = useCallback(async () => {
     if (!serviceRunning) {
@@ -122,8 +172,8 @@ export default function DesktopChat() {
     const result = await listProjects();
     const names = (result.projects || []).map((project) => project.name);
     setProjects(names);
-    setSelectedProject((current) => current || runtime?.settings.defaultProject || names[0] || '');
-  }, [runtime?.settings.defaultProject, serviceRunning]);
+    setSelectedProject((current) => current || requestedProject || runtime?.settings.defaultProject || names[0] || '');
+  }, [requestedProject, runtime?.settings.defaultProject, serviceRunning]);
 
   useEffect(() => {
     if (!serviceRunning) {
@@ -141,15 +191,47 @@ export default function DesktopChat() {
     if (!selectedProject || !serviceRunning) {
       return;
     }
-    setActiveSessionId('');
-    setActiveSessionKey('');
-    setActiveSessionName('');
-    setMessages([]);
     setTyping(false);
     setBridgeError('');
     clearReplyTimeout();
-    void refreshSessions(selectedProject);
-  }, [clearReplyTimeout, selectedProject, refreshSessions, serviceRunning]);
+    void (async () => {
+      const nextSessions = await refreshSessions(selectedProject);
+      const preferredSessionId = requestedProject === selectedProject ? requestedSessionId : '';
+      const rememberedSessionId = lastSessionByProjectRef.current[selectedProject];
+      const targetSession =
+        nextSessions.find((session) => session.id === preferredSessionId) ||
+        nextSessions.find((session) => session.id === rememberedSessionId) ||
+        nextSessions[0];
+      if (targetSession) {
+        await loadActiveSession(selectedProject, targetSession.id);
+        return;
+      }
+      setActiveSessionId('');
+      setActiveSessionKey('');
+      setActiveSessionName('');
+      setMessages([]);
+    })();
+  }, [clearReplyTimeout, loadActiveSession, refreshSessions, requestedProject, requestedSessionId, selectedProject, serviceRunning]);
+
+  useEffect(() => {
+    if (!selectedProject && !activeSessionId) {
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    if (selectedProject) {
+      next.set('project', selectedProject);
+    } else {
+      next.delete('project');
+    }
+    if (activeSessionId) {
+      next.set('session', activeSessionId);
+    } else {
+      next.delete('session');
+    }
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [activeSessionId, searchParams, selectedProject, setSearchParams]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -281,10 +363,13 @@ export default function DesktopChat() {
       name: `Desktop ${new Date().toLocaleTimeString()}`,
     });
     const refreshed = await listSessions(selectedProject);
-    const desktopOnly = (refreshed.sessions || []).filter(sessionMatchesDesktop);
+    const desktopOnly = (refreshed.sessions || []).filter(sessionMatchesDesktop).sort(sortDesktopSessions);
     setSessions(desktopOnly);
     const matched = desktopOnly.find((session) => session.session_key === sessionKey);
     const nextId = created.id || matched?.id || '';
+    if (nextId) {
+      lastSessionByProjectRef.current[selectedProject] = nextId;
+    }
     setActiveSessionId(nextId);
     setActiveSessionKey(sessionKey);
     setActiveSessionName(created.name);
@@ -372,10 +457,10 @@ export default function DesktopChat() {
             <Button
               size="sm"
               onClick={() => void startDesktopService().then(refreshRuntime)}
-              disabled={serviceRunning}
+              disabled={runtime?.phase === 'starting' || serviceRunning}
               data-testid="desktop-chat-start-service"
             >
-              {serviceRunning ? 'Service Running' : 'Start Service'}
+              {serviceRunning ? formatRuntimePhase(runtime?.phase) : runtime?.phase === 'starting' ? 'Starting…' : 'Start Service'}
             </Button>
             <Button size="sm" variant="secondary" onClick={handleCreateNew} data-testid="desktop-chat-new-chat">
               <MessageSquarePlus size={14} /> New chat
@@ -385,6 +470,12 @@ export default function DesktopChat() {
           {runtime?.service.lastError && (
             <div className="text-xs rounded-lg border border-red-200 bg-red-50 text-red-600 px-3 py-2 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
               {runtime.service.lastError}
+            </div>
+          )}
+          {runtime?.pendingRestart && (
+            <div className="text-xs rounded-lg border border-amber-200 bg-amber-50 text-amber-700 px-3 py-2 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
+              The latest config is already saved, but this chat is still using the previous runtime state. Restart the
+              desktop service to apply it.
             </div>
           )}
         </div>
@@ -407,17 +498,27 @@ export default function DesktopChat() {
                 )}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <span className="font-medium text-sm text-gray-900 dark:text-white truncate">
-                    {session.name}
-                  </span>
+                  <div className="min-w-0">
+                    <span className="font-medium text-sm text-gray-900 dark:text-white truncate block">
+                      {session.name}
+                    </span>
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      {timeAgo(session.updated_at || session.created_at)}
+                    </p>
+                  </div>
                   {session.live ? (
-                    <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+                    <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 shrink-0">
                       <Circle size={6} className="fill-current" /> live
                     </span>
                   ) : (
-                    <span className="text-[10px] text-gray-400">offline</span>
+                    <span className="text-[10px] text-gray-400 shrink-0">offline</span>
                   )}
                 </div>
+                {session.last_message?.content && (
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2 line-clamp-2">
+                    {session.last_message.content.replace(/\n/g, ' ')}
+                  </p>
+                )}
                 <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">
                   {session.session_key}
                 </p>
@@ -434,6 +535,9 @@ export default function DesktopChat() {
           </h2>
           <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
             {activeSessionKey ? <span>{activeSessionKey}</span> : <span>Create or select a session.</span>}
+            <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-white/[0.06] px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-300">
+              {formatRuntimePhase(runtime?.phase)}
+            </span>
             {bridgeConnected ? (
               <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                 <Circle size={6} className="fill-current" /> bridge online
@@ -522,12 +626,12 @@ export default function DesktopChat() {
                   void handleSend();
                 }
               }}
-              placeholder={serviceRunning ? 'Send a message to the desktop channel' : 'Start the service first'}
-              disabled={!serviceRunning || sending || !selectedProject}
+              placeholder={!serviceRunning ? 'Start the service first' : !bridgeConnected ? 'Waiting for the desktop bridge to connect' : 'Send a message to the desktop channel'}
+              disabled={!serviceRunning || !bridgeConnected || sending || !selectedProject}
             />
             <Button
               onClick={() => void handleSend()}
-              disabled={!draft.trim() || !serviceRunning || sending || !selectedProject}
+              disabled={!draft.trim() || !serviceRunning || !bridgeConnected || sending || !selectedProject}
               data-testid="desktop-chat-send"
             >
               <Send size={16} />

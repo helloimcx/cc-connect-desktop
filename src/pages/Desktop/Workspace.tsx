@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Save, Trash2, Wrench } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { Button, Card, Input, Textarea } from '@/components/ui';
+import { Button, Card, Input, Select, Textarea } from '@/components/ui';
 import {
   getRuntimeStatus,
   onRuntimeEvent,
@@ -13,14 +13,114 @@ import {
   startDesktopService,
   stopDesktopService,
 } from '@/api/desktop';
-import { DEFAULT_DESKTOP_AGENT_TYPE, DEFAULT_DESKTOP_OPENCODE_MODEL } from '../../../shared/desktop';
+import {
+  DESKTOP_AGENT_TYPE_OPTIONS,
+  DESKTOP_PLATFORM_TYPE_OPTIONS,
+  DESKTOP_PROVIDER_THINKING_OPTIONS,
+  DEFAULT_DESKTOP_AGENT_TYPE,
+  DEFAULT_DESKTOP_OPENCODE_MODEL,
+} from '../../../shared/desktop';
 import type {
   DesktopConnectConfig,
+  DesktopProviderConfig,
   DesktopProjectConfig,
   DesktopRuntimeStatus,
 } from '../../../shared/desktop';
 
 type EditorTab = 'visual' | 'raw';
+const CUSTOM_SELECT_VALUE = '__custom__';
+type WorkspaceAction = 'save-settings' | 'save-visual' | 'save-raw' | 'save-restart' | 'restart' | 'start' | 'stop';
+type WorkspaceNoticeTone = 'success' | 'warning' | 'error';
+type PlatformFieldType = 'text' | 'password' | 'number' | 'boolean' | 'select';
+
+interface PlatformFieldDefinition {
+  key: string;
+  label: string;
+  type: PlatformFieldType;
+  placeholder?: string;
+  options?: string[];
+}
+
+interface WorkspaceNotice {
+  tone: WorkspaceNoticeTone;
+  title: string;
+  detail: string;
+}
+
+interface PersistedDesktopSettings {
+  binaryPath: string;
+  configPath: string;
+  autoStartService: boolean;
+  defaultProject: string;
+}
+
+const PROGRESS_STYLE_OPTIONS = ['legacy', 'compact', 'card'] as const;
+const PROVIDER_PRESET_DEFINITIONS = [
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    name: 'openai',
+    base_url: 'https://api.openai.com/v1',
+    model: 'gpt-4.1-mini',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    name: 'openrouter',
+    base_url: 'https://openrouter.ai/api/v1',
+    model: 'openai/gpt-4.1-mini',
+  },
+  {
+    id: 'anthropic',
+    label: 'Anthropic',
+    name: 'anthropic',
+    base_url: 'https://api.anthropic.com/v1',
+    model: 'claude-3-5-haiku-latest',
+    thinking: 'enabled',
+  },
+  {
+    id: 'minimax',
+    label: 'Minimax',
+    name: 'minimax',
+    base_url: 'https://api.minimax.chat/v1',
+    model: 'MiniMax-M2.5',
+  },
+  {
+    id: 'zhipuai',
+    label: 'ZhipuAI',
+    name: 'zhipuai',
+    base_url: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-4.5-air',
+  },
+  {
+    id: 'deepseek',
+    label: 'DeepSeek',
+    name: 'deepseek',
+    base_url: 'https://api.deepseek.com',
+    model: 'deepseek-chat',
+  },
+  {
+    id: 'siliconflow',
+    label: 'SiliconFlow',
+    name: 'siliconflow',
+    base_url: 'https://api.siliconflow.cn/v1',
+    model: 'deepseek-ai/DeepSeek-V3',
+  },
+  {
+    id: 'moonshot',
+    label: 'Moonshot',
+    name: 'moonshot',
+    base_url: 'https://api.moonshot.cn/v1',
+    model: 'moonshot-v1-8k',
+  },
+  {
+    id: 'ollama',
+    label: 'Ollama',
+    name: 'ollama',
+    base_url: 'http://127.0.0.1:11434/v1',
+    model: 'qwen2.5-coder:7b',
+  },
+] as const;
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
@@ -33,29 +133,257 @@ function ensureProjects(config: DesktopConnectConfig) {
   return config.projects;
 }
 
+function formatRuntimePhase(phase?: DesktopRuntimeStatus['phase']) {
+  switch (phase) {
+    case 'starting':
+      return 'starting';
+    case 'api_ready':
+      return 'management API ready';
+    case 'bridge_ready':
+      return 'bridge ready';
+    case 'error':
+      return 'error';
+    default:
+      return 'stopped';
+  }
+}
+
+function getSelectValue(value: string, options: readonly string[]) {
+  return options.includes(value as any) ? value : CUSTOM_SELECT_VALUE;
+}
+
+function getProviderPresetValue(provider: DesktopProviderConfig) {
+  const matchedPreset = PROVIDER_PRESET_DEFINITIONS.find(
+    (preset) =>
+      provider.name === preset.name ||
+      (preset.base_url && provider.base_url === preset.base_url) ||
+      (preset.model && provider.model === preset.model && provider.name === preset.name),
+  );
+  return matchedPreset?.id || CUSTOM_SELECT_VALUE;
+}
+
+function applyProviderPreset(provider: DesktopProviderConfig, presetId: string): DesktopProviderConfig {
+  const preset = PROVIDER_PRESET_DEFINITIONS.find((item) => item.id === presetId);
+  if (!preset) {
+    return provider;
+  }
+  return {
+    ...provider,
+    name: preset.name,
+    base_url: preset.base_url,
+    model: preset.model,
+    thinking: preset.thinking || '',
+    env: preset.env ? { ...preset.env } : provider.env || {},
+  };
+}
+
+function getPlatformFieldDefinitions(platformType: string, options: Record<string, unknown> = {}): PlatformFieldDefinition[] {
+  switch (platformType) {
+    case 'telegram':
+      return [
+        { key: 'token', label: 'Bot token', type: 'password' },
+        { key: 'allow_from', label: 'Allow from', type: 'text', placeholder: '*' },
+        { key: 'group_reply_all', label: 'Reply to all group messages', type: 'boolean' },
+        { key: 'share_session_in_channel', label: 'Share one session in group/channel', type: 'boolean' },
+      ];
+    case 'slack':
+      return [
+        { key: 'bot_token', label: 'Bot token', type: 'password' },
+        { key: 'app_token', label: 'App token', type: 'password' },
+        { key: 'allow_from', label: 'Allow from', type: 'text', placeholder: '*' },
+        { key: 'share_session_in_channel', label: 'Share one session in channel', type: 'boolean' },
+      ];
+    case 'discord':
+      return [
+        { key: 'token', label: 'Bot token', type: 'password' },
+        { key: 'allow_from', label: 'Allow from', type: 'text', placeholder: '*' },
+        { key: 'guild_id', label: 'Guild ID', type: 'text' },
+        { key: 'group_reply_all', label: 'Reply to all guild messages', type: 'boolean' },
+        { key: 'share_session_in_channel', label: 'Share one session in channel', type: 'boolean' },
+        { key: 'thread_isolation', label: 'Use thread isolation', type: 'boolean' },
+        { key: 'respond_to_at_everyone_and_here', label: 'Respond to @everyone/@here', type: 'boolean' },
+      ];
+    case 'feishu':
+      return [
+        { key: 'app_id', label: 'App ID', type: 'text' },
+        { key: 'app_secret', label: 'App secret', type: 'password' },
+        { key: 'allow_from', label: 'Allow from', type: 'text', placeholder: '*' },
+        { key: 'reaction_emoji', label: 'Reaction emoji', type: 'text', placeholder: 'OnIt' },
+        { key: 'enable_feishu_card', label: 'Enable Feishu cards', type: 'boolean' },
+        { key: 'group_reply_all', label: 'Reply to all group messages', type: 'boolean' },
+        { key: 'share_session_in_channel', label: 'Share one session in channel', type: 'boolean' },
+        { key: 'thread_isolation', label: 'Use thread isolation', type: 'boolean' },
+        { key: 'reply_to_trigger', label: 'Reply to trigger message', type: 'boolean' },
+        { key: 'progress_style', label: 'Progress style', type: 'select', options: [...PROGRESS_STYLE_OPTIONS] },
+      ];
+    case 'lark':
+      return [
+        { key: 'app_id', label: 'App ID', type: 'text' },
+        { key: 'app_secret', label: 'App secret', type: 'password' },
+        { key: 'port', label: 'Webhook port', type: 'number', placeholder: '8080' },
+        { key: 'callback_path', label: 'Webhook path', type: 'text', placeholder: '/feishu/webhook' },
+        { key: 'encrypt_key', label: 'Encrypt key', type: 'password' },
+        { key: 'allow_from', label: 'Allow from', type: 'text', placeholder: '*' },
+        { key: 'reaction_emoji', label: 'Reaction emoji', type: 'text', placeholder: 'OnIt' },
+        { key: 'enable_feishu_card', label: 'Enable cards', type: 'boolean' },
+        { key: 'progress_style', label: 'Progress style', type: 'select', options: [...PROGRESS_STYLE_OPTIONS] },
+      ];
+    case 'dingtalk':
+      return [
+        { key: 'client_id', label: 'Client ID', type: 'text' },
+        { key: 'client_secret', label: 'Client secret', type: 'password' },
+        { key: 'robot_code', label: 'Robot code', type: 'text' },
+        { key: 'agent_id', label: 'Agent ID', type: 'number' },
+        { key: 'allow_from', label: 'Allow from', type: 'text', placeholder: '*' },
+        { key: 'share_session_in_channel', label: 'Share one session in channel', type: 'boolean' },
+      ];
+    case 'wecom':
+      if (options.mode === 'websocket') {
+        return [
+          { key: 'mode', label: 'Mode', type: 'select', options: ['websocket', 'http'] },
+          { key: 'bot_id', label: 'Bot ID', type: 'text' },
+          { key: 'bot_secret', label: 'Bot secret', type: 'password' },
+          { key: 'allow_from', label: 'Allow from', type: 'text', placeholder: '*' },
+        ];
+      }
+      return [
+        { key: 'mode', label: 'Mode', type: 'select', options: ['http', 'websocket'] },
+        { key: 'corp_id', label: 'Corp ID', type: 'text' },
+        { key: 'corp_secret', label: 'Corp secret', type: 'password' },
+        { key: 'agent_id', label: 'Agent ID', type: 'text' },
+        { key: 'callback_token', label: 'Callback token', type: 'password' },
+        { key: 'callback_aes_key', label: 'Callback AES key', type: 'password' },
+        { key: 'port', label: 'Webhook port', type: 'number', placeholder: '8081' },
+        { key: 'callback_path', label: 'Webhook path', type: 'text', placeholder: '/wecom/callback' },
+        { key: 'enable_markdown', label: 'Enable markdown', type: 'boolean' },
+        { key: 'allow_from', label: 'Allow from', type: 'text', placeholder: '*' },
+        { key: 'proxy', label: 'Proxy URL', type: 'text' },
+        { key: 'proxy_username', label: 'Proxy username', type: 'text' },
+        { key: 'proxy_password', label: 'Proxy password', type: 'password' },
+      ];
+    case 'line':
+      return [
+        { key: 'channel_secret', label: 'Channel secret', type: 'password' },
+        { key: 'channel_token', label: 'Channel token', type: 'password' },
+        { key: 'port', label: 'Webhook port', type: 'number', placeholder: '8080' },
+        { key: 'callback_path', label: 'Webhook path', type: 'text', placeholder: '/callback' },
+        { key: 'allow_from', label: 'Allow from', type: 'text', placeholder: '*' },
+      ];
+    case 'weixin':
+      return [
+        { key: 'token', label: 'Bearer token', type: 'password' },
+        { key: 'base_url', label: 'Base URL', type: 'text', placeholder: 'https://ilinkai.weixin.qq.com' },
+        { key: 'cdn_base_url', label: 'CDN base URL', type: 'text' },
+        { key: 'allow_from', label: 'Allow from', type: 'text', placeholder: '*' },
+        { key: 'account_id', label: 'Account ID', type: 'text', placeholder: 'default' },
+        { key: 'route_tag', label: 'Route tag', type: 'text' },
+        { key: 'long_poll_timeout_ms', label: 'Long poll timeout (ms)', type: 'number', placeholder: '35000' },
+        { key: 'state_dir', label: 'State dir', type: 'text' },
+        { key: 'proxy', label: 'Proxy URL', type: 'text' },
+        { key: 'proxy_username', label: 'Proxy username', type: 'text' },
+        { key: 'proxy_password', label: 'Proxy password', type: 'password' },
+      ];
+    case 'qq':
+      return [
+        { key: 'ws_url', label: 'WebSocket URL', type: 'text', placeholder: 'ws://127.0.0.1:3001' },
+        { key: 'token', label: 'Access token', type: 'password' },
+        { key: 'allow_from', label: 'Allow from', type: 'text', placeholder: '*' },
+        { key: 'share_session_in_channel', label: 'Share one session in group', type: 'boolean' },
+      ];
+    case 'qqbot':
+      return [
+        { key: 'app_id', label: 'App ID', type: 'text' },
+        { key: 'app_secret', label: 'App secret', type: 'password' },
+        { key: 'sandbox', label: 'Use sandbox', type: 'boolean' },
+        { key: 'allow_from', label: 'Allow from', type: 'text', placeholder: '*' },
+        { key: 'share_session_in_channel', label: 'Share one session in channel', type: 'boolean' },
+        { key: 'markdown_support', label: 'Enable markdown support', type: 'boolean' },
+      ];
+    default:
+      return [];
+  }
+}
+
+function coercePlatformOptionValue(type: PlatformFieldType, rawValue: string | boolean) {
+  if (type === 'boolean') {
+    return Boolean(rawValue);
+  }
+  if (type === 'number') {
+    const text = String(rawValue).trim();
+    return text === '' ? '' : Number(text);
+  }
+  return String(rawValue);
+}
+
+function noticeClasses(tone: WorkspaceNoticeTone) {
+  switch (tone) {
+    case 'success':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/30 dark:bg-emerald-950/20 dark:text-emerald-300';
+    case 'warning':
+      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/30 dark:bg-amber-950/20 dark:text-amber-300';
+    default:
+      return 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/30 dark:bg-red-950/20 dark:text-red-300';
+  }
+}
+
+function stableSerialize(value: unknown) {
+  return JSON.stringify(value ?? null);
+}
+
 export default function DesktopWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(null);
   const [configDraft, setConfigDraft] = useState<DesktopConnectConfig | null>(null);
   const [rawDraft, setRawDraft] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [saving, setSaving] = useState(false);
+  const [pendingAction, setPendingAction] = useState<WorkspaceAction | null>(null);
+  const [notice, setNotice] = useState<WorkspaceNotice | null>(null);
+  const [persistedSettings, setPersistedSettings] = useState<PersistedDesktopSettings | null>(null);
+  const [persistedConfigSerialized, setPersistedConfigSerialized] = useState('');
+  const [persistedRawDraft, setPersistedRawDraft] = useState('');
+  const [restartPending, setRestartPending] = useState(false);
   const [tab, setTab] = useState<EditorTab>('visual');
   const [binaryPath, setBinaryPath] = useState('');
   const [configPath, setConfigPath] = useState('');
   const [autoStartService, setAutoStartService] = useState(false);
   const [defaultProject, setDefaultProject] = useState('');
   const requestedProject = searchParams.get('project') || '';
+  const runtimeReady = runtime?.phase === 'api_ready' || runtime?.phase === 'bridge_ready';
+  const settingsDirty = useMemo(() => {
+    if (!persistedSettings) {
+      return false;
+    }
+    return (
+      binaryPath !== persistedSettings.binaryPath ||
+      configPath !== persistedSettings.configPath ||
+      autoStartService !== persistedSettings.autoStartService ||
+      defaultProject !== persistedSettings.defaultProject
+    );
+  }, [autoStartService, binaryPath, configPath, defaultProject, persistedSettings]);
+  const visualDirty = useMemo(
+    () => stableSerialize(configDraft || { projects: [] }) !== persistedConfigSerialized,
+    [configDraft, persistedConfigSerialized],
+  );
+  const rawDirty = rawDraft !== persistedRawDraft;
 
   const loadAll = useCallback(async () => {
     const [nextRuntime, nextConfig] = await Promise.all([getRuntimeStatus(), readConfigFile()]);
     setRuntime(nextRuntime);
+    setRestartPending(nextRuntime.pendingRestart);
     setRawDraft(nextConfig.raw);
+    setPersistedRawDraft(nextConfig.raw);
     setConfigDraft(nextConfig.parsed ? clone(nextConfig.parsed) : { projects: [] });
+    setPersistedConfigSerialized(stableSerialize(nextConfig.parsed ? clone(nextConfig.parsed) : { projects: [] }));
     setBinaryPath(nextRuntime.settings.binaryPath);
     setConfigPath(nextRuntime.settings.configPath);
     setAutoStartService(nextRuntime.settings.autoStartService);
     setDefaultProject(nextRuntime.settings.defaultProject);
+    setPersistedSettings({
+      binaryPath: nextRuntime.settings.binaryPath,
+      configPath: nextRuntime.settings.configPath,
+      autoStartService: nextRuntime.settings.autoStartService,
+      defaultProject: nextRuntime.settings.defaultProject,
+    });
     setSelectedIndex((current) => {
       const projects = nextConfig.parsed?.projects || [];
       const total = projects.length;
@@ -73,6 +401,7 @@ export default function DesktopWorkspace() {
     void loadAll();
     const stop = onRuntimeEvent((nextRuntime) => {
       setRuntime(nextRuntime);
+      setRestartPending(nextRuntime.pendingRestart);
     });
     return () => stop();
   }, [loadAll]);
@@ -95,6 +424,7 @@ export default function DesktopWorkspace() {
   }, [searchParams, selectedProject?.name, setSearchParams]);
 
   const updateSelectedProject = useCallback((updater: (project: DesktopProjectConfig) => DesktopProjectConfig) => {
+    setNotice(null);
     setConfigDraft((current) => {
       if (!current) {
         return current;
@@ -109,9 +439,29 @@ export default function DesktopWorkspace() {
     });
   }, [selectedIndex]);
 
+  const updateSelectedProvider = useCallback((providerIndex: number, updater: (provider: DesktopProviderConfig) => DesktopProviderConfig) => {
+    updateSelectedProject((project) => {
+      const providers = [...(project.agent.providers || [])];
+      const provider = providers[providerIndex];
+      if (!provider) {
+        return project;
+      }
+      providers[providerIndex] = updater(provider);
+      return {
+        ...project,
+        agent: {
+          ...project.agent,
+          providers,
+        },
+      };
+    });
+  }, [updateSelectedProject]);
+
   const handleSaveSettings = useCallback(async () => {
-    setSaving(true);
+    setPendingAction('save-settings');
     try {
+      const restartRequired =
+        binaryPath !== (runtime?.settings.binaryPath || '') || configPath !== (runtime?.settings.configPath || '');
       await saveDesktopSettings({
         binaryPath,
         configPath,
@@ -119,37 +469,80 @@ export default function DesktopWorkspace() {
         defaultProject,
       });
       await loadAll();
+      setNotice({
+        tone: restartRequired && runtimeReady ? 'warning' : 'success',
+        title: restartRequired && runtimeReady ? 'Desktop settings saved' : 'Desktop settings updated',
+        detail:
+          restartRequired && runtimeReady
+            ? 'The new binary or config path is saved. Restart the service to run with the new runtime files.'
+            : 'Desktop settings were written successfully.',
+      });
+      setRestartPending(Boolean(restartRequired && runtimeReady));
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        title: 'Could not save desktop settings',
+        detail: error instanceof Error ? error.message : String(error),
+      });
     } finally {
-      setSaving(false);
+      setPendingAction(null);
     }
-  }, [autoStartService, binaryPath, configPath, defaultProject, loadAll]);
+  }, [autoStartService, binaryPath, configPath, defaultProject, loadAll, runtime?.settings.binaryPath, runtime?.settings.configPath, runtimeReady]);
 
   const handleSaveVisual = useCallback(async () => {
     if (!configDraft) {
       return;
     }
-    setSaving(true);
+    setPendingAction('save-visual');
     try {
       const saved = await saveStructuredConfigFile(configDraft);
       setRawDraft(saved.raw);
       setConfigDraft(saved.parsed ? clone(saved.parsed) : configDraft);
       await loadAll();
+      setNotice({
+        tone: runtimeReady ? 'warning' : 'success',
+        title: 'Workspace config saved',
+        detail: runtimeReady
+          ? 'The updated config is on disk. Restart the service to apply these changes to the running desktop runtime.'
+          : 'The workspace config is saved and will be used the next time the service starts.',
+      });
+      setRestartPending(Boolean(runtimeReady));
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        title: 'Could not save workspace config',
+        detail: error instanceof Error ? error.message : String(error),
+      });
     } finally {
-      setSaving(false);
+      setPendingAction(null);
     }
-  }, [configDraft, loadAll]);
+  }, [configDraft, loadAll, runtimeReady]);
 
   const handleSaveRaw = useCallback(async () => {
-    setSaving(true);
+    setPendingAction('save-raw');
     try {
       const saved = await saveRawConfigFile(rawDraft);
       setRawDraft(saved.raw);
       setConfigDraft(saved.parsed ? clone(saved.parsed) : configDraft);
       await loadAll();
+      setNotice({
+        tone: runtimeReady ? 'warning' : 'success',
+        title: 'Raw TOML saved',
+        detail: runtimeReady
+          ? 'The config file was updated. Restart the service to apply the new TOML to the running desktop runtime.'
+          : 'The raw TOML is saved and ready for the next service start.',
+      });
+      setRestartPending(Boolean(runtimeReady));
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        title: 'Could not save raw TOML',
+        detail: error instanceof Error ? error.message : String(error),
+      });
     } finally {
-      setSaving(false);
+      setPendingAction(null);
     }
-  }, [configDraft, loadAll, rawDraft]);
+  }, [configDraft, loadAll, rawDraft, runtimeReady]);
 
   const handleAddProject = useCallback(() => {
     setConfigDraft((current) => {
@@ -187,13 +580,132 @@ export default function DesktopWorkspace() {
   }, []);
 
   const handleSaveAndRestart = useCallback(async () => {
-    await handleSaveVisual();
-    await restartDesktopService();
-    await loadAll();
-  }, [handleSaveVisual, loadAll]);
+    if (!configDraft) {
+      return;
+    }
+    setPendingAction('save-restart');
+    try {
+      const saved = await saveStructuredConfigFile(configDraft);
+      setRawDraft(saved.raw);
+      setConfigDraft(saved.parsed ? clone(saved.parsed) : configDraft);
+      await restartDesktopService();
+      await loadAll();
+      setNotice({
+        tone: 'success',
+        title: 'Workspace config applied',
+        detail: 'The config was written to disk and the desktop service restarted with the new settings.',
+      });
+      setRestartPending(false);
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        title: 'Could not apply workspace config',
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }, [configDraft, loadAll]);
+
+  const handleRestartService = useCallback(async () => {
+    setPendingAction('restart');
+    try {
+      await restartDesktopService();
+      await loadAll();
+      setNotice({
+        tone: 'success',
+        title: 'Desktop service restarted',
+        detail: 'The runtime restarted successfully and is now using the current config on disk.',
+      });
+      setRestartPending(false);
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        title: 'Could not restart desktop service',
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }, [loadAll]);
+
+  const handleStartService = useCallback(async () => {
+    setPendingAction('start');
+    try {
+      await startDesktopService();
+      await loadAll();
+      setNotice({
+        tone: 'success',
+        title: 'Desktop service started',
+        detail: 'The local cc-connect process is running and ready for management or chat traffic.',
+      });
+      setRestartPending(false);
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        title: 'Could not start desktop service',
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }, [loadAll]);
+
+  const handleStopService = useCallback(async () => {
+    setPendingAction('stop');
+    try {
+      await stopDesktopService();
+      await loadAll();
+      setNotice({
+        tone: 'success',
+        title: 'Desktop service stopped',
+        detail: 'The local cc-connect process has been stopped.',
+      });
+      setRestartPending(false);
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        title: 'Could not stop desktop service',
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }, [loadAll]);
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {notice && (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${noticeClasses(notice.tone)}`}>
+          <p className="font-medium">{notice.title}</p>
+          <p className="mt-1">{notice.detail}</p>
+        </div>
+      )}
+      {(settingsDirty || visualDirty || rawDirty || restartPending) && (
+        <div
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            restartPending
+              ? noticeClasses('warning')
+              : 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/30 dark:bg-sky-950/20 dark:text-sky-300'
+          }`}
+        >
+          <p className="font-medium">
+            {restartPending ? 'Saved to disk, restart still needed' : 'You have unsaved changes'}
+          </p>
+          <p className="mt-1">
+            {restartPending
+              ? 'The newest settings are already on disk, but the running desktop service is still using the previous runtime state. Restart to apply them.'
+              : [
+                  settingsDirty ? 'desktop settings changed' : '',
+                  visualDirty ? 'visual config changed' : '',
+                  rawDirty ? 'raw TOML changed' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] gap-6">
         <Card className="space-y-4">
           <div>
@@ -217,20 +729,43 @@ export default function DesktopWorkspace() {
           </label>
 
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => void handleSaveSettings()} loading={saving}>
+            <Button
+              variant="secondary"
+              onClick={() => void handleSaveSettings()}
+              loading={pendingAction === 'save-settings'}
+              disabled={!settingsDirty && pendingAction !== 'save-settings'}
+            >
               <Save size={14} /> Save desktop settings
             </Button>
-            <Button variant="secondary" onClick={() => void startDesktopService().then(loadAll)}>
+            <Button
+              variant="secondary"
+              onClick={() => void handleStartService()}
+              loading={pendingAction === 'start'}
+              disabled={runtime?.phase === 'starting' || runtime?.phase === 'api_ready' || runtime?.phase === 'bridge_ready'}
+            >
               Start
             </Button>
-            <Button variant="secondary" onClick={() => void stopDesktopService().then(loadAll)}>
+            <Button
+              variant="secondary"
+              onClick={() => void handleStopService()}
+              loading={pendingAction === 'stop'}
+              disabled={runtime?.phase === 'stopped'}
+            >
               Stop
             </Button>
           </div>
 
+          <div className="rounded-xl border border-gray-200/80 dark:border-white/[0.08] px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+            <p className="font-medium text-gray-900 dark:text-white">How runtime actions apply</p>
+            <p className="mt-1">
+              `Save desktop settings` updates this app&apos;s local paths and defaults. `Start`, `Stop`, and `Restart`
+              control the local `cc-connect` process directly.
+            </p>
+          </div>
+
           <div className="rounded-xl border border-gray-200/80 dark:border-white/[0.08] px-4 py-3 text-sm">
             <p className="font-medium text-gray-900 dark:text-white">
-              Service status: <span className="text-accent">{runtime?.service.status || 'unknown'}</span>
+              Runtime status: <span className="text-accent">{formatRuntimePhase(runtime?.phase)}</span>
             </p>
             <p className="text-gray-500 dark:text-gray-400 mt-1 break-all">
               Management API: {runtime?.managementBaseUrl || '-'}
@@ -257,6 +792,14 @@ export default function DesktopWorkspace() {
                 Raw TOML
               </Button>
             </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-200/80 dark:border-white/[0.08] px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+            <p className="font-medium text-gray-900 dark:text-white">How config changes apply</p>
+            <p className="mt-1">
+              `Save config` only writes `config.toml`. `Save and restart service` writes the file and immediately
+              restarts `cc-connect`, so the new config takes effect right away.
+            </p>
           </div>
 
           {tab === 'visual' ? (
@@ -315,16 +858,41 @@ export default function DesktopWorkspace() {
                           updateSelectedProject((project) => ({ ...project, name: event.target.value }))
                         }
                       />
-                      <Input
-                        label="Agent type"
-                        value={selectedProject.agent?.type || ''}
-                        onChange={(event) =>
-                          updateSelectedProject((project) => ({
-                            ...project,
-                            agent: { ...project.agent, type: event.target.value },
-                          }))
-                        }
-                      />
+                      <div className="space-y-3">
+                        <Select
+                          label="Agent type"
+                          value={getSelectValue(selectedProject.agent?.type || '', DESKTOP_AGENT_TYPE_OPTIONS)}
+                          onChange={(event) =>
+                            updateSelectedProject((project) => ({
+                              ...project,
+                              agent: {
+                                ...project.agent,
+                                type: event.target.value === CUSTOM_SELECT_VALUE ? '' : event.target.value,
+                              },
+                            }))
+                          }
+                        >
+                          {DESKTOP_AGENT_TYPE_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                          <option value={CUSTOM_SELECT_VALUE}>custom</option>
+                        </Select>
+                        {getSelectValue(selectedProject.agent?.type || '', DESKTOP_AGENT_TYPE_OPTIONS) === CUSTOM_SELECT_VALUE && (
+                          <Input
+                            label="Custom agent type"
+                            value={selectedProject.agent?.type || ''}
+                            onChange={(event) =>
+                              updateSelectedProject((project) => ({
+                                ...project,
+                                agent: { ...project.agent, type: event.target.value },
+                              }))
+                            }
+                            placeholder="Enter an agent type supported by cc-connect"
+                          />
+                        )}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -369,10 +937,16 @@ export default function DesktopWorkspace() {
 
                     <section className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <h3 className="font-medium text-gray-900 dark:text-white">Providers</h3>
+                        <div>
+                          <h3 className="font-medium text-gray-900 dark:text-white">Providers</h3>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Use presets for common endpoints, then fill the API key and any extra environment overrides.
+                          </p>
+                        </div>
                         <Button
                           size="sm"
                           variant="secondary"
+                          data-testid="desktop-workspace-add-provider"
                           onClick={() =>
                             updateSelectedProject((project) => ({
                               ...project,
@@ -380,7 +954,7 @@ export default function DesktopWorkspace() {
                                 ...project.agent,
                                 providers: [
                                   ...(project.agent.providers || []),
-                                  { name: `provider-${(project.agent.providers || []).length + 1}` },
+                                  { name: `provider-${(project.agent.providers || []).length + 1}`, env: {} },
                                 ],
                               },
                             }))
@@ -390,52 +964,18 @@ export default function DesktopWorkspace() {
                         </Button>
                       </div>
                       {(selectedProject.agent.providers || []).map((provider, index) => (
-                        <div key={`${provider.name}-${index}`} className="grid grid-cols-[repeat(4,minmax(0,1fr))_40px] gap-3">
-                          <Input
-                            label="Name"
-                            value={provider.name}
-                            onChange={(event) =>
-                              updateSelectedProject((project) => {
-                                const providers = [...(project.agent.providers || [])];
-                                providers[index] = { ...providers[index], name: event.target.value };
-                                return { ...project, agent: { ...project.agent, providers } };
-                              })
-                            }
-                          />
-                          <Input
-                            label="API key"
-                            value={provider.api_key || ''}
-                            onChange={(event) =>
-                              updateSelectedProject((project) => {
-                                const providers = [...(project.agent.providers || [])];
-                                providers[index] = { ...providers[index], api_key: event.target.value };
-                                return { ...project, agent: { ...project.agent, providers } };
-                              })
-                            }
-                          />
-                          <Input
-                            label="Base URL"
-                            value={provider.base_url || ''}
-                            onChange={(event) =>
-                              updateSelectedProject((project) => {
-                                const providers = [...(project.agent.providers || [])];
-                                providers[index] = { ...providers[index], base_url: event.target.value };
-                                return { ...project, agent: { ...project.agent, providers } };
-                              })
-                            }
-                          />
-                          <Input
-                            label="Model"
-                            value={provider.model || ''}
-                            onChange={(event) =>
-                              updateSelectedProject((project) => {
-                                const providers = [...(project.agent.providers || [])];
-                                providers[index] = { ...providers[index], model: event.target.value };
-                                return { ...project, agent: { ...project.agent, providers } };
-                              })
-                            }
-                          />
-                          <div className="flex items-end">
+                        <div
+                          key={`${provider.name}-${index}`}
+                          className="rounded-2xl border border-gray-200/80 dark:border-white/[0.08] p-4 space-y-4"
+                          data-testid={`desktop-workspace-provider-${index}`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-white">{provider.name || `provider-${index + 1}`}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                Configure a named upstream provider for this project.
+                              </p>
+                            </div>
                             <Button
                               variant="danger"
                               size="sm"
@@ -449,6 +989,281 @@ export default function DesktopWorkspace() {
                             >
                               <Trash2 size={14} />
                             </Button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <Select
+                              label="Preset"
+                              value={getProviderPresetValue(provider)}
+                              data-testid={`desktop-workspace-provider-preset-${index}`}
+                              onChange={(event) =>
+                                updateSelectedProvider(index, (currentProvider) =>
+                                  event.target.value === CUSTOM_SELECT_VALUE
+                                    ? currentProvider
+                                    : applyProviderPreset(currentProvider, event.target.value),
+                                )
+                              }
+                            >
+                              {PROVIDER_PRESET_DEFINITIONS.map((preset) => (
+                                <option key={preset.id} value={preset.id}>
+                                  {preset.label}
+                                </option>
+                              ))}
+                              <option value={CUSTOM_SELECT_VALUE}>custom</option>
+                            </Select>
+                            <Input
+                              label="Name"
+                              value={provider.name}
+                              data-testid={`desktop-workspace-provider-name-${index}`}
+                              onChange={(event) =>
+                                updateSelectedProvider(index, (currentProvider) => ({
+                                  ...currentProvider,
+                                  name: event.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <Input
+                              label="API key"
+                              type="password"
+                              value={provider.api_key || ''}
+                              data-testid={`desktop-workspace-provider-api-key-${index}`}
+                              onChange={(event) =>
+                                updateSelectedProvider(index, (currentProvider) => ({
+                                  ...currentProvider,
+                                  api_key: event.target.value,
+                                }))
+                              }
+                            />
+                            <Input
+                              label="Base URL"
+                              value={provider.base_url || ''}
+                              data-testid={`desktop-workspace-provider-base-url-${index}`}
+                              onChange={(event) =>
+                                updateSelectedProvider(index, (currentProvider) => ({
+                                  ...currentProvider,
+                                  base_url: event.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <Input
+                              label="Default model"
+                              value={provider.model || ''}
+                              data-testid={`desktop-workspace-provider-model-${index}`}
+                              onChange={(event) =>
+                                updateSelectedProvider(index, (currentProvider) => ({
+                                  ...currentProvider,
+                                  model: event.target.value,
+                                }))
+                              }
+                            />
+                            <Select
+                              label="Thinking override"
+                              value={provider.thinking || ''}
+                              data-testid={`desktop-workspace-provider-thinking-${index}`}
+                              onChange={(event) =>
+                                updateSelectedProvider(index, (currentProvider) => ({
+                                  ...currentProvider,
+                                  thinking: event.target.value,
+                                }))
+                              }
+                            >
+                              {DESKTOP_PROVIDER_THINKING_OPTIONS.map((option) => (
+                                <option key={option || 'inherit'} value={option}>
+                                  {option || 'inherit agent default'}
+                                </option>
+                              ))}
+                            </Select>
+                          </div>
+
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-medium text-gray-900 dark:text-white">Available models</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                  Optional model shortcuts exposed by this provider. Alias is what users can switch to at runtime.
+                                </p>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                data-testid={`desktop-workspace-provider-add-model-${index}`}
+                                onClick={() =>
+                                  updateSelectedProvider(index, (currentProvider) => ({
+                                    ...currentProvider,
+                                    models: [...(currentProvider.models || []), { model: '', alias: '' }],
+                                  }))
+                                }
+                              >
+                                <Plus size={14} /> Model
+                              </Button>
+                            </div>
+
+                            {(provider.models || []).length === 0 ? (
+                              <div className="rounded-xl border border-dashed border-gray-200/80 dark:border-white/[0.08] px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                                No named models yet.
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {(provider.models || []).map((modelEntry, modelIndex) => (
+                                  <div
+                                    key={`${modelEntry.model || 'model'}-${modelEntry.alias || 'alias'}-${modelIndex}`}
+                                    className="grid grid-cols-[minmax(0,1fr)_minmax(0,180px)_40px] gap-3"
+                                  >
+                                    <Input
+                                      label={modelIndex === 0 ? 'Model ID' : undefined}
+                                      value={modelEntry.model || ''}
+                                      data-testid={`desktop-workspace-provider-model-id-${index}-${modelIndex}`}
+                                      onChange={(event) =>
+                                        updateSelectedProvider(index, (currentProvider) => {
+                                          const models = [...(currentProvider.models || [])];
+                                          models[modelIndex] = { ...models[modelIndex], model: event.target.value };
+                                          return { ...currentProvider, models };
+                                        })
+                                      }
+                                    />
+                                    <Input
+                                      label={modelIndex === 0 ? 'Alias' : undefined}
+                                      value={modelEntry.alias || ''}
+                                      placeholder="optional"
+                                      data-testid={`desktop-workspace-provider-model-alias-${index}-${modelIndex}`}
+                                      onChange={(event) =>
+                                        updateSelectedProvider(index, (currentProvider) => {
+                                          const models = [...(currentProvider.models || [])];
+                                          models[modelIndex] = { ...models[modelIndex], alias: event.target.value };
+                                          return { ...currentProvider, models };
+                                        })
+                                      }
+                                    />
+                                    <div className="flex items-end">
+                                      <Button
+                                        variant="danger"
+                                        size="sm"
+                                        onClick={() =>
+                                          updateSelectedProvider(index, (currentProvider) => {
+                                            const models = [...(currentProvider.models || [])];
+                                            models.splice(modelIndex, 1);
+                                            return { ...currentProvider, models };
+                                          })
+                                        }
+                                      >
+                                        <Trash2 size={14} />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            <Textarea
+                              label="Current models JSON"
+                              readOnly
+                              rows={3}
+                              value={JSON.stringify(provider.models || [], null, 2)}
+                              className="font-mono text-xs"
+                            />
+                          </div>
+
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-medium text-gray-900 dark:text-white">Environment overrides</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                  Extra variables such as custom auth headers or provider-specific toggles.
+                                </p>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                data-testid={`desktop-workspace-provider-add-env-${index}`}
+                                onClick={() =>
+                                  updateSelectedProvider(index, (currentProvider) => {
+                                    const env = { ...(currentProvider.env || {}) };
+                                    let nextKey = `ENV_VAR_${Object.keys(env).length + 1}`;
+                                    while (env[nextKey] !== undefined) {
+                                      nextKey = `ENV_VAR_${Object.keys(env).length + 2}`;
+                                    }
+                                    env[nextKey] = '';
+                                    return { ...currentProvider, env };
+                                  })
+                                }
+                              >
+                                <Plus size={14} /> Env
+                              </Button>
+                            </div>
+
+                            {Object.entries(provider.env || {}).length === 0 ? (
+                              <div className="rounded-xl border border-dashed border-gray-200/80 dark:border-white/[0.08] px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                                No environment overrides yet.
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {Object.entries(provider.env || {}).map(([envKey, envValue], envIndex) => (
+                                  <div
+                                    key={`${envKey}-${envIndex}`}
+                                    className="grid grid-cols-[minmax(0,180px)_minmax(0,1fr)_40px] gap-3"
+                                  >
+                                    <Input
+                                      label={envIndex === 0 ? 'Key' : undefined}
+                                      value={envKey}
+                                      data-testid={`desktop-workspace-provider-env-key-${index}-${envIndex}`}
+                                      onChange={(event) =>
+                                        updateSelectedProvider(index, (currentProvider) => {
+                                          const nextKey = event.target.value.trim();
+                                          const env = { ...(currentProvider.env || {}) };
+                                          const currentValue = env[envKey] || '';
+                                          delete env[envKey];
+                                          env[nextKey || envKey] = currentValue;
+                                          return { ...currentProvider, env };
+                                        })
+                                      }
+                                    />
+                                    <Input
+                                      label={envIndex === 0 ? 'Value' : undefined}
+                                      value={String(envValue || '')}
+                                      data-testid={`desktop-workspace-provider-env-value-${index}-${envIndex}`}
+                                      onChange={(event) =>
+                                        updateSelectedProvider(index, (currentProvider) => ({
+                                          ...currentProvider,
+                                          env: {
+                                            ...(currentProvider.env || {}),
+                                            [envKey]: event.target.value,
+                                          },
+                                        }))
+                                      }
+                                    />
+                                    <div className="flex items-end">
+                                      <Button
+                                        variant="danger"
+                                        size="sm"
+                                        onClick={() =>
+                                          updateSelectedProvider(index, (currentProvider) => {
+                                            const env = { ...(currentProvider.env || {}) };
+                                            delete env[envKey];
+                                            return { ...currentProvider, env };
+                                          })
+                                        }
+                                      >
+                                        <Trash2 size={14} />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            <Textarea
+                              label="Current env JSON"
+                              readOnly
+                              rows={3}
+                              value={JSON.stringify(provider.env || {}, null, 2)}
+                              className="font-mono text-xs"
+                            />
                           </div>
                         </div>
                       ))}
@@ -472,23 +1287,130 @@ export default function DesktopWorkspace() {
                       </div>
                       {(selectedProject.platforms || []).map((platform, index) => (
                         <div key={`${platform.type}-${index}`} className="grid grid-cols-[240px_minmax(0,1fr)_40px] gap-3">
-                          <Input
-                            label="Type"
-                            value={platform.type}
-                            onChange={(event) =>
-                              updateSelectedProject((project) => {
-                                const platforms = [...(project.platforms || [])];
-                                platforms[index] = { ...platforms[index], type: event.target.value };
-                                return { ...project, platforms };
-                              })
-                            }
-                          />
-                          <Textarea
-                            label="Options (edit advanced fields in Raw TOML when needed)"
-                            value={JSON.stringify(platform.options || {}, null, 2)}
-                            readOnly
-                            rows={4}
-                          />
+                          <div className="space-y-3">
+                            <Select
+                              label="Type"
+                              value={getSelectValue(platform.type, DESKTOP_PLATFORM_TYPE_OPTIONS)}
+                              onChange={(event) =>
+                                updateSelectedProject((project) => {
+                                  const platforms = [...(project.platforms || [])];
+                                  platforms[index] = {
+                                    ...platforms[index],
+                                    type: event.target.value === CUSTOM_SELECT_VALUE ? '' : event.target.value,
+                                  };
+                                  return { ...project, platforms };
+                                })
+                              }
+                            >
+                              {DESKTOP_PLATFORM_TYPE_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                              <option value={CUSTOM_SELECT_VALUE}>custom</option>
+                            </Select>
+                            {getSelectValue(platform.type, DESKTOP_PLATFORM_TYPE_OPTIONS) === CUSTOM_SELECT_VALUE && (
+                              <Input
+                                label="Custom platform type"
+                                value={platform.type}
+                                onChange={(event) =>
+                                  updateSelectedProject((project) => {
+                                    const platforms = [...(project.platforms || [])];
+                                    platforms[index] = { ...platforms[index], type: event.target.value };
+                                    return { ...project, platforms };
+                                  })
+                                }
+                                placeholder="Enter a platform type supported by cc-connect"
+                              />
+                            )}
+                          </div>
+                          <div className="space-y-3">
+                            {getPlatformFieldDefinitions(platform.type, platform.options || {}).length > 0 ? (
+                              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                                {getPlatformFieldDefinitions(platform.type, platform.options || {}).map((field) => {
+                                  const optionValue = platform.options?.[field.key];
+                                  if (field.type === 'boolean') {
+                                    return (
+                                      <label
+                                        key={field.key}
+                                        className="flex items-center gap-3 rounded-lg border border-gray-200/80 dark:border-white/[0.08] px-3 py-2 text-sm text-gray-700 dark:text-gray-300"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={Boolean(optionValue)}
+                                          onChange={(event) =>
+                                            updateSelectedProject((project) => {
+                                              const platforms = [...(project.platforms || [])];
+                                              const current = { ...(platforms[index].options || {}) };
+                                              current[field.key] = event.target.checked;
+                                              platforms[index] = { ...platforms[index], options: current };
+                                              return { ...project, platforms };
+                                            })
+                                          }
+                                        />
+                                        {field.label}
+                                      </label>
+                                    );
+                                  }
+
+                                  if (field.type === 'select') {
+                                    return (
+                                      <Select
+                                        key={field.key}
+                                        label={field.label}
+                                        value={String(optionValue ?? field.options?.[0] ?? '')}
+                                        onChange={(event) =>
+                                          updateSelectedProject((project) => {
+                                            const platforms = [...(project.platforms || [])];
+                                            const current = { ...(platforms[index].options || {}) };
+                                            current[field.key] = event.target.value;
+                                            platforms[index] = { ...platforms[index], options: current };
+                                            return { ...project, platforms };
+                                          })
+                                        }
+                                      >
+                                        {(field.options || []).map((option) => (
+                                          <option key={option} value={option}>
+                                            {option}
+                                          </option>
+                                        ))}
+                                      </Select>
+                                    );
+                                  }
+
+                                  return (
+                                    <Input
+                                      key={field.key}
+                                      label={field.label}
+                                      type={field.type === 'number' ? 'number' : field.type === 'password' ? 'password' : 'text'}
+                                      value={optionValue === undefined || optionValue === null ? '' : String(optionValue)}
+                                      placeholder={field.placeholder}
+                                      onChange={(event) =>
+                                        updateSelectedProject((project) => {
+                                          const platforms = [...(project.platforms || [])];
+                                          const current = { ...(platforms[index].options || {}) };
+                                          current[field.key] = coercePlatformOptionValue(field.type, event.target.value);
+                                          platforms[index] = { ...platforms[index], options: current };
+                                          return { ...project, platforms };
+                                        })
+                                      }
+                                    />
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="rounded-xl border border-dashed border-gray-200/80 dark:border-white/[0.08] px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                                No guided fields for this platform type yet. Use Raw TOML for advanced setup.
+                              </div>
+                            )}
+                            <Textarea
+                              label="Current options JSON"
+                              value={JSON.stringify(platform.options || {}, null, 2)}
+                              readOnly
+                              rows={6}
+                              className="font-mono text-[12px]"
+                            />
+                          </div>
                           <div className="flex items-end">
                             <Button
                               variant="danger"
@@ -513,10 +1435,19 @@ export default function DesktopWorkspace() {
                     </div>
 
                     <div className="flex gap-2">
-                      <Button onClick={() => void handleSaveVisual()} loading={saving}>
+                      <Button
+                        onClick={() => void handleSaveVisual()}
+                        loading={pendingAction === 'save-visual'}
+                        disabled={!visualDirty && pendingAction !== 'save-visual'}
+                      >
                         <Save size={14} /> Save config
                       </Button>
-                      <Button variant="secondary" onClick={() => void handleSaveAndRestart()}>
+                      <Button
+                        variant="secondary"
+                        onClick={() => void handleSaveAndRestart()}
+                        loading={pendingAction === 'save-restart'}
+                        disabled={!visualDirty && !restartPending && pendingAction !== 'save-restart'}
+                      >
                         <Wrench size={14} /> Save and restart service
                       </Button>
                     </div>
@@ -534,10 +1465,19 @@ export default function DesktopWorkspace() {
                 className="font-mono text-[13px]"
               />
               <div className="flex gap-2">
-                <Button onClick={() => void handleSaveRaw()} loading={saving}>
+                <Button
+                  onClick={() => void handleSaveRaw()}
+                  loading={pendingAction === 'save-raw'}
+                  disabled={!rawDirty && pendingAction !== 'save-raw'}
+                >
                   <Save size={14} /> Save raw config
                 </Button>
-                <Button variant="secondary" onClick={() => void restartDesktopService().then(loadAll)}>
+                <Button
+                  variant="secondary"
+                  onClick={() => void handleRestartService()}
+                  loading={pendingAction === 'restart'}
+                  disabled={!runtimeReady && !restartPending && pendingAction !== 'restart'}
+                >
                   Restart service
                 </Button>
               </div>

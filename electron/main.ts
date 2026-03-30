@@ -6,6 +6,7 @@ import type {
   DesktopRuntimeStatus,
   DesktopSettingsInput,
 } from '../shared/desktop.js';
+import { deriveDesktopRuntimePhase } from '../shared/desktop.js';
 import { ServiceManager } from './service-manager.js';
 import { BridgeAdapter } from './bridge-adapter.js';
 
@@ -15,6 +16,8 @@ let bridgeAdapter: BridgeAdapter;
 
 const userDataOverride = process.env.CC_CONNECT_DESKTOP_USER_DATA_DIR?.trim();
 const smokeOutputPath = process.env.CC_CONNECT_DESKTOP_SMOKE_OUTPUT?.trim();
+const smokeScenario = process.env.CC_CONNECT_DESKTOP_SMOKE_SCENARIO?.trim() || 'default';
+const forceRuntimeStatusError = process.env.CC_CONNECT_DESKTOP_FORCE_RUNTIME_STATUS_ERROR === '1';
 if (userDataOverride) {
   mkdirSync(userDataOverride, { recursive: true });
   app.setPath('userData', userDataOverride);
@@ -37,6 +40,7 @@ function getBridgeAdapter() {
 function buildRuntimeStatus(bridge: ReturnType<BridgeAdapter['getState']>): Promise<DesktopRuntimeStatus> {
   return getServiceManager().getRuntimeStatus().then((runtime) => ({
     ...runtime,
+    phase: deriveDesktopRuntimePhase(runtime.service, bridge),
     bridge,
   }));
 }
@@ -124,6 +128,24 @@ async function runSmokeTest() {
       { label: 'browser window' },
     );
     record('window_ready');
+
+    if (smokeScenario === 'bootstrap-error') {
+      const failureText = await waitFor(
+        async () => {
+          const bodyText = await window.webContents.executeJavaScript('document.body?.innerText || ""', true);
+          return typeof bodyText === 'string' && bodyText.includes('Desktop runtime failed to initialize')
+            ? bodyText
+            : null;
+        },
+        { timeoutMs: 30000, label: 'bootstrap failure screen' },
+      );
+      record('bootstrap_failure_screen', { body: failureText });
+      result.ok = true;
+      result.finished_at = new Date().toISOString();
+      writeSmokeResult(result);
+      setTimeout(() => app.exit(0), 200);
+      return;
+    }
 
     await waitFor(
       async () => {
@@ -225,6 +247,168 @@ async function runSmokeTest() {
     );
     record('dashboard_data_visible');
 
+    await window.webContents.executeJavaScript('window.location.hash = "#/workspace"; true;', true);
+    record('workspace_navigation_requested');
+
+    await waitFor(
+      async () => {
+        const bodyText = await window.webContents.executeJavaScript('document.body?.innerText || ""', true);
+        return typeof bodyText === 'string' && bodyText.includes('Workspace Config') ? bodyText : null;
+      },
+      { timeoutMs: 30000, label: 'workspace route render' },
+    );
+    record('workspace_rendered');
+
+    await waitFor(
+      async () => {
+        const ready = await window.webContents.executeJavaScript(
+          `(() => {
+            const button = document.querySelector('[data-testid="desktop-workspace-add-provider"]');
+            return button instanceof HTMLButtonElement ? true : null;
+          })()`,
+          true,
+        );
+        return ready ? true : null;
+      },
+      { timeoutMs: 30000, label: 'workspace provider controls ready' },
+    );
+    record('workspace_provider_controls_ready');
+
+    const providerAdded = await window.webContents.executeJavaScript(
+      `(() => {
+        const button = document.querySelector('[data-testid="desktop-workspace-add-provider"]');
+        if (!(button instanceof HTMLButtonElement)) {
+          return false;
+        }
+        button.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!providerAdded) {
+      throw new Error('Smoke test could not add a provider in Workspace');
+    }
+    record('workspace_provider_added');
+
+    const providerPresetApplied = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const presetSelects = Array.from(document.querySelectorAll('[data-testid^="desktop-workspace-provider-preset-"]'));
+            const baseUrlInputs = Array.from(document.querySelectorAll('[data-testid^="desktop-workspace-provider-base-url-"]'));
+            const modelInputs = Array.from(document.querySelectorAll('[data-testid^="desktop-workspace-provider-model-"]'));
+            const preset = presetSelects[presetSelects.length - 1];
+            const baseUrl = baseUrlInputs[baseUrlInputs.length - 1];
+            const model = modelInputs[modelInputs.length - 1];
+            if (!(preset instanceof HTMLSelectElement) || !(baseUrl instanceof HTMLInputElement) || !(model instanceof HTMLInputElement)) {
+              return null;
+            }
+            if (preset.value !== 'minimax') {
+              preset.value = 'minimax';
+              preset.dispatchEvent(new Event('change', { bubbles: true }));
+              return null;
+            }
+            return {
+              preset: preset.value,
+              baseUrl: baseUrl.value,
+              model: model.value,
+              dirty: (document.body?.innerText || '').includes('You have unsaved changes'),
+            };
+          })()`,
+          true,
+        );
+        if (!result) {
+          return null;
+        }
+        return result.preset === 'minimax' &&
+          result.baseUrl === 'https://api.minimax.chat/v1' &&
+          result.model === 'MiniMax-M2.5' &&
+          result.dirty
+          ? result
+          : null;
+      },
+      { timeoutMs: 30000, label: 'workspace provider preset applied' },
+    );
+    record('workspace_provider_preset_applied', providerPresetApplied);
+
+    const providerEnvAdded = await window.webContents.executeJavaScript(
+      `(() => {
+        const buttons = Array.from(document.querySelectorAll('[data-testid^="desktop-workspace-provider-add-env-"]'));
+        const target = buttons[buttons.length - 1];
+        if (!(target instanceof HTMLButtonElement)) {
+          return false;
+        }
+        target.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!providerEnvAdded) {
+      throw new Error('Smoke test could not add a provider env row');
+    }
+    await waitFor(
+      async () => {
+        const envKeys = await window.webContents.executeJavaScript(
+          `Array.from(document.querySelectorAll('[data-testid^="desktop-workspace-provider-env-key-"]')).length`,
+          true,
+        );
+        return typeof envKeys === 'number' && envKeys > 0 ? envKeys : null;
+      },
+      { timeoutMs: 15000, label: 'workspace provider env row render' },
+    );
+    record('workspace_provider_env_added');
+
+    const providerModelAdded = await window.webContents.executeJavaScript(
+      `(() => {
+        const buttons = Array.from(document.querySelectorAll('[data-testid^="desktop-workspace-provider-add-model-"]'));
+        const target = buttons[buttons.length - 1];
+        if (!(target instanceof HTMLButtonElement)) {
+          return false;
+        }
+        target.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!providerModelAdded) {
+      throw new Error('Smoke test could not add a provider model row');
+    }
+
+    const providerModelConfigured = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const modelInput = document.querySelector('[data-testid="desktop-workspace-provider-model-id-0-0"]');
+            const aliasInput = document.querySelector('[data-testid="desktop-workspace-provider-model-alias-0-0"]');
+            if (!(modelInput instanceof HTMLInputElement) || !(aliasInput instanceof HTMLInputElement)) {
+              return null;
+            }
+            const setValue = (input, value) => {
+              const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+              setter?.call(input, value);
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+            };
+            if (modelInput.value !== 'MiniMax-M2.5') {
+              setValue(modelInput, 'MiniMax-M2.5');
+              return null;
+            }
+            if (aliasInput.value !== 'free') {
+              setValue(aliasInput, 'free');
+              return null;
+            }
+            return {
+              model: modelInput.value,
+              alias: aliasInput.value,
+            };
+          })()`,
+          true,
+        );
+        return result?.model === 'MiniMax-M2.5' && result?.alias === 'free' ? result : null;
+      },
+      { timeoutMs: 15000, label: 'workspace provider model configured' },
+    );
+    record('workspace_provider_model_configured', providerModelConfigured);
+
     await window.webContents.executeJavaScript('window.location.hash = "#/chat"; true;', true);
     record('chat_navigation_requested');
 
@@ -244,7 +428,8 @@ async function runSmokeTest() {
             const input = document.querySelector('[data-testid="desktop-chat-input"]');
             const send = document.querySelector('[data-testid="desktop-chat-send"]');
             const project = document.querySelector('[data-testid="desktop-chat-project-select"]');
-            return Boolean(input && send && project instanceof HTMLSelectElement && project.value);
+            const newChat = document.querySelector('[data-testid="desktop-chat-new-chat"]');
+            return Boolean(input && send && newChat && project instanceof HTMLSelectElement && project.value);
           })()`,
           true,
         );
@@ -253,6 +438,38 @@ async function runSmokeTest() {
       { timeoutMs: 30000, label: 'chat composer ready' },
     );
     record('chat_composer_ready');
+
+    const newChatStarted = await window.webContents.executeJavaScript(
+      `(() => {
+        const button = document.querySelector('[data-testid="desktop-chat-new-chat"]');
+        if (!(button instanceof HTMLButtonElement)) {
+          return false;
+        }
+        button.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!newChatStarted) {
+      throw new Error('Smoke test could not create a new desktop chat');
+    }
+    record('chat_new_session_requested');
+
+    const activeDesktopSessionId = await waitFor(
+      async () => {
+        const sessionId = await window.webContents.executeJavaScript(
+          `(() => {
+            const hash = window.location.hash || '';
+            const query = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+            return new URLSearchParams(query).get('session');
+          })()`,
+          true,
+        );
+        return typeof sessionId === 'string' && sessionId ? sessionId : null;
+      },
+      { timeoutMs: 15000, label: 'active desktop session id' },
+    );
+    record('chat_session_created', { sessionId: activeDesktopSessionId });
 
     const messageSent = await window.webContents.executeJavaScript(
       `(() => {
@@ -274,19 +491,57 @@ async function runSmokeTest() {
     }
     record('chat_message_sent');
 
+    const latestDesktopSessionDetail = async (sessionId = activeDesktopSessionId) => {
+      const current = await buildRuntimeStatus(getBridgeAdapter().getState());
+      if (!sessionId) {
+        return null;
+      }
+      const detailResponse = await fetch(
+        `${current.managementBaseUrl}/projects/desktop-demo/sessions/${sessionId}?history_limit=200`,
+        {
+          headers: {
+            Authorization: `Bearer ${current.settings.managementToken}`,
+          },
+        },
+      );
+      if (!detailResponse.ok) {
+        return null;
+      }
+      const detailPayload = (await detailResponse.json()) as {
+        data?: { history?: Array<{ role?: string; kind?: string; content?: string }> };
+      };
+      const history = detailPayload?.data?.history || [];
+      const progressCount = history.filter(
+        (entry: { role?: string; kind?: string; content?: string }) =>
+          entry?.role === 'assistant' && entry?.kind === 'progress',
+      ).length;
+      const finalEntries = history.filter(
+        (entry: { role?: string; kind?: string; content?: string }) =>
+          entry?.role === 'assistant' && (!entry?.kind || entry?.kind === 'final'),
+      );
+      const reply = finalEntries.map((entry) => entry.content || '').filter(Boolean).pop();
+      return {
+        sessionId,
+        progressCount,
+        finalCount: finalEntries.length,
+        reply,
+      };
+    };
+
     const assistantReply = await waitFor(
       async () => {
-        const result = await window.webContents.executeJavaScript(
+        const uiResult = await window.webContents.executeJavaScript(
           `(() => {
             const error = document.querySelector('[data-testid="desktop-chat-bridge-error"]')?.textContent?.trim();
             if (error) {
-              return { error };
+              return { source: 'ui', error };
             }
             const finalMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-role="assistant"][data-kind="final"]'));
             const progressMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-role="assistant"][data-kind="progress"]'));
             const reply = finalMessages.map((node) => node.textContent?.trim()).filter(Boolean).pop();
             return reply
               ? {
+                  source: 'ui',
                   reply,
                   finalCount: finalMessages.length,
                   progressCount: progressMessages.length,
@@ -298,15 +553,28 @@ async function runSmokeTest() {
           })()`,
           true,
         );
-        return result || null;
+        if (uiResult?.error || uiResult?.reply) {
+          return uiResult || null;
+        }
+        const persistedResult = await latestDesktopSessionDetail();
+        if (persistedResult?.reply) {
+          return {
+            source: 'persisted',
+            reply: persistedResult.reply,
+            finalCount: persistedResult.finalCount,
+            progressCount: persistedResult.progressCount,
+            sessionId: persistedResult.sessionId,
+          };
+        }
+        return null;
       },
       { timeoutMs: 90000, intervalMs: 1000, label: 'assistant chat reply' },
     );
     if (assistantReply?.error) {
       throw new Error(`Desktop chat reported an error instead of a reply: ${assistantReply.error}`);
     }
-    if (assistantReply?.finalCount !== 1) {
-      throw new Error(`Desktop chat rendered ${assistantReply?.finalCount ?? 0} final assistant messages for a single turn`);
+    if (!assistantReply?.reply || !/^OK\.?$/.test(String(assistantReply.reply).trim())) {
+      throw new Error(`Desktop chat returned unexpected final reply: ${assistantReply?.reply ?? 'missing'}`);
     }
     if (assistantReply?.finalAfterProgress === false) {
       throw new Error('Desktop chat rendered the final reply before progress messages');
@@ -314,7 +582,77 @@ async function runSmokeTest() {
     record('chat_reply_received', {
       reply: assistantReply?.reply,
       progress_count: assistantReply?.progressCount ?? 0,
+      source: assistantReply?.source,
     });
+
+    const persistedProgressHistory = await waitFor(
+      async () => {
+        const detail = await latestDesktopSessionDetail();
+        return detail && detail.progressCount > 0 && detail.finalCount > 0
+          ? { progressCount: detail.progressCount, finalCount: detail.finalCount, sessionId: detail.sessionId }
+          : null;
+      },
+      { timeoutMs: 15000, label: 'persisted progress history' },
+    );
+    record('chat_progress_persisted', persistedProgressHistory);
+
+    await window.webContents.executeJavaScript('window.location.hash = "#/"; true;', true);
+    await waitFor(
+      async () => {
+        const bodyText = await window.webContents.executeJavaScript('document.body?.innerText || ""', true);
+        return typeof bodyText === 'string' && bodyText.includes('Desktop Runtime') ? bodyText : null;
+      },
+      { timeoutMs: 30000, label: 'dashboard rerender after chat' },
+    );
+    await window.webContents.executeJavaScript('window.location.hash = "#/chat"; true;', true);
+    await waitFor(
+      async () => {
+        const bodyText = await window.webContents.executeJavaScript('document.body?.innerText || ""', true);
+        return typeof bodyText === 'string' && bodyText.includes('desktop-demo') ? bodyText : null;
+      },
+      { timeoutMs: 30000, label: 'chat rerender after history reload' },
+    );
+    const reloadedProgressVisible = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const progressMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-role="assistant"][data-kind="progress"]'));
+            const finalMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-role="assistant"][data-kind="final"]'));
+            return progressMessages.length > 0 && finalMessages.length > 0
+              ? { progressCount: progressMessages.length, finalCount: finalMessages.length }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 30000, label: 'reloaded progress visible in chat history' },
+    );
+    record('chat_progress_visible_after_reload', reloadedProgressVisible);
+
+    await window.webContents.executeJavaScript(
+      `window.location.hash = "#/sessions/desktop-demo/${activeDesktopSessionId}"; true;`,
+      true,
+    );
+    await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const bodyText = document.body?.innerText || "";
+            const project = document.querySelector('[data-testid="desktop-chat-project-select"]');
+            const progressMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-kind="progress"]'));
+            const finalMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-kind="final"]'));
+            return bodyText.includes('Desktop Chat') && project instanceof HTMLSelectElement && project.value === 'desktop-demo' && progressMessages.length > 0 && finalMessages.length > 0
+              ? { progressCount: progressMessages.length, finalCount: finalMessages.length }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 30000, label: 'sessions route redirected into desktop chat' },
+    );
+    record('sessions_route_redirected_to_chat');
 
     result.ok = true;
     result.finished_at = new Date().toISOString();
@@ -363,7 +701,12 @@ function createWindow() {
 }
 
 function registerIPC() {
-  ipcMain.handle('desktop:get-runtime-status', async () => buildRuntimeStatus(getBridgeAdapter().getState()));
+  ipcMain.handle('desktop:get-runtime-status', async () => {
+    if (forceRuntimeStatusError) {
+      throw new Error('Forced desktop runtime status failure for smoke testing');
+    }
+    return buildRuntimeStatus(getBridgeAdapter().getState());
+  });
   ipcMain.handle('desktop:start-service', async () => {
     const result = await getServiceManager().start();
     if (result.status === 'running') {

@@ -29,6 +29,23 @@ function DesktopProjectRedirect() {
   return <Navigate to={name ? `/workspace?project=${encodeURIComponent(name)}` : '/workspace'} replace />;
 }
 
+function DesktopSessionsRedirect() {
+  const { project, id } = useParams<{ project?: string; id?: string }>();
+  const desktopManaged = useAuthStore((s) => s.desktopManaged);
+  if (!desktopManaged) {
+    return id && project ? <SessionChat /> : <SessionList />;
+  }
+
+  const query = new URLSearchParams();
+  if (project) {
+    query.set('project', project);
+  }
+  if (id) {
+    query.set('session', id);
+  }
+  return <Navigate to={`/chat${query.toString() ? `?${query.toString()}` : ''}`} replace />;
+}
+
 export default function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const desktopManaged = useAuthStore((s) => s.desktopManaged);
@@ -42,8 +59,8 @@ export default function App() {
         <Route path="workspace" element={<DesktopWorkspace />} />
         <Route path="projects" element={desktopManaged ? <Navigate to="/workspace" replace /> : <ProjectList />} />
         <Route path="projects/:name" element={<DesktopProjectRedirect />} />
-        <Route path="sessions" element={<SessionList />} />
-        <Route path="sessions/:project/:id" element={<SessionChat />} />
+        <Route path="sessions" element={<DesktopSessionsRedirect />} />
+        <Route path="sessions/:project/:id" element={<DesktopSessionsRedirect />} />
         <Route path="cron" element={<CronList />} />
         <Route path="bridge" element={<BridgeAdapters />} />
         <Route path="system" element={<SystemConfig />} />

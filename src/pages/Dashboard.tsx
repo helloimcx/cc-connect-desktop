@@ -15,6 +15,21 @@ import {
 import { formatUptime } from '@/lib/utils';
 import type { DesktopRuntimeStatus } from '../../shared/desktop';
 
+function formatRuntimePhase(phase?: DesktopRuntimeStatus['phase']) {
+  switch (phase) {
+    case 'starting':
+      return 'starting';
+    case 'api_ready':
+      return 'API ready';
+    case 'bridge_ready':
+      return 'bridge ready';
+    case 'error':
+      return 'error';
+    default:
+      return 'stopped';
+  }
+}
+
 export default function Dashboard() {
   const { t } = useTranslation();
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(null);
@@ -32,7 +47,7 @@ export default function Dashboard() {
       if (desktop) {
         nextRuntime = runtimeOverride ?? await getRuntimeStatus();
         setRuntime(nextRuntime);
-        if (nextRuntime.service.status !== 'running') {
+        if (nextRuntime.phase !== 'api_ready' && nextRuntime.phase !== 'bridge_ready') {
           setStatus(null);
           setProjects([]);
           return;
@@ -54,7 +69,7 @@ export default function Dashboard() {
     window.addEventListener('cc:refresh', handler);
     const stopRuntime = desktop ? onRuntimeEvent((nextRuntime) => {
       setRuntime(nextRuntime);
-      if (nextRuntime.service.status === 'running') {
+      if (nextRuntime.phase === 'api_ready' || nextRuntime.phase === 'bridge_ready') {
         void fetchData(nextRuntime);
         return;
       }
@@ -88,7 +103,7 @@ export default function Dashboard() {
               </p>
             </div>
             <div className="flex gap-2">
-              <Button size="sm" onClick={() => void startDesktopService().then(() => fetchData())} disabled={runtime?.service.status === 'running'}>
+              <Button size="sm" onClick={() => void startDesktopService().then(() => fetchData())} disabled={runtime?.phase === 'starting' || runtime?.phase === 'api_ready' || runtime?.phase === 'bridge_ready'}>
                 <Play size={14} /> Start
               </Button>
               <Button size="sm" variant="secondary" onClick={() => void restartDesktopService().then(() => fetchData())}>
@@ -103,10 +118,21 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-            <StatCard label="Service" value={runtime?.service.status || '-'} accent={runtime?.service.status === 'running'} />
+            <StatCard label="Runtime" value={formatRuntimePhase(runtime?.phase)} accent={runtime?.phase === 'bridge_ready'} />
             <StatCard label="Bridge" value={runtime?.bridge.status || '-'} accent={runtime?.bridge.status === 'connected'} />
-            <StatCard label="Config" value={runtime?.configFile.exists ? 'Ready' : 'Missing'} />
+            <StatCard
+              label="Config"
+              value={!runtime?.configFile.exists ? 'Missing' : runtime?.pendingRestart ? 'Restart needed' : 'Ready'}
+              accent={Boolean(runtime?.configFile.exists && !runtime?.pendingRestart)}
+            />
           </div>
+
+          {runtime?.pendingRestart && (
+            <div className="mt-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-700 px-4 py-3 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+              Config changes are already saved to disk, but the running desktop service is still using the previous state.
+              Restart the service to apply the latest config.
+            </div>
+          )}
 
           {runtime?.service.lastError && (
             <div className="mt-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-600 px-4 py-3 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">

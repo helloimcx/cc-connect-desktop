@@ -1,8 +1,43 @@
 export const DEFAULT_DESKTOP_AGENT_TYPE = 'opencode';
 export const DEFAULT_DESKTOP_OPENCODE_MODEL = 'opencode/minimax-m2.5-free';
+export const DESKTOP_AGENT_TYPE_OPTIONS = [
+  'opencode',
+  'codex',
+  'claudecode',
+  'cursor',
+  'gemini',
+  'qoder',
+  'iflow',
+] as const;
+export const DESKTOP_PLATFORM_TYPE_OPTIONS = [
+  'telegram',
+  'feishu',
+  'lark',
+  'discord',
+  'slack',
+  'dingtalk',
+  'wecom',
+  'weixin',
+  'qq',
+  'qqbot',
+  'line',
+] as const;
+export const DESKTOP_PROVIDER_PRESET_OPTIONS = [
+  'openai',
+  'openrouter',
+  'anthropic',
+  'minimax',
+  'zhipuai',
+  'deepseek',
+  'siliconflow',
+  'moonshot',
+  'ollama',
+] as const;
+export const DESKTOP_PROVIDER_THINKING_OPTIONS = ['', 'enabled', 'disabled'] as const;
 
 export type DesktopServiceStatus = 'stopped' | 'starting' | 'running' | 'error';
 export type DesktopBridgeStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type DesktopRuntimePhase = 'stopped' | 'starting' | 'api_ready' | 'bridge_ready' | 'error';
 
 export interface DesktopSettings {
   binaryPath: string;
@@ -31,12 +66,33 @@ export interface DesktopBridgeState {
 
 export interface DesktopRuntimeStatus {
   mode: 'desktop';
+  phase: DesktopRuntimePhase;
+  pendingRestart: boolean;
   service: DesktopServiceState;
   bridge: DesktopBridgeState;
   settings: DesktopSettings;
   managementBaseUrl: string;
   configFile: ConfigFileState;
   logs: string[];
+}
+
+export function deriveDesktopRuntimePhase(
+  service: DesktopServiceState,
+  bridge: DesktopBridgeState,
+): DesktopRuntimePhase {
+  if (service.status === 'error' || bridge.status === 'error') {
+    return 'error';
+  }
+  if (service.status === 'stopped') {
+    return 'stopped';
+  }
+  if (service.status === 'starting') {
+    return 'starting';
+  }
+  if (bridge.status === 'connected') {
+    return 'bridge_ready';
+  }
+  return 'api_ready';
 }
 
 export interface DesktopBridgeSendInput {
@@ -92,11 +148,17 @@ export interface DesktopPlatformConfig {
   options?: Record<string, unknown>;
 }
 
+export interface DesktopProviderModelConfig {
+  model: string;
+  alias?: string;
+}
+
 export interface DesktopProviderConfig {
   name: string;
   api_key?: string;
   base_url?: string;
   model?: string;
+  models?: DesktopProviderModelConfig[];
   thinking?: string;
   env?: Record<string, string>;
 }

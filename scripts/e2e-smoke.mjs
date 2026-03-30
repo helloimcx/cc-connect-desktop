@@ -6,10 +6,6 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const rootDir = process.cwd();
-const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-connect-desktop-e2e-'));
-const userDataDir = path.join(tempRoot, 'user-data');
-const outputPath = path.join(tempRoot, 'smoke-result.json');
-
 function log(message) {
   process.stdout.write(`[e2e] ${message}\n`);
 }
@@ -25,9 +21,11 @@ async function waitForFile(filePath, timeoutMs = 90000) {
   throw new Error(`Timed out waiting for smoke result at ${filePath}`);
 }
 
-async function main() {
-  log(`userDataDir=${userDataDir}`);
-
+async function runScenario(name, extraEnv = {}) {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `cc-connect-desktop-e2e-${name}-`));
+  const userDataDir = path.join(tempRoot, 'user-data');
+  const outputPath = path.join(tempRoot, 'smoke-result.json');
+  log(`scenario=${name} userDataDir=${userDataDir}`);
   const child = spawn('node', ['scripts/launch-electron.mjs', '.'], {
     cwd: rootDir,
     stdio: 'inherit',
@@ -35,6 +33,7 @@ async function main() {
       ...process.env,
       CC_CONNECT_DESKTOP_USER_DATA_DIR: userDataDir,
       CC_CONNECT_DESKTOP_SMOKE_OUTPUT: outputPath,
+      ...extraEnv,
     },
   });
 
@@ -43,14 +42,22 @@ async function main() {
     new Promise((resolve) => child.on('exit', (code) => resolve(code ?? 1))),
   ]);
 
-  log(`electron exit code=${exitCode}`);
-  log(`result: ${JSON.stringify(result, null, 2)}`);
+  log(`scenario=${name} electron exit code=${exitCode}`);
+  log(`scenario=${name} result: ${JSON.stringify(result, null, 2)}`);
 
   fs.rmSync(tempRoot, { recursive: true, force: true });
 
   if (!result.ok || exitCode !== 0) {
-    throw new Error('Smoke test failed');
+    throw new Error(`Smoke test failed for scenario ${name}`);
   }
+}
+
+async function main() {
+  await runScenario('default');
+  await runScenario('bootstrap-error', {
+    CC_CONNECT_DESKTOP_SMOKE_SCENARIO: 'bootstrap-error',
+    CC_CONNECT_DESKTOP_FORCE_RUNTIME_STATUS_ERROR: '1',
+  });
 }
 
 main().catch((error) => {

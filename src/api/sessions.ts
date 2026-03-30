@@ -24,7 +24,7 @@ export interface Session {
 
 export interface SessionDetail extends Session {
   agent_session_id: string;
-  history: { role: string; content: string; timestamp: string }[];
+  history: { role: string; content: string; kind?: string; timestamp: string }[];
 }
 
 export const listSessions = (project: string) =>
