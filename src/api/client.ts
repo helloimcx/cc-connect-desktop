@@ -1,0 +1,76 @@
+const DEFAULT_API_BASE = '/api/v1';
+
+class ApiClient {
+  private token: string = '';
+  private baseUrl: string = DEFAULT_API_BASE;
+
+  setToken(token: string) {
+    this.token = token;
+  }
+
+  setBaseUrl(baseUrl: string) {
+    const trimmed = baseUrl.trim();
+    if (!trimmed) {
+      this.baseUrl = DEFAULT_API_BASE;
+      return;
+    }
+    this.baseUrl = trimmed.endsWith('/api/v1')
+      ? trimmed
+      : `${trimmed.replace(/\/+$/, '')}/api/v1`;
+  }
+
+  getToken(): string {
+    return this.token;
+  }
+
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  private headers(): HeadersInit {
+    const h: HeadersInit = { 'Content-Type': 'application/json' };
+    if (this.token) h['Authorization'] = `Bearer ${this.token}`;
+    return h;
+  }
+
+  async request<T = any>(method: string, path: string, body?: any, params?: Record<string, string>): Promise<T> {
+    let url = this.resolveUrl(path);
+    if (params) {
+      const qs = new URLSearchParams(params).toString();
+      if (qs) url += `?${qs}`;
+    }
+    const res = await fetch(url, {
+      method,
+      headers: this.headers(),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const json = await res.json();
+    if (!json.ok) {
+      throw new ApiError(json.error || 'Unknown error', res.status);
+    }
+    return json.data as T;
+  }
+
+  get<T = any>(path: string, params?: Record<string, string>) { return this.request<T>('GET', path, undefined, params); }
+  post<T = any>(path: string, body?: any) { return this.request<T>('POST', path, body); }
+  patch<T = any>(path: string, body?: any) { return this.request<T>('PATCH', path, body); }
+  delete<T = any>(path: string) { return this.request<T>('DELETE', path); }
+
+  private resolveUrl(path: string) {
+    const normalizedPath = path.replace(/^\/+/, '');
+    if (this.baseUrl.startsWith('http://') || this.baseUrl.startsWith('https://')) {
+      return new URL(normalizedPath, `${this.baseUrl}/`).toString();
+    }
+    return `${this.baseUrl}/${normalizedPath}`.replace(/([^:]\/)\/+/g, '$1');
+  }
+}
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+export const api = new ApiClient();
+export default api;

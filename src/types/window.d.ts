@@ -1,0 +1,33 @@
+import type {
+  ConfigFileState,
+  DesktopBridgeEvent,
+  DesktopBridgeSendInput,
+  DesktopBridgeSendResult,
+  DesktopRuntimeStatus,
+  DesktopSettings,
+  DesktopSettingsInput,
+  DesktopServiceState,
+} from '../../shared/desktop';
+
+declare global {
+  interface Window {
+    desktop?: {
+      getRuntimeStatus: () => Promise<DesktopRuntimeStatus>;
+      startService: () => Promise<DesktopServiceState>;
+      stopService: () => Promise<DesktopServiceState>;
+      restartService: () => Promise<DesktopServiceState>;
+      getLogs: (limit?: number) => Promise<string[]>;
+      readConfigFile: () => Promise<ConfigFileState>;
+      saveRawConfigFile: (raw: string) => Promise<ConfigFileState>;
+      saveStructuredConfigFile: (config: unknown) => Promise<ConfigFileState>;
+      saveSettings: (input: DesktopSettingsInput) => Promise<DesktopSettings>;
+      bridgeConnect: () => Promise<unknown>;
+      bridgeDisconnect: () => Promise<unknown>;
+      bridgeSendMessage: (input: DesktopBridgeSendInput) => Promise<DesktopBridgeSendResult>;
+      onRuntimeEvent: (listener: (runtime: DesktopRuntimeStatus) => void) => () => void;
+      onBridgeEvent: (listener: (event: DesktopBridgeEvent) => void) => () => void;
+    };
+  }
+}
+
+export {};

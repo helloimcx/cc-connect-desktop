@@ -1,0 +1,47 @@
+{
+  "name": "cc-connect-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build && node scripts/write-electron-package.mjs && tsc -p tsconfig.electron.json",
+    "build:renderer": "vite build",
+    "build:electron": "node scripts/write-electron-package.mjs && tsc -p tsconfig.electron.json",
+    "e2e:smoke": "pnpm build && node scripts/e2e-smoke.mjs",
+    "start": "node scripts/dev.mjs",
+    "start:prod": "node scripts/launch-electron.mjs .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "@tailwindcss/typography": "^0.5.19",
+    "clsx": "^2.1.1",
+    "electron": "^35.0.2",
+    "highlight.js": "^11.11.1",
+    "i18next": "^25.1.2",
+    "lucide-react": "^0.487.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-i18next": "^15.5.1",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.5.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "ws": "^8.18.1",
+    "zustand": "^5.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.4.1",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.2"
+  }
+}
