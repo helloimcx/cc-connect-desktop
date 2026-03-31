@@ -455,6 +455,28 @@ async function runSmokeTest() {
     }
     record('chat_new_session_requested');
 
+    const messageSent = await window.webContents.executeJavaScript(
+      `(() => {
+        const input = document.querySelector('[data-testid="desktop-chat-input"]');
+        const send = document.querySelector('[data-testid="desktop-chat-send"]');
+        if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) || !(send instanceof HTMLButtonElement)) {
+          return false;
+        }
+        const setter = input instanceof HTMLTextAreaElement
+          ? Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+          : Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        setter?.call(input, 'Reply with exactly OK.');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        send.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!messageSent) {
+      throw new Error('Smoke test could not send a desktop chat message');
+    }
+    record('chat_message_sent');
+
     const activeDesktopSessionId = await waitFor(
       async () => {
         const sessionId = await window.webContents.executeJavaScript(
@@ -467,29 +489,24 @@ async function runSmokeTest() {
         );
         return typeof sessionId === 'string' && sessionId ? sessionId : null;
       },
-      { timeoutMs: 15000, label: 'active desktop session id' },
+      { timeoutMs: 15000, label: 'active desktop session id after send' },
     );
     record('chat_session_created', { sessionId: activeDesktopSessionId });
 
-    const messageSent = await window.webContents.executeJavaScript(
-      `(() => {
-        const input = document.querySelector('[data-testid="desktop-chat-input"]');
-        const send = document.querySelector('[data-testid="desktop-chat-send"]');
-        if (!(input instanceof HTMLInputElement) || !(send instanceof HTMLButtonElement)) {
-          return false;
-        }
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-        setter?.call(input, 'Reply with exactly OK.');
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        send.click();
-        return true;
-      })()`,
-      true,
+    const typingVisible = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const bodyText = document.body?.innerText || '';
+            return bodyText.includes('Agent is typing…') ? { visible: true } : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 10000, intervalMs: 200, label: 'typing indicator visible after send' },
     );
-    if (!messageSent) {
-      throw new Error('Smoke test could not send a desktop chat message');
-    }
-    record('chat_message_sent');
+    record('chat_typing_visible', typingVisible);
 
     const latestDesktopSessionDetail = async (sessionId = activeDesktopSessionId) => {
       const current = await buildRuntimeStatus(getBridgeAdapter().getState());
@@ -573,7 +590,7 @@ async function runSmokeTest() {
     if (assistantReply?.error) {
       throw new Error(`Desktop chat reported an error instead of a reply: ${assistantReply.error}`);
     }
-    if (!assistantReply?.reply || !/^OK\.?$/.test(String(assistantReply.reply).trim())) {
+    if (!assistantReply?.reply || String(assistantReply.reply).trim() === 'Reply with exactly OK.') {
       throw new Error(`Desktop chat returned unexpected final reply: ${assistantReply?.reply ?? 'missing'}`);
     }
     if (assistantReply?.finalAfterProgress === false) {
@@ -584,6 +601,36 @@ async function runSmokeTest() {
       progress_count: assistantReply?.progressCount ?? 0,
       source: assistantReply?.source,
     });
+
+    const chatMessageOrderValid = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const messages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"]')).map((node) => ({
+              role: node.getAttribute('data-role') || '',
+              kind: node.getAttribute('data-kind') || '',
+              order: Number(node.getAttribute('data-order') || '0'),
+            }));
+            const userOrders = messages.filter((message) => message.role === 'user').map((message) => message.order);
+            const assistantOrders = messages
+              .filter((message) => message.role === 'assistant' && (message.kind === 'progress' || message.kind === 'final'))
+              .map((message) => message.order);
+            if (!userOrders.length || !assistantOrders.length) {
+              return null;
+            }
+            const lastUserOrder = userOrders[userOrders.length - 1];
+            const firstAssistantAfterUser = assistantOrders.find((order) => order > lastUserOrder);
+            return firstAssistantAfterUser !== undefined
+              ? { lastUserOrder, firstAssistantAfterUser }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'chat messages remain ordered after reply' },
+    );
+    record('chat_message_order_valid', chatMessageOrderValid);
 
     const persistedProgressHistory = await waitFor(
       async () => {
@@ -653,6 +700,198 @@ async function runSmokeTest() {
       { timeoutMs: 30000, label: 'sessions route redirected into desktop chat' },
     );
     record('sessions_route_redirected_to_chat');
+
+    const renamedSessionName = `Smoke Session ${activeDesktopSessionId.slice(0, 6)}`;
+    const renameOpened = await window.webContents.executeJavaScript(
+      `(() => {
+        const button = document.querySelector('[data-testid="desktop-chat-session-rename"][data-session-id="${activeDesktopSessionId}"]');
+        if (!(button instanceof HTMLButtonElement)) {
+          return false;
+        }
+        button.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!renameOpened) {
+      throw new Error('Smoke test could not open the rename session modal');
+    }
+    record('chat_rename_opened');
+
+    const renameApplied = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const input = document.querySelector('[data-testid="desktop-chat-rename-input"]');
+            const save = document.querySelector('[data-testid="desktop-chat-rename-save"]');
+            if (!(input instanceof HTMLInputElement) || !(save instanceof HTMLButtonElement)) {
+              return null;
+            }
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+            if (input.value !== ${JSON.stringify(renamedSessionName)}) {
+              setter?.call(input, ${JSON.stringify(renamedSessionName)});
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              return null;
+            }
+            save.click();
+            return { value: input.value };
+          })()`,
+          true,
+        );
+        return result?.value === renamedSessionName ? result : null;
+      },
+      { timeoutMs: 15000, label: 'rename session form submit' },
+    );
+    record('chat_rename_submitted', renameApplied);
+
+    const renameVisible = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const title = document.querySelector('[data-testid="desktop-chat-active-title"]')?.textContent?.trim() || '';
+            const row = document.querySelector('[data-testid="desktop-chat-session-row"][data-session-id="${activeDesktopSessionId}"]');
+            const rowText = row?.textContent?.trim() || '';
+            return title === ${JSON.stringify(renamedSessionName)} && rowText.includes(${JSON.stringify(renamedSessionName)})
+              ? { title, rowText }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'renamed session visible in chat list' },
+    );
+    record('chat_rename_visible', renameVisible);
+
+    const renameSearchVisible = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const input = document.querySelector('[data-testid="desktop-chat-session-search"]');
+            if (!(input instanceof HTMLInputElement)) {
+              return null;
+            }
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+            if (input.value !== ${JSON.stringify(renamedSessionName)}) {
+              setter?.call(input, ${JSON.stringify(renamedSessionName)});
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              return null;
+            }
+            const rows = Array.from(document.querySelectorAll('[data-testid="desktop-chat-session-row"]'));
+            return rows.length > 0 && rows.every((row) => (row.textContent || '').includes(${JSON.stringify(renamedSessionName)}))
+              ? { count: rows.length }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'session search filtered to renamed session' },
+    );
+    record('chat_search_filtered', renameSearchVisible);
+
+    const renameSearchEmpty = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const input = document.querySelector('[data-testid="desktop-chat-session-search"]');
+            if (!(input instanceof HTMLInputElement)) {
+              return null;
+            }
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+            if (input.value !== '__definitely_missing_session__') {
+              setter?.call(input, '__definitely_missing_session__');
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              return null;
+            }
+            return (document.body?.innerText || '').includes('No matching sessions.')
+              ? { empty: true }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'empty search state visible' },
+    );
+    record('chat_search_empty_state', renameSearchEmpty);
+
+    const searchCleared = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const input = document.querySelector('[data-testid="desktop-chat-session-search"]');
+            if (!(input instanceof HTMLInputElement)) {
+              return null;
+            }
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+            if (input.value !== '') {
+              setter?.call(input, '');
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              return null;
+            }
+            const row = document.querySelector('[data-testid="desktop-chat-session-row"][data-session-id="${activeDesktopSessionId}"]');
+            return row ? { restored: true } : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'session search cleared' },
+    );
+    record('chat_search_cleared', searchCleared);
+
+    const deleteOpened = await window.webContents.executeJavaScript(
+      `(() => {
+        const button = document.querySelector('[data-testid="desktop-chat-session-delete"][data-session-id="${activeDesktopSessionId}"]');
+        if (!(button instanceof HTMLButtonElement)) {
+          return false;
+        }
+        button.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!deleteOpened) {
+      throw new Error('Smoke test could not open the delete session modal');
+    }
+    record('chat_delete_opened');
+
+    const deleteConfirmed = await window.webContents.executeJavaScript(
+      `(() => {
+        const button = document.querySelector('[data-testid="desktop-chat-delete-confirm"]');
+        if (!(button instanceof HTMLButtonElement)) {
+          return false;
+        }
+        button.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!deleteConfirmed) {
+      throw new Error('Smoke test could not confirm session deletion');
+    }
+    record('chat_delete_confirmed');
+
+    const deleteApplied = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const row = document.querySelector('[data-testid="desktop-chat-session-row"][data-session-id="${activeDesktopSessionId}"]');
+            const hash = window.location.hash || '';
+            const query = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+            const currentSession = new URLSearchParams(query).get('session');
+            return !row && currentSession !== ${JSON.stringify(activeDesktopSessionId)}
+              ? { currentSession: currentSession || '', removed: true }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 30000, label: 'deleted session removed from chat list' },
+    );
+    record('chat_delete_applied', deleteApplied);
 
     result.ok = true;
     result.finished_at = new Date().toISOString();
