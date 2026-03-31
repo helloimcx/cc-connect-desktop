@@ -2,17 +2,20 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type {
+  DesktopBridgeEvent,
+  DesktopBridgeSendInput,
   DesktopConnectConfig,
   DesktopRuntimeStatus,
   DesktopSettingsInput,
 } from '../shared/desktop.js';
-import { deriveDesktopRuntimePhase } from '../shared/desktop.js';
+import { deriveDesktopRuntimePhase, normalizeDesktopBridgeButtonOption, supportsInteractivePermission } from '../shared/desktop.js';
 import { ServiceManager } from './service-manager.js';
 import { BridgeAdapter } from './bridge-adapter.js';
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let serviceManager: ServiceManager;
 let bridgeAdapter: BridgeAdapter;
+const smokeBridgeSendInputs: DesktopBridgeSendInput[] = [];
 
 const userDataOverride = process.env.CC_CONNECT_DESKTOP_USER_DATA_DIR?.trim();
 const smokeOutputPath = process.env.CC_CONNECT_DESKTOP_SMOKE_OUTPUT?.trim();
@@ -98,6 +101,22 @@ function writeSmokeResult(payload: Record<string, unknown>) {
   }
   mkdirSync(dirname(smokeOutputPath), { recursive: true });
   writeFileSync(smokeOutputPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
+function recordSmokeBridgeSend(input: DesktopBridgeSendInput) {
+  if (!smokeOutputPath) {
+    return;
+  }
+  smokeBridgeSendInputs.push({ ...input });
+}
+
+function emitSmokeBridgeEvent(payload: DesktopBridgeEvent) {
+  if (!smokeOutputPath) {
+    return;
+  }
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send('desktop:bridge', payload);
+  });
 }
 
 async function runSmokeTest() {
@@ -455,6 +474,27 @@ async function runSmokeTest() {
     }
     record('chat_new_session_requested');
 
+    const newChatBlankState = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const title = document.querySelector('[data-testid="desktop-chat-active-title"]')?.textContent?.trim() || '';
+            const hash = window.location.hash || '';
+            const query = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+            const session = new URLSearchParams(query).get('session');
+            const bodyText = document.body?.innerText || '';
+            return title === 'New desktop conversation' && !session && bodyText.includes('Send a message to create a desktop session')
+              ? { title, session: session || '' }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'new chat blank composer state' },
+    );
+    record('chat_new_session_blank_state', newChatBlankState);
+
     const messageSent = await window.webContents.executeJavaScript(
       `(() => {
         const input = document.querySelector('[data-testid="desktop-chat-input"]');
@@ -525,7 +565,7 @@ async function runSmokeTest() {
         return null;
       }
       const detailPayload = (await detailResponse.json()) as {
-        data?: { history?: Array<{ role?: string; kind?: string; content?: string }> };
+        data?: { session_key?: string; history?: Array<{ role?: string; kind?: string; content?: string }> };
       };
       const history = detailPayload?.data?.history || [];
       const progressCount = history.filter(
@@ -539,6 +579,7 @@ async function runSmokeTest() {
       const reply = finalEntries.map((entry) => entry.content || '').filter(Boolean).pop();
       return {
         sessionId,
+        sessionKey: detailPayload?.data?.session_key || '',
         progressCount,
         finalCount: finalEntries.length,
         reply,
@@ -642,6 +683,144 @@ async function runSmokeTest() {
       { timeoutMs: 15000, label: 'persisted progress history' },
     );
     record('chat_progress_persisted', persistedProgressHistory);
+
+    const normalizedPermissionButton = normalizeDesktopBridgeButtonOption({ Text: 'Allow', Data: 'perm:allow' });
+    if (!normalizedPermissionButton || normalizedPermissionButton.text !== 'allow' || normalizedPermissionButton.data !== 'allow') {
+      throw new Error('Permission button normalization did not produce lowercase allow');
+    }
+    if (!supportsInteractivePermission('claudecode') || supportsInteractivePermission('opencode')) {
+      throw new Error('Interactive permission support matrix is inconsistent');
+    }
+    record('chat_permission_normalization', {
+      text: normalizedPermissionButton.text,
+      data: normalizedPermissionButton.data,
+    });
+
+    const permissionSession = await waitFor(
+      async () => {
+        const detail = await latestDesktopSessionDetail();
+        return detail?.sessionId && detail?.sessionKey ? detail : null;
+      },
+      { timeoutMs: 15000, label: 'active session detail for permission prompt' },
+    );
+
+    const permissionReplyCtx = `smoke-permission-${Date.now()}`;
+    emitSmokeBridgeEvent({
+      type: 'buttons',
+      sessionKey: permissionSession.sessionKey,
+      replyCtx: permissionReplyCtx,
+      content: 'Permission required to continue. Choose how to proceed.',
+      buttons: [
+        [
+          { Text: 'Allow', Data: 'perm:allow' },
+          { Text: 'Deny', Data: 'perm:deny' },
+        ],
+        [{ Text: 'Allow all', Data: 'perm:allow_all' }],
+      ],
+    });
+    record('chat_permission_prompt_injected', {
+      sessionId: permissionSession.sessionId,
+      sessionKey: permissionSession.sessionKey,
+    });
+
+    const unsupportedPermissionVisible = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const buttons = Array.from(document.querySelectorAll('[data-testid="desktop-chat-action-button"]'));
+            const statuses = Array.from(document.querySelectorAll('[data-testid="desktop-chat-action-status"]')).map((node) => node.textContent?.trim() || '');
+            const bodyText = document.body?.innerText || '';
+            const unsupported = statuses.find((text) => text.includes('cannot continue interactive permission approvals'));
+            return bodyText.includes('Permission required to continue.') && buttons.length === 0 && unsupported
+              ? { buttonCount: buttons.length, unsupported }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'unsupported permission explanation visible in chat' },
+    );
+    record('chat_permission_unsupported_visible', unsupportedPermissionVisible);
+
+    emitSmokeBridgeEvent({
+      type: 'typing_start',
+      sessionKey: permissionSession.sessionKey,
+      replyCtx: `smoke-stop-${Date.now()}`,
+    });
+
+    const stopButtonVisible = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const stop = document.querySelector('[data-testid="desktop-chat-stop-task"]');
+            const hint = document.querySelector('[data-testid="desktop-chat-task-hint"]')?.textContent?.trim() || '';
+            return stop instanceof HTMLButtonElement && hint
+              ? { hint, text: stop.textContent?.trim() || '' }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'stop task button visible while task running' },
+    );
+    record('chat_stop_button_visible', stopButtonVisible);
+
+    const stopClicked = await window.webContents.executeJavaScript(
+      `(() => {
+        const stop = document.querySelector('[data-testid="desktop-chat-stop-task"]');
+        if (!(stop instanceof HTMLButtonElement)) {
+          return false;
+        }
+        stop.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!stopClicked) {
+      throw new Error('Smoke test could not click the stop task button');
+    }
+    record('chat_stop_clicked');
+
+    const stopCommandSent = await waitFor(
+      async () => {
+        const sent = [...smokeBridgeSendInputs].reverse().find((input) => input.content === '/stop');
+        return sent
+          ? {
+              content: sent.content,
+              project: sent.project,
+              chatId: sent.chatId,
+            }
+          : null;
+      },
+      { timeoutMs: 15000, label: 'stop command bridge send' },
+    );
+    record('chat_stop_command_sent', stopCommandSent);
+
+    emitSmokeBridgeEvent({
+      type: 'typing_stop',
+      sessionKey: permissionSession.sessionKey,
+      replyCtx: `smoke-stop-${Date.now()}`,
+    });
+
+    const stopResolved = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const send = document.querySelector('[data-testid="desktop-chat-send"]');
+            const stop = document.querySelector('[data-testid="desktop-chat-stop-task"]');
+            return send instanceof HTMLButtonElement && !stop
+              ? { restored: true }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'stop task restored send button' },
+    );
+    record('chat_stop_resolved', stopResolved);
 
     await window.webContents.executeJavaScript('window.location.hash = "#/"; true;', true);
     await waitFor(
@@ -990,7 +1169,10 @@ function registerIPC() {
     await broadcastRuntime();
     return state;
   });
-  ipcMain.handle('desktop:bridge-send-message', (_event, input) => getBridgeAdapter().sendMessage(input));
+  ipcMain.handle('desktop:bridge-send-message', (_event, input: DesktopBridgeSendInput) => {
+    recordSmokeBridgeSend(input);
+    return getBridgeAdapter().sendMessage(input);
+  });
 }
 
 app.whenReady().then(async () => {

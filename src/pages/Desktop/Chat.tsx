@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot,
   Circle,
+  LoaderCircle,
   MessageSquarePlus,
   Pencil,
   RotateCw,
@@ -25,7 +26,17 @@ import {
   startDesktopService,
 } from '@/api/desktop';
 import { cn } from '@/lib/utils';
-import type { DesktopBridgeEvent, DesktopRuntimeStatus } from '../../../shared/desktop';
+import type {
+  DesktopBridgeButtonOption,
+  DesktopBridgeEvent,
+  DesktopRuntimeStatus,
+} from '../../../shared/desktop';
+import {
+  isPermissionButtonOption,
+  normalizeDesktopBridgeButtonOption,
+  normalizePermissionResponse,
+  supportsInteractivePermission,
+} from '../../../shared/desktop';
 
 const ASSISTANT_REPLY_TIMEOUT_MS = 90000;
 
@@ -36,8 +47,16 @@ interface ChatMessage {
   kind?: 'final' | 'progress';
   order: number;
   turnKey?: string;
+  actions?: DesktopBridgeButtonOption[][];
+  actionReplyCtx?: string;
+  actionPending?: boolean;
+  actionMode?: 'permission' | 'generic';
+  actionStatus?: string;
+  actionInteractive?: boolean;
   preview?: boolean;
 }
+
+type ChatTaskState = 'idle' | 'running' | 'awaiting_permission' | 'permission_submitted' | 'stopping';
 
 interface SessionGroup {
   project: string;
@@ -155,10 +174,54 @@ function sessionProjectFromKey(sessionKey?: string) {
   return project;
 }
 
+function normalizeBridgeActionRows(input: unknown): DesktopBridgeButtonOption[][] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  return input
+    .map((row) => {
+      if (!Array.isArray(row)) {
+        return [];
+      }
+      return row
+        .map((button) => normalizeDesktopBridgeButtonOption(button))
+        .filter((button): button is DesktopBridgeButtonOption => Boolean(button));
+    })
+    .filter((row) => row.length > 0);
+}
+
 function upsertSessionGroup(groups: SessionGroup[], project: string, sessions: Session[]) {
   const next = groups.filter((group) => group.project !== project);
   next.push({ project, sessions });
   return next.sort((a, b) => a.project.localeCompare(b.project));
+}
+
+function isPermissionActionRow(rows: DesktopBridgeButtonOption[][]) {
+  return rows.some((row) => row.some((action) => isPermissionButtonOption(action)));
+}
+
+function permissionSupportMessage(agentType?: string) {
+  const name = agentType || 'This agent';
+  return `${name} cannot continue interactive permission approvals in Desktop Chat. Switch to claudecode/acp or adjust the agent permissions/work_dir before retrying.`;
+}
+
+function formatTaskHint(taskState: ChatTaskState, typing: boolean) {
+  if (taskState === 'stopping') {
+    return 'Stopping current task…';
+  }
+  if (taskState === 'permission_submitted') {
+    return 'Permission sent. Waiting for the agent to continue…';
+  }
+  if (taskState === 'awaiting_permission') {
+    return 'Waiting for your permission response.';
+  }
+  if (typing) {
+    return 'Agent is typing…';
+  }
+  if (taskState === 'running') {
+    return 'Task is running…';
+  }
+  return '';
 }
 
 export default function DesktopChat() {
@@ -170,6 +233,7 @@ export default function DesktopChat() {
   const [activeSessionId, setActiveSessionId] = useState('');
   const [activeSessionKey, setActiveSessionKey] = useState('');
   const [activeSessionName, setActiveSessionName] = useState('');
+  const [activeSessionAgentType, setActiveSessionAgentType] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [sessionSearch, setSessionSearch] = useState('');
@@ -177,22 +241,28 @@ export default function DesktopChat() {
   const [renameDraft, setRenameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<SessionActionTarget | null>(null);
   const [pendingSessionAction, setPendingSessionAction] = useState<'rename' | 'delete' | null>(null);
+  const [pendingBridgeActionId, setPendingBridgeActionId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [typing, setTyping] = useState(false);
+  const [taskState, setTaskState] = useState<ChatTaskState>('idle');
   const [bridgeError, setBridgeError] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
   const replyTimeoutRef = useRef<number | null>(null);
+  const replyTimeoutModeRef = useRef<'reply' | 'permission_continue'>('reply');
   const lastSessionByProjectRef = useRef<Record<string, string>>({});
   const nextMessageOrderRef = useRef(0);
   const pendingTurnRef = useRef<{ sessionKey: string; userOrder: number } | null>(null);
   const holdBlankComposerRef = useRef(false);
   const progressSequenceByTurnRef = useRef<Record<string, number>>({});
+  const taskStateRef = useRef<ChatTaskState>('idle');
   const requestedProject = searchParams.get('project') || '';
   const requestedSessionId = searchParams.get('session') || '';
 
   const serviceRunning = runtime?.phase === 'api_ready' || runtime?.phase === 'bridge_ready';
   const bridgeConnected = runtime?.bridge.status === 'connected';
+  const taskRunning = taskState !== 'idle';
+  const taskHint = formatTaskHint(taskState, typing);
 
   const sessionsForSelectedProject = useMemo(
     () => sessionGroups.find((group) => group.project === selectedProject)?.sessions || [],
@@ -213,6 +283,11 @@ export default function DesktopChat() {
 
   const renderedMessages = useMemo(() => sortChatMessages(messages), [messages]);
 
+  const updateTaskState = useCallback((next: ChatTaskState) => {
+    taskStateRef.current = next;
+    setTaskState(next);
+  }, []);
+
   const clearReplyTimeout = useCallback(() => {
     if (replyTimeoutRef.current) {
       window.clearTimeout(replyTimeoutRef.current);
@@ -220,14 +295,30 @@ export default function DesktopChat() {
     }
   }, []);
 
-  const armReplyTimeout = useCallback(() => {
+  const armReplyTimeout = useCallback((mode: 'reply' | 'permission_continue' = 'reply') => {
     clearReplyTimeout();
+    replyTimeoutModeRef.current = mode;
     replyTimeoutRef.current = window.setTimeout(() => {
       setTyping(false);
       pendingTurnRef.current = null;
-      setBridgeError('Agent did not respond in time. Check Desktop Runtime logs or adjust the model/provider.');
+      updateTaskState('idle');
+      setBridgeError(
+        mode === 'permission_continue'
+          ? 'Permission response was sent, but the agent did not continue. This agent or request may not support desktop continuation.'
+          : 'Agent did not respond in time. Check Desktop Runtime logs or adjust the model/provider.',
+      );
     }, ASSISTANT_REPLY_TIMEOUT_MS);
-  }, [clearReplyTimeout]);
+  }, [clearReplyTimeout, updateTaskState]);
+
+  const clearActionStatuses = useCallback(() => {
+    setMessages((current) =>
+      current.map((message) =>
+        message.actionStatus || message.actionPending
+          ? { ...message, actionPending: false, actionStatus: undefined }
+          : message,
+      ),
+    );
+  }, []);
 
   const reserveNextMessageOrder = useCallback(() => {
     const order = nextMessageOrderRef.current;
@@ -275,15 +366,102 @@ export default function DesktopChat() {
     });
   }, []);
 
+  const handleBridgeAction = useCallback(async (message: ChatMessage, action: DesktopBridgeButtonOption) => {
+    if (!activeSessionKey) {
+      return;
+    }
+    const [, project = selectedProject, chatId = 'main'] = activeSessionKey.split(':');
+    const actionContent = normalizePermissionResponse(action.data) || action.data;
+    const actionLabel = normalizePermissionResponse(action.data) || action.text || action.data;
+    const userOrder = reserveNextMessageOrder();
+    const actionMessageId = `${crypto.randomUUID()}-user-action`;
+    let sent = false;
+    setPendingBridgeActionId(message.id);
+    setMessages((current) =>
+      current.map((item) =>
+        item.id === message.id
+          ? { ...item, actionPending: true }
+          : item,
+      ),
+    );
+    try {
+      setMessages((current) => [
+        ...current,
+        { id: actionMessageId, role: 'user', content: actionLabel, order: userOrder },
+      ]);
+      await bridgeSendMessage({
+        project,
+        chatId,
+        content: actionContent,
+      });
+      sent = true;
+      setBridgeError('');
+      setTyping(true);
+      clearReplyTimeout();
+      clearActionStatuses();
+      if (message.actionMode === 'permission' && message.actionInteractive) {
+        updateTaskState('permission_submitted');
+        armReplyTimeout('permission_continue');
+        setMessages((current) =>
+          current.map((item) =>
+            item.id === message.id
+              ? {
+                  ...item,
+                  actions: [],
+                  actionPending: false,
+                  actionStatus: 'Permission sent. Waiting for the agent to continue…',
+                }
+              : item,
+          ),
+        );
+      } else {
+        updateTaskState('running');
+        armReplyTimeout();
+      }
+    } catch (error) {
+      setBridgeError(error instanceof Error ? error.message : 'Failed to send permission response.');
+      setMessages((current) =>
+        current.filter((item) => item.id !== actionMessageId),
+      );
+      updateTaskState(message.actionMode === 'permission' && message.actionInteractive ? 'awaiting_permission' : 'idle');
+      setTyping(false);
+    } finally {
+      setPendingBridgeActionId(null);
+      setMessages((current) =>
+        current.map((item) =>
+          item.id === message.id
+            ? {
+                ...item,
+                actionPending: false,
+                actions: sent ? item.actions || [] : item.actions,
+              }
+            : item,
+        ),
+      );
+    }
+  }, [
+    activeSessionKey,
+    armReplyTimeout,
+    clearActionStatuses,
+    clearReplyTimeout,
+    reserveNextMessageOrder,
+    selectedProject,
+    updateTaskState,
+  ]);
+
   const refreshSessionsForProject = useCallback(async (project: string) => {
     if (!project || !serviceRunning) {
       return [];
     }
     const data = await listSessions(project);
     const nextSessions = (data.sessions || []).filter(sessionMatchesDesktop).sort(sortDesktopSessions);
+    const activeSession = nextSessions.find((session) => session.id === activeSessionId);
+    if (activeSession?.agent_type) {
+      setActiveSessionAgentType(activeSession.agent_type);
+    }
     setSessionGroups((current) => upsertSessionGroup(current, project, nextSessions));
     return nextSessions;
-  }, [serviceRunning]);
+  }, [activeSessionId, serviceRunning]);
 
   const refreshProjectsAndSessions = useCallback(async () => {
     if (!serviceRunning) {
@@ -320,13 +498,16 @@ export default function DesktopChat() {
     setActiveSessionId(detail.id);
     setActiveSessionKey(detail.session_key);
     setActiveSessionName(detail.name);
+    setActiveSessionAgentType(detail.agent_type || '');
     holdBlankComposerRef.current = false;
     progressSequenceByTurnRef.current = {};
     const nextMessages = toMessages(detail.history || []);
     nextMessageOrderRef.current = nextMessages.length;
     pendingTurnRef.current = null;
+    updateTaskState(detail.live ? 'running' : 'idle');
+    setTyping(false);
     setMessages(nextMessages);
-  }, [serviceRunning]);
+  }, [serviceRunning, updateTaskState]);
 
   const refreshRuntime = useCallback(async () => {
     const nextRuntime = await getRuntimeStatus();
@@ -340,16 +521,19 @@ export default function DesktopChat() {
     if (!serviceRunning) {
       setSessionGroups([]);
       setMessages([]);
+      setActiveSessionAgentType('');
       setBridgeError('');
       pendingTurnRef.current = null;
       nextMessageOrderRef.current = 0;
       progressSequenceByTurnRef.current = {};
+      updateTaskState('idle');
+      setTyping(false);
       clearReplyTimeout();
       return;
     }
     void refreshProjectsAndSessions();
     void bridgeConnect();
-  }, [clearReplyTimeout, refreshProjectsAndSessions, serviceRunning]);
+  }, [clearReplyTimeout, refreshProjectsAndSessions, serviceRunning, updateTaskState]);
 
   useEffect(() => {
     if (!selectedProject || !serviceRunning) {
@@ -364,7 +548,7 @@ export default function DesktopChat() {
 
     const preferredSessionId = requestedProject === selectedProject ? requestedSessionId : '';
     const rememberedSessionId = lastSessionByProjectRef.current[selectedProject];
-    if (!preferredSessionId && !activeSessionId && holdBlankComposerRef.current) {
+    if (!activeSessionId && holdBlankComposerRef.current) {
       return;
     }
     const targetSession =
@@ -374,6 +558,7 @@ export default function DesktopChat() {
 
     if (targetSession) {
       setTyping(false);
+      updateTaskState('idle');
       setBridgeError('');
       clearReplyTimeout();
       void loadActiveSession(selectedProject, targetSession.id);
@@ -381,11 +566,13 @@ export default function DesktopChat() {
     }
 
     setTyping(false);
+    updateTaskState('idle');
     setBridgeError('');
     clearReplyTimeout();
     setActiveSessionId('');
     setActiveSessionKey('');
     setActiveSessionName('');
+    setActiveSessionAgentType('');
     setMessages([]);
     pendingTurnRef.current = null;
     nextMessageOrderRef.current = 0;
@@ -399,6 +586,7 @@ export default function DesktopChat() {
     selectedProject,
     serviceRunning,
     sessionsForSelectedProject,
+    updateTaskState,
   ]);
 
   useEffect(() => {
@@ -437,7 +625,9 @@ export default function DesktopChat() {
 
     switch (event.type) {
       case 'preview_start':
+        clearActionStatuses();
         setTyping(true);
+        updateTaskState('running');
         armReplyTimeout();
         setBridgeError('');
         setMessages((current) => {
@@ -457,7 +647,9 @@ export default function DesktopChat() {
         });
         break;
       case 'update_message':
+        clearActionStatuses();
         setTyping(true);
+        updateTaskState('running');
         armReplyTimeout();
         setBridgeError('');
         setMessages((current) =>
@@ -483,7 +675,9 @@ export default function DesktopChat() {
         setMessages((current) => current.filter((message) => message.id !== event.previewHandle));
         break;
       case 'typing_start':
+        clearActionStatuses();
         setTyping(true);
+        updateTaskState('running');
         setBridgeError('');
         armReplyTimeout();
         break;
@@ -491,10 +685,14 @@ export default function DesktopChat() {
         setTyping(false);
         clearReplyTimeout();
         pendingTurnRef.current = null;
+        clearActionStatuses();
+        updateTaskState('idle');
         finalizeTurnMessages(event.replyCtx);
         break;
       case 'reply':
+        clearActionStatuses();
         setTyping(true);
+        updateTaskState('running');
         setBridgeError('');
         armReplyTimeout();
         const replyMessageId = nextProgressMessageId(event.replyCtx);
@@ -514,10 +712,69 @@ export default function DesktopChat() {
           },
         ]);
         break;
+      case 'buttons':
+        clearReplyTimeout();
+        setTyping(false);
+        pendingTurnRef.current = null;
+        setBridgeError('');
+        clearActionStatuses();
+        setMessages((current) => {
+          const messageId = `${event.replyCtx || crypto.randomUUID()}-buttons`;
+          const actionRows = normalizeBridgeActionRows(event.buttonRows || event.buttons);
+          const isPermissionPrompt = isPermissionActionRow(actionRows);
+          const interactivePermission = isPermissionPrompt && supportsInteractivePermission(activeSessionAgentType);
+          const nextActions = isPermissionPrompt && !interactivePermission ? [] : actionRows;
+          const nextStatus = isPermissionPrompt && !interactivePermission
+            ? permissionSupportMessage(activeSessionAgentType)
+            : undefined;
+          const existing = current.find((message) => message.id === messageId);
+          if (existing) {
+            return current.map((message) =>
+              message.id === messageId
+                ? {
+                    ...message,
+                    content: event.content || message.content,
+                    actions: nextActions,
+                    actionReplyCtx: event.replyCtx,
+                    actionPending: false,
+                    actionMode: isPermissionPrompt ? 'permission' : 'generic',
+                    actionInteractive: interactivePermission,
+                    actionStatus: nextStatus,
+                  }
+                : message,
+            );
+          }
+          return [
+            ...current,
+            {
+              id: messageId,
+              role: 'assistant',
+              content: event.content || 'Permission required before continuing.',
+              kind: 'progress',
+              order: reserveAssistantMessageOrder(event.sessionKey),
+              turnKey: event.replyCtx,
+              actions: nextActions,
+              actionReplyCtx: event.replyCtx,
+              actionPending: false,
+              actionMode: isPermissionPrompt ? 'permission' : 'generic',
+              actionInteractive: interactivePermission,
+              actionStatus: nextStatus,
+            },
+          ];
+        });
+        updateTaskState(
+          isPermissionActionRow(normalizeBridgeActionRows(event.buttonRows || event.buttons)) &&
+            supportsInteractivePermission(activeSessionAgentType)
+            ? 'awaiting_permission'
+            : 'idle',
+        );
+        break;
       case 'card':
         clearReplyTimeout();
         setTyping(false);
         pendingTurnRef.current = null;
+        clearActionStatuses();
+        updateTaskState('idle');
         finalizeTurnMessages(event.replyCtx);
         setBridgeError('');
         setMessages((current) => [
@@ -533,12 +790,28 @@ export default function DesktopChat() {
       default:
         break;
     }
-  }, [activeSessionKey, armReplyTimeout, clearReplyTimeout, finalizeTurnMessages, nextProgressMessageId, refreshSessionsForProject, reserveAssistantMessageOrder]);
+  }, [
+    activeSessionAgentType,
+    activeSessionKey,
+    armReplyTimeout,
+    clearActionStatuses,
+    clearReplyTimeout,
+    finalizeTurnMessages,
+    nextProgressMessageId,
+    refreshSessionsForProject,
+    reserveAssistantMessageOrder,
+    updateTaskState,
+  ]);
 
   useEffect(() => {
     void refreshRuntime().finally(() => setLoading(false));
     const stopRuntime = onRuntimeEvent((nextRuntime) => {
       setRuntime(nextRuntime);
+      if (nextRuntime.phase === 'stopped' || nextRuntime.phase === 'error') {
+        setTyping(false);
+        clearReplyTimeout();
+        updateTaskState('idle');
+      }
     });
     const stopBridge = onBridgeEvent((event) => {
       handleBridgeEvent(event);
@@ -548,7 +821,7 @@ export default function DesktopChat() {
       stopRuntime();
       stopBridge();
     };
-  }, [clearReplyTimeout, handleBridgeEvent, refreshRuntime]);
+  }, [clearReplyTimeout, handleBridgeEvent, refreshRuntime, updateTaskState]);
 
   const ensureSession = useCallback(async () => {
     if (!selectedProject) {
@@ -601,6 +874,7 @@ export default function DesktopChat() {
         ...current,
         { id: `${crypto.randomUUID()}-user`, role: 'user', content, order: userOrder },
       ]);
+      updateTaskState('running');
       setTyping(true);
       setBridgeError('');
       armReplyTimeout();
@@ -613,19 +887,48 @@ export default function DesktopChat() {
       clearReplyTimeout();
       pendingTurnRef.current = null;
       setTyping(false);
+      updateTaskState('idle');
       setBridgeError(error instanceof Error ? error.message : 'Failed to send the message.');
     } finally {
       setSending(false);
     }
-  }, [armReplyTimeout, clearReplyTimeout, draft, ensureSession, reserveNextMessageOrder, selectedProject]);
+  }, [armReplyTimeout, clearReplyTimeout, draft, ensureSession, reserveNextMessageOrder, selectedProject, updateTaskState]);
+
+  const handleStopTask = useCallback(async () => {
+    if (!selectedProject || !activeSessionKey || taskState === 'stopping') {
+      return;
+    }
+    const [, project = selectedProject, chatId = 'main'] = activeSessionKey.split(':');
+    setBridgeError('');
+    clearReplyTimeout();
+    setTyping(false);
+    updateTaskState('stopping');
+    try {
+      await bridgeSendMessage({
+        project,
+        chatId,
+        content: '/stop',
+      });
+      window.setTimeout(() => {
+        if (taskStateRef.current === 'stopping') {
+          updateTaskState('idle');
+        }
+      }, 1500);
+    } catch (error) {
+      updateTaskState('idle');
+      setBridgeError(error instanceof Error ? error.message : 'Failed to stop the current task.');
+    }
+  }, [activeSessionKey, clearReplyTimeout, selectedProject, taskState, updateTaskState]);
 
   const handleCreateNew = useCallback(() => {
     holdBlankComposerRef.current = true;
     setActiveSessionId('');
     setActiveSessionKey('');
     setActiveSessionName('');
+    setActiveSessionAgentType('');
     setMessages([]);
     setTyping(false);
+    updateTaskState('idle');
     setBridgeError('');
     pendingTurnRef.current = null;
     nextMessageOrderRef.current = 0;
@@ -634,7 +937,7 @@ export default function DesktopChat() {
     const next = new URLSearchParams(searchParams);
     next.delete('session');
     setSearchParams(next, { replace: true });
-  }, [clearReplyTimeout, searchParams, setSearchParams]);
+  }, [clearReplyTimeout, searchParams, setSearchParams, updateTaskState]);
 
   const openRenameModal = useCallback((project: string, session: Session) => {
     setRenameTarget({ project, id: session.id, name: sessionLabel(session) });
@@ -671,14 +974,17 @@ export default function DesktopChat() {
         setActiveSessionId('');
         setActiveSessionKey('');
         setActiveSessionName('');
+        setActiveSessionAgentType('');
         setMessages([]);
+        setTyping(false);
+        updateTaskState('idle');
       }
       await refreshSessionsForProject(deleteTarget.project);
       setDeleteTarget(null);
     } finally {
       setPendingSessionAction(null);
     }
-  }, [activeSessionId, deleteTarget, refreshSessionsForProject]);
+  }, [activeSessionId, deleteTarget, refreshSessionsForProject, updateTaskState]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-gray-400 animate-pulse">Loading...</div>;
@@ -949,6 +1255,40 @@ export default function DesktopChat() {
                         </p>
                       )}
                       <ChatMarkdown content={message.content} isUser={isUser} />
+                      {!isUser && message.actions && message.actions.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                          {message.actions.map((row, rowIndex) => (
+                            <div key={`${message.id}-actions-${rowIndex}`} className="flex flex-wrap gap-2">
+                              {row.map((action) => (
+                                <Button
+                                  key={`${message.id}-${action.data || action.text}`}
+                                  size="sm"
+                                  variant={String(action.data || '').includes('deny') ? 'danger' : 'secondary'}
+                                  onClick={() => void handleBridgeAction(message, action)}
+                                  disabled={Boolean(message.actionPending || pendingBridgeActionId)}
+                                  loading={pendingBridgeActionId === message.id}
+                                  data-testid="desktop-chat-action-button"
+                                >
+                                  {action.text || action.data}
+                                </Button>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {!isUser && message.actionStatus && (
+                        <p
+                          className={cn(
+                            'mt-3 text-xs',
+                            message.actionInteractive
+                              ? 'text-gray-500 dark:text-gray-400'
+                              : 'text-amber-700 dark:text-amber-200',
+                          )}
+                          data-testid="desktop-chat-action-status"
+                        >
+                          {message.actionStatus}
+                        </p>
+                      )}
                       {message.preview && (
                         <p className="mt-2 text-[10px] uppercase tracking-wide text-accent">stream preview</p>
                       )}
@@ -963,9 +1303,9 @@ export default function DesktopChat() {
               })
             )}
 
-            {typing && (
-              <div className="flex items-center gap-2 text-sm text-gray-400">
-                <Circle size={8} className="fill-current animate-pulse" /> Agent is typing…
+            {taskHint && (
+              <div className="flex items-center gap-2 text-sm text-gray-400" data-testid="desktop-chat-task-hint">
+                <Circle size={8} className="fill-current animate-pulse" /> {taskHint}
               </div>
             )}
             {bridgeError && (
@@ -986,23 +1326,44 @@ export default function DesktopChat() {
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
+                  if (event.key === 'Enter' && !event.shiftKey && !taskRunning) {
                     event.preventDefault();
                     void handleSend();
                   }
                 }}
-                rows={3}
-                placeholder={!serviceRunning ? 'Start the service first' : !bridgeConnected ? 'Waiting for the desktop bridge to connect' : 'Send a message to the desktop channel'}
-                disabled={!serviceRunning || !bridgeConnected || sending || !selectedProject}
-                className="min-h-[88px] resize-none"
+                rows={4}
+                placeholder={!serviceRunning ? 'Start the service first' : !bridgeConnected ? 'Waiting for the desktop bridge to connect' : taskRunning ? 'Task is running. Click stop to interrupt.' : 'Send a message to the desktop channel'}
+                disabled={!serviceRunning || !bridgeConnected || sending || !selectedProject || taskRunning}
+                className="min-h-[112px] resize-none"
               />
-              <Button
-                onClick={() => void handleSend()}
-                disabled={!draft.trim() || !serviceRunning || !bridgeConnected || sending || !selectedProject}
-                data-testid="desktop-chat-send"
-              >
-                <Send size={16} />
-              </Button>
+              {taskRunning ? (
+                <Button
+                  variant="danger"
+                  onClick={() => void handleStopTask()}
+                  disabled={!activeSessionKey || taskState === 'stopping'}
+                  data-testid="desktop-chat-stop-task"
+                  className="min-w-[112px]"
+                >
+                  {taskState === 'stopping' ? (
+                    <>
+                      <LoaderCircle size={16} className="animate-spin" /> Stopping…
+                    </>
+                  ) : (
+                    <>
+                      <LoaderCircle size={16} className="animate-spin" /> Stop task
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => void handleSend()}
+                  disabled={!draft.trim() || !serviceRunning || !bridgeConnected || sending || !selectedProject}
+                  data-testid="desktop-chat-send"
+                  className="min-w-[48px]"
+                >
+                  <Send size={16} />
+                </Button>
+              )}
             </div>
           </div>
         </Card>

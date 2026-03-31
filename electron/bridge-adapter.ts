@@ -8,8 +8,25 @@ import type {
   DesktopBridgeState,
   DesktopSettings,
 } from '../shared/desktop.js';
+import { normalizeDesktopBridgeButtonOption } from '../shared/desktop.js';
 
-const CAPABILITIES = ['preview', 'update_message', 'delete_message', 'typing', 'reconstruct_reply'];
+const CAPABILITIES = ['preview', 'update_message', 'delete_message', 'typing', 'reconstruct_reply', 'buttons'];
+
+function normalizeButtonRows(input: unknown) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  return input
+    .map((row) => {
+      if (!Array.isArray(row)) {
+        return [];
+      }
+      return row
+        .map((button) => normalizeDesktopBridgeButtonOption(button))
+        .filter((button): button is { text: string; data: string } => Boolean(button));
+    })
+    .filter((row) => row.length > 0);
+}
 
 export class BridgeAdapter extends EventEmitter {
   private socket: WebSocket | null = null;
@@ -199,12 +216,14 @@ export class BridgeAdapter extends EventEmitter {
         } satisfies DesktopBridgeEvent);
         return;
       case 'buttons':
+        const buttonRows = normalizeButtonRows(payload.buttons);
         this.emit('event', {
           type: 'buttons',
           sessionKey: payload.session_key,
           replyCtx: payload.reply_ctx,
           content: payload.content,
           buttons: payload.buttons,
+          buttonRows,
         } satisfies DesktopBridgeEvent);
         return;
       default:

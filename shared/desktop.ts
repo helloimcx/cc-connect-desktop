@@ -34,6 +34,17 @@ export const DESKTOP_PROVIDER_PRESET_OPTIONS = [
   'ollama',
 ] as const;
 export const DESKTOP_PROVIDER_THINKING_OPTIONS = ['', 'enabled', 'disabled'] as const;
+export const DESKTOP_INTERACTIVE_PERMISSION_AGENT_TYPES = ['claudecode', 'acp'] as const;
+
+const PERMISSION_RESPONSE_MAP: Record<string, 'allow' | 'deny' | 'allow all'> = {
+  allow: 'allow',
+  deny: 'deny',
+  'allow all': 'allow all',
+  allowall: 'allow all',
+  'perm:allow': 'allow',
+  'perm:deny': 'deny',
+  'perm:allow_all': 'allow all',
+};
 
 export type DesktopServiceStatus = 'stopped' | 'starting' | 'running' | 'error';
 export type DesktopBridgeStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -108,6 +119,60 @@ export interface DesktopBridgeSendResult {
   sessionKey: string;
 }
 
+export interface DesktopBridgeButtonOption {
+  text: string;
+  data: string;
+}
+
+export function normalizePermissionResponse(input?: string | null) {
+  if (!input) {
+    return null;
+  }
+  return PERMISSION_RESPONSE_MAP[String(input).trim().toLowerCase()] || null;
+}
+
+export function isPermissionButtonOption(option?: Pick<DesktopBridgeButtonOption, 'data'> | null) {
+  return Boolean(normalizePermissionResponse(option?.data));
+}
+
+export function normalizeDesktopBridgeButtonOption(input: unknown): DesktopBridgeButtonOption | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+  const record = input as Record<string, unknown>;
+  const rawText = typeof record.text === 'string'
+    ? record.text
+    : typeof record.Text === 'string'
+      ? record.Text
+      : '';
+  const rawData = typeof record.data === 'string'
+    ? record.data
+    : typeof record.Data === 'string'
+      ? record.Data
+      : '';
+  if (!rawText || !rawData) {
+    return null;
+  }
+  const permissionResponse = normalizePermissionResponse(rawData);
+  if (permissionResponse) {
+    return {
+      text: permissionResponse,
+      data: permissionResponse,
+    };
+  }
+  return {
+    text: rawText,
+    data: rawData,
+  };
+}
+
+export function supportsInteractivePermission(agentType?: string | null) {
+  if (!agentType) {
+    return false;
+  }
+  return (DESKTOP_INTERACTIVE_PERMISSION_AGENT_TYPES as readonly string[]).includes(String(agentType).trim().toLowerCase());
+}
+
 export interface DesktopBridgeEvent {
   type:
     | 'register_ack'
@@ -129,6 +194,7 @@ export interface DesktopBridgeEvent {
   error?: string;
   card?: Record<string, unknown>;
   buttons?: unknown;
+  buttonRows?: DesktopBridgeButtonOption[][];
 }
 
 export interface DesktopRuntimeEvent {
