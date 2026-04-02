@@ -1,5 +1,6 @@
 export const DEFAULT_DESKTOP_AGENT_TYPE = 'opencode';
 export const DEFAULT_DESKTOP_OPENCODE_MODEL = 'opencode/minimax-m2.5-free';
+export const DEFAULT_DESKTOP_CLAUDECODE_MODEL = '';
 export const DESKTOP_AGENT_TYPE_OPTIONS = [
   'opencode',
   'codex',
@@ -122,6 +123,32 @@ export interface DesktopBridgeSendResult {
 export interface DesktopBridgeButtonOption {
   text: string;
   data: string;
+}
+
+export function getDefaultDesktopAgentModel(agentType?: string | null) {
+  switch (String(agentType || '').trim().toLowerCase()) {
+    case 'opencode':
+      return DEFAULT_DESKTOP_OPENCODE_MODEL;
+    case 'claudecode':
+      return DEFAULT_DESKTOP_CLAUDECODE_MODEL;
+    default:
+      return '';
+  }
+}
+
+export function normalizeDesktopAgentModel(agentType?: string | null, model?: string | null) {
+  const normalizedType = String(agentType || '').trim().toLowerCase();
+  const normalizedModel = String(model || '').trim();
+  if (!normalizedType) {
+    return normalizedModel;
+  }
+  if (normalizedType === 'opencode') {
+    return normalizedModel || DEFAULT_DESKTOP_OPENCODE_MODEL;
+  }
+  if (normalizedType === 'claudecode' && normalizedModel.startsWith('opencode/')) {
+    return '';
+  }
+  return normalizedModel;
 }
 
 export function normalizePermissionResponse(input?: string | null) {

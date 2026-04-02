@@ -18,7 +18,8 @@ import {
   DESKTOP_PLATFORM_TYPE_OPTIONS,
   DESKTOP_PROVIDER_THINKING_OPTIONS,
   DEFAULT_DESKTOP_AGENT_TYPE,
-  DEFAULT_DESKTOP_OPENCODE_MODEL,
+  getDefaultDesktopAgentModel,
+  normalizeDesktopAgentModel,
 } from '../../../shared/desktop';
 import type {
   DesktopConnectConfig,
@@ -124,6 +125,29 @@ const PROVIDER_PRESET_DEFINITIONS = [
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeProjectAgent(project: DesktopProjectConfig): DesktopProjectConfig {
+  const options = {
+    ...(project.agent?.options || {}),
+  };
+  options.model = normalizeDesktopAgentModel(project.agent?.type, String(options.model || ''));
+  return {
+    ...project,
+    agent: {
+      ...project.agent,
+      options,
+    },
+  };
+}
+
+function normalizeDesktopConfigDraft(config: DesktopConnectConfig): DesktopConnectConfig {
+  const next = clone(config);
+  if (!Array.isArray(next.projects)) {
+    return next;
+  }
+  next.projects = next.projects.map((project) => normalizeProjectAgent(project));
+  return next;
 }
 
 function ensureProjects(config: DesktopConnectConfig) {
@@ -495,9 +519,10 @@ export default function DesktopWorkspace() {
     }
     setPendingAction('save-visual');
     try {
-      const saved = await saveStructuredConfigFile(configDraft);
+      const normalized = normalizeDesktopConfigDraft(configDraft);
+      const saved = await saveStructuredConfigFile(normalized);
       setRawDraft(saved.raw);
-      setConfigDraft(saved.parsed ? clone(saved.parsed) : configDraft);
+      setConfigDraft(saved.parsed ? clone(saved.parsed) : normalized);
       await loadAll();
       setNotice({
         tone: runtimeReady ? 'warning' : 'success',
@@ -553,7 +578,7 @@ export default function DesktopWorkspace() {
         agent: {
           type: DEFAULT_DESKTOP_AGENT_TYPE,
           options: {
-            model: DEFAULT_DESKTOP_OPENCODE_MODEL,
+            model: getDefaultDesktopAgentModel(DEFAULT_DESKTOP_AGENT_TYPE),
             work_dir: '.',
           },
           providers: [],
@@ -585,9 +610,10 @@ export default function DesktopWorkspace() {
     }
     setPendingAction('save-restart');
     try {
-      const saved = await saveStructuredConfigFile(configDraft);
+      const normalized = normalizeDesktopConfigDraft(configDraft);
+      const saved = await saveStructuredConfigFile(normalized);
       setRawDraft(saved.raw);
-      setConfigDraft(saved.parsed ? clone(saved.parsed) : configDraft);
+      setConfigDraft(saved.parsed ? clone(saved.parsed) : normalized);
       await restartDesktopService();
       await loadAll();
       setNotice({
@@ -863,13 +889,24 @@ export default function DesktopWorkspace() {
                           label="Agent type"
                           value={getSelectValue(selectedProject.agent?.type || '', DESKTOP_AGENT_TYPE_OPTIONS)}
                           onChange={(event) =>
-                            updateSelectedProject((project) => ({
-                              ...project,
-                              agent: {
-                                ...project.agent,
-                                type: event.target.value === CUSTOM_SELECT_VALUE ? '' : event.target.value,
-                              },
-                            }))
+                            updateSelectedProject((project) => {
+                              const nextType = event.target.value === CUSTOM_SELECT_VALUE ? '' : event.target.value;
+                              const currentModel = String(project.agent?.options?.model || '');
+                              const nextModel = nextType === project.agent?.type
+                                ? currentModel
+                                : normalizeDesktopAgentModel(nextType, currentModel);
+                              return {
+                                ...project,
+                                agent: {
+                                  ...project.agent,
+                                  type: nextType,
+                                  options: {
+                                    ...(project.agent.options || {}),
+                                    model: nextModel,
+                                  },
+                                },
+                              };
+                            })
                           }
                         >
                           {DESKTOP_AGENT_TYPE_OPTIONS.map((option) => (
@@ -920,6 +957,30 @@ export default function DesktopWorkspace() {
                         }
                       />
                     </div>
+
+                    <Input
+                      label="Agent model"
+                      value={String(selectedProject.agent?.options?.model || '')}
+                      placeholder={
+                        selectedProject.agent?.type === 'opencode'
+                          ? getDefaultDesktopAgentModel('opencode')
+                          : selectedProject.agent?.type === 'claudecode'
+                            ? 'Leave blank to use the Claude CLI default model'
+                            : 'Optional agent model override'
+                      }
+                      onChange={(event) =>
+                        updateSelectedProject((project) => ({
+                          ...project,
+                          agent: {
+                            ...project.agent,
+                            options: {
+                              ...(project.agent.options || {}),
+                              model: event.target.value,
+                            },
+                          },
+                        }))
+                      }
+                    />
 
                     <Input
                       label="Disabled commands"

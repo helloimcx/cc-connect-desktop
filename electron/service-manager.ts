@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createServer } from 'node:net';
-import { DEFAULT_DESKTOP_AGENT_TYPE, DEFAULT_DESKTOP_OPENCODE_MODEL } from '../shared/desktop.js';
+import { DEFAULT_DESKTOP_AGENT_TYPE, DEFAULT_DESKTOP_OPENCODE_MODEL, normalizeDesktopAgentModel } from '../shared/desktop.js';
 import type {
   ConfigFileState,
   DesktopConnectConfig,
@@ -401,6 +401,20 @@ export class ServiceManager extends EventEmitter {
     }
 
     next.projects = next.projects.map((project) => {
+      if (project?.agent) {
+        const nextOptions = {
+          ...(project.agent.options || {}),
+        };
+        nextOptions.model = normalizeDesktopAgentModel(project.agent.type, String(nextOptions.model || ''));
+        project = {
+          ...project,
+          agent: {
+            ...project.agent,
+            options: nextOptions,
+          },
+        };
+      }
+
       if (
         project?.name !== DEFAULT_PROJECT_NAME ||
         !Array.isArray(project.platforms) ||

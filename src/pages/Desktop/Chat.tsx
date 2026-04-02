@@ -504,7 +504,7 @@ export default function DesktopChat() {
     const nextMessages = toMessages(detail.history || []);
     nextMessageOrderRef.current = nextMessages.length;
     pendingTurnRef.current = null;
-    updateTaskState(detail.live ? 'running' : 'idle');
+    updateTaskState('idle');
     setTyping(false);
     setMessages(nextMessages);
   }, [serviceRunning, updateTaskState]);

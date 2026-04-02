@@ -643,6 +643,34 @@ async function runSmokeTest() {
       source: assistantReply?.source,
     });
 
+    await window.webContents.executeJavaScript('window.location.hash = "#/"; true;', true);
+    await waitFor(
+      async () => {
+        const bodyText = await window.webContents.executeJavaScript('document.body?.innerText || ""', true);
+        return typeof bodyText === 'string' && bodyText.includes('Desktop Runtime') ? bodyText : null;
+      },
+      { timeoutMs: 30000, label: 'dashboard rerender after reply' },
+    );
+    await window.webContents.executeJavaScript(`window.location.hash = "#/chat?project=desktop-demo&session=${activeDesktopSessionId}"; true;`, true);
+    const completedTurnRestoredIdle = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const send = document.querySelector('[data-testid="desktop-chat-send"]');
+            const stop = document.querySelector('[data-testid="desktop-chat-stop-task"]');
+            const hint = document.querySelector('[data-testid="desktop-chat-task-hint"]')?.textContent?.trim() || '';
+            return send instanceof HTMLButtonElement && !stop && !hint
+              ? { restored: true }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 30000, label: 'completed turn stays idle after chat reload' },
+    );
+    record('chat_completed_turn_restored_idle', completedTurnRestoredIdle);
+
     const chatMessageOrderValid = await waitFor(
       async () => {
         const result = await window.webContents.executeJavaScript(
