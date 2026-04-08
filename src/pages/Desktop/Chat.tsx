@@ -46,6 +46,7 @@ interface ChatMessage {
   content: string;
   kind?: 'final' | 'progress';
   order: number;
+  timestamp?: string;
   turnKey?: string;
   actions?: DesktopBridgeButtonOption[][];
   actionReplyCtx?: string;
@@ -92,16 +93,39 @@ function toMessages(history: { role: string; content: string; kind?: string; tim
     content: message.content,
     kind: message.kind === 'progress' ? 'progress' : 'final',
     order: index,
+    timestamp: message.timestamp,
   }));
 }
 
 function sortChatMessages(messages: ChatMessage[]) {
   return [...messages].sort((a, b) => {
+    const aTime = a.timestamp ? new Date(a.timestamp).getTime() : Number.NaN;
+    const bTime = b.timestamp ? new Date(b.timestamp).getTime() : Number.NaN;
+    const aHasTime = Number.isFinite(aTime);
+    const bHasTime = Number.isFinite(bTime);
+    if (aHasTime && bHasTime && aTime !== bTime) {
+      return aTime - bTime;
+    }
     if (a.order !== b.order) {
       return a.order - b.order;
     }
     return a.id.localeCompare(b.id);
   });
+}
+
+function formatMessageTimestamp(timestamp?: string) {
+  if (!timestamp) {
+    return '';
+  }
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(date);
 }
 
 function sortDesktopSessions(a: Session, b: Session) {
@@ -202,7 +226,7 @@ function isPermissionActionRow(rows: DesktopBridgeButtonOption[][]) {
 
 function permissionSupportMessage(agentType?: string) {
   const name = agentType || 'This agent';
-  return `${name} cannot continue interactive permission approvals in Desktop Chat. Switch to claudecode/acp or adjust the agent permissions/work_dir before retrying.`;
+  return `${name} cannot continue interactive permission approvals in Desktop Chat. Switch to opencode, claudecode, or acp, or adjust the agent permissions/work_dir before retrying.`;
 }
 
 function formatTaskHint(taskState: ChatTaskState, typing: boolean) {
@@ -387,7 +411,7 @@ export default function DesktopChat() {
     try {
       setMessages((current) => [
         ...current,
-        { id: actionMessageId, role: 'user', content: actionLabel, order: userOrder },
+        { id: actionMessageId, role: 'user', content: actionLabel, order: userOrder, timestamp: new Date().toISOString() },
       ]);
       await bridgeSendMessage({
         project,
@@ -640,6 +664,7 @@ export default function DesktopChat() {
             content: event.content || '',
             kind: 'progress',
             order: existing?.order ?? reserveAssistantMessageOrder(event.sessionKey),
+            timestamp: existing?.timestamp || new Date().toISOString(),
             turnKey: event.replyCtx,
             preview: true,
           });
@@ -665,6 +690,7 @@ export default function DesktopChat() {
                   content: event.content || '',
                   kind: 'progress',
                   order: reserveAssistantMessageOrder(event.sessionKey),
+                  timestamp: new Date().toISOString(),
                   turnKey: event.replyCtx,
                   preview: true,
                 },
@@ -708,6 +734,7 @@ export default function DesktopChat() {
             content: event.content || '',
             kind: 'progress',
             order: reserveAssistantMessageOrder(event.sessionKey),
+            timestamp: new Date().toISOString(),
             turnKey: event.replyCtx,
           },
         ]);
@@ -752,6 +779,7 @@ export default function DesktopChat() {
               content: event.content || 'Permission required before continuing.',
               kind: 'progress',
               order: reserveAssistantMessageOrder(event.sessionKey),
+              timestamp: new Date().toISOString(),
               turnKey: event.replyCtx,
               actions: nextActions,
               actionReplyCtx: event.replyCtx,
@@ -784,6 +812,7 @@ export default function DesktopChat() {
             role: 'assistant',
             content: 'Interactive card received. Open the session in the standard Sessions view for full controls.',
             order: reserveAssistantMessageOrder(event.sessionKey),
+            timestamp: new Date().toISOString(),
           },
         ]);
         break;
@@ -872,7 +901,7 @@ export default function DesktopChat() {
       pendingTurnRef.current = { sessionKey: ensured.sessionKey, userOrder };
       setMessages((current) => [
         ...current,
-        { id: `${crypto.randomUUID()}-user`, role: 'user', content, order: userOrder },
+        { id: `${crypto.randomUUID()}-user`, role: 'user', content, order: userOrder, timestamp: new Date().toISOString() },
       ]);
       updateTaskState('running');
       setTyping(true);
@@ -1240,6 +1269,7 @@ export default function DesktopChat() {
                       data-role={message.role}
                       data-kind={message.kind || 'final'}
                       data-order={String(message.order)}
+                      data-timestamp={message.timestamp || ''}
                       className={cn(
                         'rounded-2xl px-5 py-3.5 text-sm',
                         isUser
@@ -1249,11 +1279,16 @@ export default function DesktopChat() {
                             : 'max-w-[85%] bg-white dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700/60 text-gray-900 dark:text-gray-100 rounded-bl-md shadow-sm',
                       )}
                     >
-                      {!isUser && message.kind === 'progress' && (
-                        <p className="mb-2 text-[10px] uppercase tracking-wide text-amber-600 dark:text-amber-300">
-                          process
-                        </p>
-                      )}
+                      <div className={cn('mb-2 flex items-center gap-2 text-[10px]', isUser ? 'justify-end text-black/70' : 'text-gray-400 dark:text-gray-500')}>
+                        {!isUser && message.kind === 'progress' && (
+                          <span className="uppercase tracking-wide text-amber-600 dark:text-amber-300">
+                            process
+                          </span>
+                        )}
+                        {formatMessageTimestamp(message.timestamp) && (
+                          <span data-testid="desktop-chat-message-timestamp">{formatMessageTimestamp(message.timestamp)}</span>
+                        )}
+                      </div>
                       <ChatMarkdown content={message.content} isUser={isUser} />
                       {!isUser && message.actions && message.actions.length > 0 && (
                         <div className="mt-4 space-y-2">

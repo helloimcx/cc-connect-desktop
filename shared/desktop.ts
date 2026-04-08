@@ -35,7 +35,7 @@ export const DESKTOP_PROVIDER_PRESET_OPTIONS = [
   'ollama',
 ] as const;
 export const DESKTOP_PROVIDER_THINKING_OPTIONS = ['', 'enabled', 'disabled'] as const;
-export const DESKTOP_INTERACTIVE_PERMISSION_AGENT_TYPES = ['claudecode', 'acp'] as const;
+export const DESKTOP_INTERACTIVE_PERMISSION_AGENT_TYPES = ['opencode', 'claudecode', 'acp'] as const;
 
 const PERMISSION_RESPONSE_MAP: Record<string, 'allow' | 'deny' | 'allow all'> = {
   allow: 'allow',

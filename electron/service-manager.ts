@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createServer } from 'node:net';
-import { DEFAULT_DESKTOP_AGENT_TYPE, DEFAULT_DESKTOP_OPENCODE_MODEL, normalizeDesktopAgentModel } from '../shared/desktop.js';
+import { DEFAULT_DESKTOP_AGENT_TYPE, normalizeDesktopAgentModel } from '../shared/desktop.js';
 import type {
   ConfigFileState,
   DesktopConnectConfig,
@@ -40,10 +40,6 @@ name = "${DEFAULT_PROJECT_NAME}"
 
 [projects.agent]
 type = "${DEFAULT_DESKTOP_AGENT_TYPE}"
-
-[projects.agent.options]
-model = "${DEFAULT_DESKTOP_OPENCODE_MODEL}"
-work_dir = "."
 `;
 
 const LOG_LIMIT = 400;
@@ -58,6 +54,7 @@ function clone<T>(value: T): T {
 
 export class ServiceManager extends EventEmitter {
   private readonly settingsPath: string;
+  private readonly generatedConfigPath: string;
   private readonly logs: string[] = [];
   private child: ChildProcessWithoutNullStreams | null = null;
   private state: DesktopServiceState = { status: 'stopped' };
@@ -68,12 +65,14 @@ export class ServiceManager extends EventEmitter {
   private appliedBinaryPath = '';
   private appliedConfigPath = '';
   private appliedConfigRaw = '';
+  private appliedRuntimeConfigRaw = '';
 
   constructor(private readonly userDataPath: string) {
     super();
     const runtimeDir = join(userDataPath, 'runtime');
     mkdirSync(runtimeDir, { recursive: true });
     this.settingsPath = join(runtimeDir, 'desktop-settings.json');
+    this.generatedConfigPath = join(runtimeDir, 'generated-config.toml');
     this.settings = this.loadSettings();
   }
 
@@ -103,6 +102,10 @@ export class ServiceManager extends EventEmitter {
     return `http://127.0.0.1:${this.settings.managementPort}/api/v1`;
   }
 
+  getGeneratedConfigPath() {
+    return this.generatedConfigPath;
+  }
+
   async readConfigState(): Promise<ConfigFileState> {
     const path = this.settings.configPath;
     if (!existsSync(path)) {
@@ -117,7 +120,13 @@ export class ServiceManager extends EventEmitter {
     const raw = readFileSync(path, 'utf8');
     try {
       const parsed = TOML.parse(raw) as DesktopConnectConfig;
-      return { path, exists: true, raw, parsed };
+      const normalized = this.normalizeLogicalConfig(parsed);
+      const normalizedRaw = TOML.stringify(normalized as any);
+      if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
+        writeFileSync(path, normalizedRaw, 'utf8');
+        return { path, exists: true, raw: normalizedRaw, parsed: normalized };
+      }
+      return { path, exists: true, raw, parsed: normalized };
     } catch (error) {
       return {
         path,
@@ -138,7 +147,7 @@ export class ServiceManager extends EventEmitter {
 
   async writeStructuredConfig(config: DesktopConnectConfig) {
     mkdirSync(dirname(this.settings.configPath), { recursive: true });
-    writeFileSync(this.settings.configPath, TOML.stringify(config as any), 'utf8');
+    writeFileSync(this.settings.configPath, TOML.stringify(this.normalizeLogicalConfig(config) as any), 'utf8');
     this.emit('state');
     return this.readConfigState();
   }
@@ -179,8 +188,10 @@ export class ServiceManager extends EventEmitter {
       return this.getServiceState();
     }
 
-    const managed = this.normalizeConfig(configState.parsed);
-    await this.writeStructuredConfig(managed);
+    const runtimeConfig = this.deriveRuntimeConfig(configState.parsed);
+    const runtimeConfigRaw = TOML.stringify(runtimeConfig as any);
+    mkdirSync(dirname(this.generatedConfigPath), { recursive: true });
+    writeFileSync(this.generatedConfigPath, runtimeConfigRaw, 'utf8');
 
     const binaryPath = this.resolveBinaryPath();
     this.pushLog(`Starting cc-connect using ${binaryPath}`);
@@ -189,7 +200,7 @@ export class ServiceManager extends EventEmitter {
 
     try {
       const startedAt = new Date().toISOString();
-      const child = spawn(binaryPath, ['--config', this.settings.configPath], {
+      const child = spawn(binaryPath, ['--config', this.generatedConfigPath], {
         env: process.env,
         stdio: 'pipe',
       });
@@ -238,7 +249,8 @@ export class ServiceManager extends EventEmitter {
       await this.waitForManagementReady();
       this.appliedBinaryPath = this.settings.binaryPath;
       this.appliedConfigPath = this.settings.configPath;
-      this.appliedConfigRaw = readFileSync(this.settings.configPath, 'utf8');
+      this.appliedConfigRaw = configState.raw;
+      this.appliedRuntimeConfigRaw = runtimeConfigRaw;
       this.state = {
         status: 'running',
         pid: child.pid,
@@ -289,7 +301,7 @@ export class ServiceManager extends EventEmitter {
     return {
       mode: 'desktop',
       phase: 'stopped',
-      pendingRestart: this.computePendingRestart(configFile.raw),
+      pendingRestart: this.computePendingRestart(configFile),
       service: this.getServiceState(),
       bridge: { status: 'disconnected' },
       settings: this.getSettings(),
@@ -394,25 +406,48 @@ export class ServiceManager extends EventEmitter {
     return this.settings.binaryPath || 'cc-connect';
   }
 
-  private normalizeConfig(config: DesktopConnectConfig): DesktopConnectConfig {
-    const next = this.withManagedSections(config);
+  private deriveRuntimeConfig(config: DesktopConnectConfig): DesktopConnectConfig {
+    const next = this.withManagedSections(this.normalizeLogicalConfig(config));
     if (!Array.isArray(next.projects)) {
       return next;
     }
 
     next.projects = next.projects.map((project) => {
       if (project?.agent) {
-        const nextOptions = {
-          ...(project.agent.options || {}),
-        };
-        nextOptions.model = normalizeDesktopAgentModel(project.agent.type, String(nextOptions.model || ''));
-        project = {
-          ...project,
-          agent: {
-            ...project.agent,
-            options: nextOptions,
-          },
-        };
+        const agentType = String(project.agent.type || '').trim().toLowerCase();
+
+        // Transform opencode agent to use ACP adapter for permission support
+        if (agentType === 'opencode') {
+          const model = normalizeDesktopAgentModel('opencode', String(project.agent.options?.model || ''));
+          const opencodeConfig = model ? JSON.stringify({ model }) : '{}';
+          project = {
+            ...project,
+            agent: {
+              ...project.agent,
+              type: 'acp',
+              options: {
+                command: 'opencode',
+                args: ['acp'],
+                env: {
+                  OPENCODE_CONFIG_CONTENT: opencodeConfig,
+                },
+                work_dir: project.agent.options?.work_dir || '.',
+              },
+            },
+          };
+        } else {
+          const nextOptions = {
+            ...(project.agent.options || {}),
+          };
+          nextOptions.model = normalizeDesktopAgentModel(project.agent.type, String(nextOptions.model || ''));
+          project = {
+            ...project,
+            agent: {
+              ...project.agent,
+              options: nextOptions,
+            },
+          };
+        }
       }
 
       if (
@@ -428,6 +463,83 @@ export class ServiceManager extends EventEmitter {
       return {
         ...project,
         platforms: [],
+      };
+    });
+
+    return next;
+  }
+
+  private normalizeLogicalConfig(config: DesktopConnectConfig): DesktopConnectConfig {
+    const next = clone(config);
+    if (!Array.isArray(next.projects)) {
+      return next;
+    }
+
+    next.projects = next.projects.map((project) => {
+      if (!project?.agent) {
+        return project;
+      }
+
+      let nextAgent = clone(project.agent);
+      const currentType = String(nextAgent.type || '').trim().toLowerCase();
+
+      if (
+        currentType === 'acp' &&
+        String(nextAgent.options?.command || '').trim() === 'opencode' &&
+        Array.isArray(nextAgent.options?.args) &&
+        nextAgent.options?.args?.length === 1 &&
+        nextAgent.options?.args?.[0] === 'acp'
+      ) {
+        const rawEnv = nextAgent.options?.env;
+        const env = rawEnv && typeof rawEnv === 'object' ? { ...(rawEnv as Record<string, unknown>) } : {};
+        let recoveredModel = '';
+        if (typeof env.OPENCODE_CONFIG_CONTENT === 'string') {
+          try {
+            const parsedConfig = JSON.parse(env.OPENCODE_CONFIG_CONTENT) as Record<string, unknown>;
+            recoveredModel = typeof parsedConfig.model === 'string' ? parsedConfig.model : '';
+          } catch {
+            recoveredModel = '';
+          }
+        }
+        delete env.OPENCODE_CONFIG_CONTENT;
+
+        const nextOptions: Record<string, unknown> = {
+          work_dir: nextAgent.options?.work_dir || '.',
+        };
+        const normalizedModel = normalizeDesktopAgentModel('opencode', recoveredModel);
+        if (normalizedModel) {
+          nextOptions.model = normalizedModel;
+        }
+        if (Object.keys(env).length > 0) {
+          nextOptions.env = env;
+        }
+
+        nextAgent = {
+          ...nextAgent,
+          type: 'opencode',
+          options: nextOptions,
+        };
+      } else {
+        const nextOptions = {
+          ...(nextAgent.options || {}),
+        };
+        if (Object.prototype.hasOwnProperty.call(nextOptions, 'model')) {
+          const normalizedModel = normalizeDesktopAgentModel(nextAgent.type, String(nextOptions.model || ''));
+          if (normalizedModel) {
+            nextOptions.model = normalizedModel;
+          } else {
+            delete nextOptions.model;
+          }
+        }
+        nextAgent = {
+          ...nextAgent,
+          options: nextOptions,
+        };
+      }
+
+      return {
+        ...project,
+        agent: nextAgent,
       };
     });
 
@@ -462,14 +574,20 @@ export class ServiceManager extends EventEmitter {
     this.emit('logs', this.getLogs());
   }
 
-  private computePendingRestart(currentConfigRaw: string) {
+  private computePendingRestart(configFile: ConfigFileState) {
     if (this.state.status !== 'running') {
       return false;
     }
+    let nextRuntimeConfigRaw = this.appliedRuntimeConfigRaw;
+    if (!configFile.parsed) {
+      return true;
+    }
+    nextRuntimeConfigRaw = TOML.stringify(this.deriveRuntimeConfig(configFile.parsed) as any);
     return (
       this.settings.binaryPath !== this.appliedBinaryPath ||
       this.settings.configPath !== this.appliedConfigPath ||
-      currentConfigRaw !== this.appliedConfigRaw
+      configFile.raw !== this.appliedConfigRaw ||
+      nextRuntimeConfigRaw !== this.appliedRuntimeConfigRaw
     );
   }
 

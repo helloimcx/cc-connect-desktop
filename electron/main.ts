@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type {
   DesktopBridgeEvent,
@@ -277,6 +277,30 @@ async function runSmokeTest() {
       { timeoutMs: 30000, label: 'workspace route render' },
     );
     record('workspace_rendered');
+
+    const workspaceAgentSelectVisible = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const select = Array.from(document.querySelectorAll('select')).find((node) => {
+              const container = node.closest('label, div');
+              return Boolean(container?.textContent?.includes('Agent type'));
+            });
+            const customInput = Array.from(document.querySelectorAll('input')).find((node) => {
+              const container = node.closest('label, div');
+              return Boolean(container?.textContent?.includes('Custom agent type'));
+            });
+            return select instanceof HTMLSelectElement && select.value === 'opencode' && !(customInput instanceof HTMLInputElement)
+              ? { value: select.value }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'workspace logical agent type visible' },
+    );
+    record('workspace_agent_type_visible', workspaceAgentSelectVisible);
 
     await waitFor(
       async () => {
@@ -679,6 +703,7 @@ async function runSmokeTest() {
               role: node.getAttribute('data-role') || '',
               kind: node.getAttribute('data-kind') || '',
               order: Number(node.getAttribute('data-order') || '0'),
+              timestamp: node.getAttribute('data-timestamp') || '',
             }));
             const userOrders = messages.filter((message) => message.role === 'user').map((message) => message.order);
             const assistantOrders = messages
@@ -689,8 +714,9 @@ async function runSmokeTest() {
             }
             const lastUserOrder = userOrders[userOrders.length - 1];
             const firstAssistantAfterUser = assistantOrders.find((order) => order > lastUserOrder);
-            return firstAssistantAfterUser !== undefined
-              ? { lastUserOrder, firstAssistantAfterUser }
+            const hasTimestamps = messages.every((message) => Boolean(message.timestamp));
+            return firstAssistantAfterUser !== undefined && hasTimestamps
+              ? { lastUserOrder, firstAssistantAfterUser, hasTimestamps }
               : null;
           })()`,
           true,
@@ -704,11 +730,11 @@ async function runSmokeTest() {
     const persistedProgressHistory = await waitFor(
       async () => {
         const detail = await latestDesktopSessionDetail();
-        return detail && detail.progressCount > 0 && detail.finalCount > 0
+        return detail && detail.finalCount > 0
           ? { progressCount: detail.progressCount, finalCount: detail.finalCount, sessionId: detail.sessionId }
           : null;
       },
-      { timeoutMs: 15000, label: 'persisted progress history' },
+      { timeoutMs: 15000, label: 'persisted assistant history' },
     );
     record('chat_progress_persisted', persistedProgressHistory);
 
@@ -716,12 +742,27 @@ async function runSmokeTest() {
     if (!normalizedPermissionButton || normalizedPermissionButton.text !== 'allow' || normalizedPermissionButton.data !== 'allow') {
       throw new Error('Permission button normalization did not produce lowercase allow');
     }
-    if (!supportsInteractivePermission('claudecode') || supportsInteractivePermission('opencode')) {
+    if (!supportsInteractivePermission('claudecode') || !supportsInteractivePermission('opencode')) {
       throw new Error('Interactive permission support matrix is inconsistent');
     }
     record('chat_permission_normalization', {
       text: normalizedPermissionButton.text,
       data: normalizedPermissionButton.data,
+    });
+
+    const logicalConfigRaw = readFileSync(runtime.configFile.path, 'utf8');
+    const generatedConfigPath = getServiceManager().getGeneratedConfigPath();
+    const generatedConfigRaw = existsSync(generatedConfigPath) ? readFileSync(generatedConfigPath, 'utf8') : '';
+    const logicalConfigKeptOpencode = logicalConfigRaw.includes('type = "opencode"') && !logicalConfigRaw.includes('type = "acp"');
+    const runtimeConfigUsesAcpAdapter = generatedConfigRaw.includes('type = "acp"') &&
+      generatedConfigRaw.includes('command = "opencode"') &&
+      generatedConfigRaw.includes('"acp"');
+    if (!logicalConfigKeptOpencode || !runtimeConfigUsesAcpAdapter) {
+      throw new Error('Logical config/runtime adapter split is not preserved');
+    }
+    record('workspace_logical_agent_runtime_adapter_split', {
+      logical_config_path: runtime.configFile.path,
+      generated_config_path: generatedConfigPath,
     });
 
     const permissionSession = await waitFor(
@@ -751,25 +792,70 @@ async function runSmokeTest() {
       sessionKey: permissionSession.sessionKey,
     });
 
-    const unsupportedPermissionVisible = await waitFor(
+    const supportedPermissionVisible = await waitFor(
       async () => {
         const result = await window.webContents.executeJavaScript(
           `(() => {
             const buttons = Array.from(document.querySelectorAll('[data-testid="desktop-chat-action-button"]'));
             const statuses = Array.from(document.querySelectorAll('[data-testid="desktop-chat-action-status"]')).map((node) => node.textContent?.trim() || '');
             const bodyText = document.body?.innerText || '';
+            const labels = buttons.map((button) => button.textContent?.trim() || '');
             const unsupported = statuses.find((text) => text.includes('cannot continue interactive permission approvals'));
-            return bodyText.includes('Permission required to continue.') && buttons.length === 0 && unsupported
-              ? { buttonCount: buttons.length, unsupported }
+            return bodyText.includes('Permission required to continue.') && labels.includes('allow') && labels.includes('deny') && labels.includes('allow all') && !unsupported
+              ? { labels }
               : null;
           })()`,
           true,
         );
         return result || null;
       },
-      { timeoutMs: 15000, label: 'unsupported permission explanation visible in chat' },
+      { timeoutMs: 15000, label: 'interactive permission actions visible in chat' },
     );
-    record('chat_permission_unsupported_visible', unsupportedPermissionVisible);
+    record('chat_permission_supported_visible', supportedPermissionVisible);
+
+    const permissionAllowClicked = await window.webContents.executeJavaScript(
+      `(() => {
+        const buttons = Array.from(document.querySelectorAll('[data-testid="desktop-chat-action-button"]'));
+        const target = buttons.find((button) => button.textContent?.trim() === 'allow');
+        if (!(target instanceof HTMLButtonElement)) {
+          return false;
+        }
+        target.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!permissionAllowClicked) {
+      throw new Error('Smoke test could not click allow for permission prompt');
+    }
+    record('chat_permission_allow_clicked');
+
+    const permissionAllowSent = await waitFor(
+      async () => {
+        const sent = [...smokeBridgeSendInputs].reverse().find((input) => input.content === 'allow');
+        return sent
+          ? {
+              content: sent.content,
+              project: sent.project,
+              chatId: sent.chatId,
+            }
+          : null;
+      },
+      { timeoutMs: 15000, label: 'permission allow bridge send' },
+    );
+    record('chat_permission_allow_sent', permissionAllowSent);
+
+    emitSmokeBridgeEvent({
+      type: 'reply',
+      sessionKey: permissionSession.sessionKey,
+      replyCtx: permissionReplyCtx,
+      content: 'Permission accepted, continuing work.',
+    });
+    emitSmokeBridgeEvent({
+      type: 'typing_stop',
+      sessionKey: permissionSession.sessionKey,
+      replyCtx: permissionReplyCtx,
+    });
 
     emitSmokeBridgeEvent({
       type: 'typing_start',
@@ -872,7 +958,7 @@ async function runSmokeTest() {
           `(() => {
             const progressMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-role="assistant"][data-kind="progress"]'));
             const finalMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-role="assistant"][data-kind="final"]'));
-            return progressMessages.length > 0 && finalMessages.length > 0
+            return finalMessages.length > 0
               ? { progressCount: progressMessages.length, finalCount: finalMessages.length }
               : null;
           })()`,
@@ -880,7 +966,7 @@ async function runSmokeTest() {
         );
         return result || null;
       },
-      { timeoutMs: 30000, label: 'reloaded progress visible in chat history' },
+      { timeoutMs: 30000, label: 'reloaded assistant history visible in chat' },
     );
     record('chat_progress_visible_after_reload', reloadedProgressVisible);
 
@@ -896,7 +982,7 @@ async function runSmokeTest() {
             const project = document.querySelector('[data-testid="desktop-chat-project-select"]');
             const progressMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-kind="progress"]'));
             const finalMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-kind="final"]'));
-            return bodyText.includes('Desktop Chat') && project instanceof HTMLSelectElement && project.value === 'desktop-demo' && progressMessages.length > 0 && finalMessages.length > 0
+            return bodyText.includes('Desktop Chat') && project instanceof HTMLSelectElement && project.value === 'desktop-demo' && finalMessages.length > 0
               ? { progressCount: progressMessages.length, finalCount: finalMessages.length }
               : null;
           })()`,

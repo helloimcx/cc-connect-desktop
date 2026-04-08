@@ -929,6 +929,11 @@ export default function DesktopWorkspace() {
                             placeholder="Enter an agent type supported by cc-connect"
                           />
                         )}
+                        {selectedProject.agent?.type === 'opencode' && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Desktop runs <code>opencode</code> through the ACP adapter at runtime so permission controls work, but your saved config stays on <code>opencode</code>.
+                          </p>
+                        )}
                       </div>
                     </div>
 
