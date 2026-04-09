@@ -7,13 +7,13 @@ import { getStatus, type SystemStatus } from '@/api/status';
 import { listProjects, type ProjectSummary } from '@/api/projects';
 import {
   getRuntimeStatus,
-  isDesktopApp,
   onRuntimeEvent,
   restartDesktopService,
   startDesktopService,
 } from '@/api/desktop';
 import { formatUptime } from '@/lib/utils';
 import type { DesktopRuntimeStatus } from '../../shared/desktop';
+import { isDesktopApp, supportsDesktopRuntime, supportsDesktopWorkspace } from '@/app/runtime';
 
 function formatRuntimePhase(phase?: DesktopRuntimeStatus['phase']) {
   switch (phase) {
@@ -38,6 +38,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const desktop = isDesktopApp();
+  const desktopRuntime = supportsDesktopRuntime();
+  const desktopWorkspace = supportsDesktopWorkspace();
 
   const fetchData = useCallback(async (runtimeOverride?: DesktopRuntimeStatus | null) => {
     try {
@@ -93,7 +95,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {desktop && (
+      {desktopRuntime && (
         <Card>
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -109,11 +111,13 @@ export default function Dashboard() {
               <Button size="sm" variant="secondary" onClick={() => void restartDesktopService().then(() => fetchData())}>
                 <RotateCw size={14} /> Restart
               </Button>
-              <Link to="/workspace">
-                <Button size="sm" variant="secondary">
-                  <Wrench size={14} /> Workspace
-                </Button>
-              </Link>
+              {desktopWorkspace && (
+                <Link to="/workspace">
+                  <Button size="sm" variant="secondary">
+                    <Wrench size={14} /> Workspace
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
 
@@ -203,7 +207,7 @@ export default function Dashboard() {
         )}
       </Card>
 
-      {desktop && (
+      {desktopRuntime && (
         <Card>
           <div className="flex items-center justify-between">
             <div>
@@ -217,6 +221,22 @@ export default function Dashboard() {
                 <Cable size={14} /> Open Chat
               </Button>
             </Link>
+          </div>
+        </Card>
+      )}
+
+      {!desktopRuntime && (
+        <Card>
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-sky-100 dark:bg-sky-950/30 text-sky-600 dark:text-sky-300 flex items-center justify-center shrink-0">
+              <Server size={18} />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Web Admin</h3>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                This browser build manages a remote `cc-connect` instance. Desktop runtime controls, desktop chat, and workspace runtime settings stay in the desktop app.
+              </p>
+            </div>
           </div>
         </Card>
       )}

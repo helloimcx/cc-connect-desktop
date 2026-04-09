@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { useThemeStore } from '@/store/theme';
 import { useAuthStore } from '@/store/auth';
 import { useState } from 'react';
+import { supportsDesktopChat, supportsDesktopWorkspace } from '@/app/runtime';
 
 const navItems = [
   { key: 'dashboard', path: '/', icon: LayoutDashboard },
@@ -46,6 +47,8 @@ export default function Sidebar() {
   const { theme, setTheme } = useThemeStore();
   const logout = useAuthStore((s) => s.logout);
   const desktopManaged = useAuthStore((s) => s.desktopManaged);
+  const desktopChat = supportsDesktopChat();
+  const desktopWorkspace = supportsDesktopWorkspace();
   const [collapsed, setCollapsed] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
 
@@ -60,10 +63,16 @@ export default function Sidebar() {
   const ThemeIcon = themeIcons[theme];
 
   const visibleNavItems = navItems.filter((item) => {
-    if (!desktopManaged) {
-      return true;
+    if (item.key === 'chat' && !desktopChat) {
+      return false;
     }
-    return item.key !== 'projects' && item.key !== 'sessions';
+    if (item.key === 'workspace' && !desktopWorkspace) {
+      return false;
+    }
+    if (desktopManaged) {
+      return item.key !== 'projects' && item.key !== 'sessions';
+    }
+    return true;
   });
 
   return (

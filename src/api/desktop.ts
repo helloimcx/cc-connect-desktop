@@ -7,6 +7,7 @@ import type {
   DesktopSettings,
   DesktopSettingsInput,
 } from '../../shared/desktop';
+import { isDesktopApp } from '@/app/runtime';
 
 function requireDesktop() {
   if (!window.desktop) {
@@ -14,8 +15,6 @@ function requireDesktop() {
   }
   return window.desktop;
 }
-
-export const isDesktopApp = () => Boolean(window.desktop);
 
 export const getRuntimeStatus = (): Promise<DesktopRuntimeStatus> => requireDesktop().getRuntimeStatus();
 export const startDesktopService = () => requireDesktop().startService();

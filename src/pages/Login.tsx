@@ -6,7 +6,7 @@ import { useAuthStore } from '@/store/auth';
 import { useThemeStore } from '@/store/theme';
 import { api } from '@/api/client';
 import { getStatus } from '@/api/status';
-import { isDesktopApp } from '@/api/desktop';
+import { isDesktopApp, isWebApp } from '@/app/runtime';
 
 const languages = [
   { code: 'en', label: 'EN' },
@@ -25,10 +25,12 @@ export default function Login() {
   const [serverUrl, setServerUrl] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const desktop = isDesktopApp();
+  const web = isWebApp();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token.trim()) return;
+    if (!token.trim() || (web && !serverUrl.trim())) return;
     setLoading(true);
     setError('');
     try {
@@ -38,7 +40,7 @@ export default function Login() {
       api.setToken(token.trim());
       await getStatus();
       login(token.trim(), serverUrl.trim());
-      if (isDesktopApp()) {
+      if (desktop) {
         window.location.hash = '#/';
       } else {
         navigate('/', { replace: true });
@@ -93,7 +95,12 @@ export default function Login() {
           </div>
           
           <h1 className="text-2xl font-bold text-center text-gray-900 dark:text-white mb-1">{t('login.title')}</h1>
-          <p className="text-sm text-center text-gray-500 dark:text-gray-400 mb-8">{t('login.subtitle')}</p>
+          <p className="text-sm text-center text-gray-500 dark:text-gray-400 mb-3">{t('login.subtitle')}</p>
+          <div className="mb-8 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-900/60 px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
+            {desktop
+              ? 'Desktop app mode connects to the local managed runtime automatically.'
+              : 'Web admin mode manages a remote cc-connect instance. Enter both a server URL and management token.'}
+          </div>
 
           {error && (
             <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-lg px-4 py-3 mb-4">
@@ -128,7 +135,7 @@ export default function Login() {
             </div>
             <button
               type="submit"
-              disabled={loading || !token.trim()}
+              disabled={loading || !token.trim() || (web && !serverUrl.trim())}
               className="w-full py-2.5 rounded-xl bg-accent text-black font-semibold text-sm hover:bg-accent-dim transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? (

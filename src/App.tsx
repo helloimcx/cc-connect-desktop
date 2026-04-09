@@ -13,6 +13,7 @@ import CronList from '@/pages/Cron/CronList';
 import BridgeAdapters from '@/pages/Bridge/BridgeAdapters';
 import SystemConfig from '@/pages/System/Config';
 import SystemLogs from '@/pages/System/Logs';
+import { supportsDesktopChat, supportsDesktopWorkspace } from '@/app/runtime';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -49,15 +50,17 @@ function DesktopSessionsRedirect() {
 export default function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const desktopManaged = useAuthStore((s) => s.desktopManaged);
+  const desktopChat = supportsDesktopChat();
+  const desktopWorkspace = supportsDesktopWorkspace();
 
   return (
     <Routes>
       <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
-        <Route path="chat" element={<DesktopChat />} />
-        <Route path="workspace" element={<DesktopWorkspace />} />
-        <Route path="projects" element={desktopManaged ? <Navigate to="/workspace" replace /> : <ProjectList />} />
+        <Route path="chat" element={desktopChat ? <DesktopChat /> : <Navigate to="/" replace />} />
+        <Route path="workspace" element={desktopWorkspace ? <DesktopWorkspace /> : <Navigate to="/" replace />} />
+        <Route path="projects" element={desktopManaged && desktopWorkspace ? <Navigate to="/workspace" replace /> : <ProjectList />} />
         <Route path="projects/:name" element={<DesktopProjectRedirect />} />
         <Route path="sessions" element={<DesktopSessionsRedirect />} />
         <Route path="sessions/:project/:id" element={<DesktopSessionsRedirect />} />

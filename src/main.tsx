@@ -1,7 +1,7 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, HashRouter } from 'react-router-dom';
+import { HashRouter } from 'react-router-dom';
 import App from './App';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { Button } from './components/ui';
@@ -9,8 +9,9 @@ import './index.css';
 import './i18n';
 import { useAuthStore } from './store/auth';
 import { useThemeStore } from './store/theme';
-import { getDesktopLogs, getRuntimeStatus, isDesktopApp, onRuntimeEvent } from './api/desktop';
+import { getDesktopLogs, getRuntimeStatus, onRuntimeEvent } from './api/desktop';
 import { api } from './api/client';
+import { isDesktopApp } from './app/runtime';
 
 useAuthStore.getState().init();
 useThemeStore.getState().init();
@@ -136,11 +137,10 @@ function BootstrapApp() {
     return <BootstrapFailureScreen message={state.message} logs={state.logs} onRetry={() => void bootstrap()} />;
   }
 
-  const Router = isDesktopApp() ? HashRouter : BrowserRouter;
   return (
-    <Router>
+    <HashRouter>
       <App />
-    </Router>
+    </HashRouter>
   );
 }
 

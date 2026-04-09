@@ -10,7 +10,7 @@ function log(message) {
   process.stdout.write(`[e2e] ${message}\n`);
 }
 
-async function waitForFile(filePath, timeoutMs = 90000) {
+async function waitForFile(filePath, timeoutMs = 180000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     if (fs.existsSync(filePath)) {

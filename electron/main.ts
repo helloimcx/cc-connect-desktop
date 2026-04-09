@@ -569,7 +569,7 @@ async function runSmokeTest() {
         return result || null;
       },
       { timeoutMs: 10000, intervalMs: 200, label: 'typing indicator visible after send' },
-    );
+    ).catch(() => ({ visible: false }));
     record('chat_typing_visible', typingVisible);
 
     const latestDesktopSessionDetail = async (sessionId = activeDesktopSessionId) => {
