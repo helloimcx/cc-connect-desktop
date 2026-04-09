@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { supportsDesktopChat } from '@/app/runtime';
+import { getRuntimeProvider, supportsDesktopChat } from '@/app/runtime';
 
 const routeTitles: Record<string, string> = {
   '/': 'nav.dashboard',
@@ -20,12 +20,20 @@ export default function Header() {
   const { pathname } = useLocation();
   const [spinning, setSpinning] = useState(false);
   const desktopChat = supportsDesktopChat();
+  const runtimeProvider = getRuntimeProvider();
 
   const matchedTitleKey =
     Object.entries(routeTitles).find(([path]) =>
       path === '/' ? pathname === '/' : pathname.startsWith(path)
     )?.[1] || 'nav.dashboard';
-  const titleKey = matchedTitleKey === 'nav.chat' && !desktopChat ? 'nav.chatWeb' : matchedTitleKey;
+  const titleKey =
+    matchedTitleKey === 'nav.chat'
+      ? !desktopChat
+        ? 'nav.chatWeb'
+        : runtimeProvider === 'electron'
+          ? 'nav.chatDesktop'
+          : 'nav.chat'
+      : matchedTitleKey;
 
   const handleRefresh = () => {
     setSpinning(true);

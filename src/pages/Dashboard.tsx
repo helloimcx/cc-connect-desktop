@@ -13,7 +13,7 @@ import {
 } from '@/api/desktop';
 import { formatUptime } from '@/lib/utils';
 import type { DesktopRuntimeStatus } from '../../shared/desktop';
-import { supportsDesktopRuntime, supportsDesktopWorkspace } from '@/app/runtime';
+import { getRuntimeProvider, supportsDesktopRuntime, supportsDesktopWorkspace } from '@/app/runtime';
 
 function formatRuntimePhase(phase?: DesktopRuntimeStatus['phase']) {
   switch (phase) {
@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const desktopRuntime = supportsDesktopRuntime();
   const desktopWorkspace = supportsDesktopWorkspace();
+  const localCoreManaged = getRuntimeProvider() === 'local_core';
 
   const fetchData = useCallback(async (runtimeOverride?: DesktopRuntimeStatus | null) => {
     try {
@@ -98,9 +99,13 @@ export default function Dashboard() {
         <Card>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Desktop Runtime</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                {localCoreManaged ? 'Local AI Core' : 'Desktop Runtime'}
+              </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Local `cc-connect` process, management API, and desktop bridge status.
+                {localCoreManaged
+                  ? 'Local AI Core runtime, adapter state, and bridge connectivity for your local app.'
+                  : 'Local `cc-connect` process, management API, and desktop bridge status.'}
               </p>
             </div>
             <div className="flex gap-2">
@@ -132,8 +137,8 @@ export default function Dashboard() {
 
           {runtime?.pendingRestart && (
             <div className="mt-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-700 px-4 py-3 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
-              Config changes are already saved to disk, but the running desktop service is still using the previous state.
-              Restart the service to apply the latest config.
+              Config changes are already saved to disk, but the running runtime is still using the previous state.
+              Restart it to apply the latest config.
             </div>
           )}
 
@@ -210,9 +215,13 @@ export default function Dashboard() {
         <Card>
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Desktop Channel</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                {localCoreManaged ? 'Conversation Runtime' : 'Desktop Channel'}
+              </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Open the dedicated chat UI to use this app as the `desktop` bridge channel.
+                {localCoreManaged
+                  ? 'Open the dedicated chat UI to work with your local AI Core conversation runtime.'
+                  : 'Open the dedicated chat UI to use this app as the `desktop` bridge channel.'}
               </p>
             </div>
             <Link to="/chat">

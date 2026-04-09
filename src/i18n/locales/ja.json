@@ -1,7 +1,8 @@
 {
   "nav": {
     "dashboard": "ダッシュボード",
-    "chat": "デスクトップチャット",
+    "chat": "チャット",
+    "chatDesktop": "デスクトップチャット",
     "chatWeb": "チャット",
     "workspace": "ワークスペース",
     "projects": "プロジェクト",

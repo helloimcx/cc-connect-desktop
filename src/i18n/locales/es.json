@@ -1,7 +1,8 @@
 {
   "nav": {
     "dashboard": "Panel",
-    "chat": "Chat de escritorio",
+    "chat": "Chat",
+    "chatDesktop": "Chat de escritorio",
     "chatWeb": "Chat",
     "workspace": "Espacio de trabajo",
     "projects": "Proyectos",

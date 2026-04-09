@@ -18,6 +18,7 @@ import {
   Languages,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getRuntimeProvider } from '@/app/runtime';
 import { useThemeStore } from '@/store/theme';
 import { useAuthStore } from '@/store/auth';
 import { useState } from 'react';
@@ -50,6 +51,7 @@ export default function Sidebar() {
   const desktopChat = supportsDesktopChat();
   const chatRoute = supportsChatRoute();
   const desktopWorkspace = supportsDesktopWorkspace();
+  const runtimeProvider = getRuntimeProvider();
   const [collapsed, setCollapsed] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
 
@@ -122,7 +124,17 @@ export default function Sidebar() {
             }
           >
             <Icon size={20} className="shrink-0" />
-            {!collapsed && <span>{key === 'chat' && !desktopChat ? t('nav.chatWeb') : t(`nav.${key}`)}</span>}
+            {!collapsed && (
+              <span>
+                {key === 'chat'
+                  ? !desktopChat
+                    ? t('nav.chatWeb')
+                    : runtimeProvider === 'electron'
+                      ? t('nav.chatDesktop')
+                      : t('nav.chat')
+                  : t(`nav.${key}`)}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>

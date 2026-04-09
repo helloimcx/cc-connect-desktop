@@ -38,6 +38,8 @@ import {
   normalizePermissionResponse,
   supportsInteractivePermission,
 } from '../../../shared/desktop';
+import { getRuntimeProvider } from '@/app/runtime';
+import { getRuntimeBranding } from '@/lib/runtime-branding';
 
 const ASSISTANT_REPLY_TIMEOUT_MS = 90000;
 
@@ -180,7 +182,11 @@ function isPermissionActionRow(rows: DesktopBridgeButtonOption[][]) {
 
 function permissionSupportMessage(agentType?: string) {
   const name = agentType || 'This agent';
-  return `${name} cannot continue interactive permission approvals in Desktop Chat. Switch to opencode, claudecode, or acp, or adjust the agent permissions/work_dir before retrying.`;
+  const branding = getRuntimeBranding();
+  if (branding.permissionUnsupportedLabel.startsWith('This agent')) {
+    return branding.permissionUnsupportedLabel;
+  }
+  return `${name} ${branding.permissionUnsupportedLabel.replace(/^This agent\s+/i, '')}`;
 }
 
 function formatTaskHint(taskState: ChatTaskState, typing: boolean) {
@@ -236,6 +242,9 @@ export default function DesktopChat() {
   const taskStateRef = useRef<ChatTaskState>('idle');
   const requestedProject = searchParams.get('project') || '';
   const requestedSessionId = searchParams.get('session') || '';
+  const branding = getRuntimeBranding();
+  const runtimeProvider = getRuntimeProvider();
+  const showSessionKey = runtimeProvider === 'electron';
 
   const serviceRunning = runtime?.phase === 'api_ready' || runtime?.phase === 'bridge_ready';
   const bridgeConnected = runtime?.bridge.status === 'connected';
@@ -282,11 +291,11 @@ export default function DesktopChat() {
       updateTaskState('idle');
       setBridgeError(
         mode === 'permission_continue'
-          ? 'Permission response was sent, but the agent did not continue. This agent or request may not support desktop continuation.'
+          ? branding.replyTimeoutLabel
           : 'Agent did not respond in time. Check Desktop Runtime logs or adjust the model/provider.',
       );
     }, ASSISTANT_REPLY_TIMEOUT_MS);
-  }, [clearReplyTimeout, updateTaskState]);
+  }, [branding.replyTimeoutLabel, clearReplyTimeout, updateTaskState]);
 
   const clearActionStatuses = useCallback(() => {
     setMessages((current) =>
@@ -980,9 +989,9 @@ export default function DesktopChat() {
           <div className="p-5 border-b border-gray-200/80 dark:border-white/[0.08] space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Desktop Chat</h2>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{branding.chatHeading}</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Search sessions, jump across projects, and keep one live desktop conversation open.
+                  {branding.chatDescription}
                 </p>
               </div>
               <Button size="sm" variant="secondary" onClick={() => void refreshRuntime()}>
@@ -991,14 +1000,14 @@ export default function DesktopChat() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Compose in project</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{branding.scopeLabel}</label>
               <select
                 value={selectedProject}
                 onChange={(event) => setSelectedProject(event.target.value)}
                 data-testid="desktop-chat-project-select"
                 className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300/90 dark:border-white/[0.1] bg-white/90 dark:bg-[rgba(0,0,0,0.45)] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/45 focus:border-accent"
               >
-                <option value="">Select a project</option>
+                <option value="">{branding.scopeSelectPlaceholder}</option>
                 {projects.map((project) => (
                   <option key={project} value={project}>
                     {project}
@@ -1012,7 +1021,7 @@ export default function DesktopChat() {
               <Input
                 value={sessionSearch}
                 onChange={(event) => setSessionSearch(event.target.value)}
-                placeholder="Search sessions, users, or message preview"
+                placeholder={branding.searchPlaceholder}
                 data-testid="desktop-chat-session-search"
                 className="pl-9"
               />
@@ -1025,10 +1034,10 @@ export default function DesktopChat() {
                 disabled={runtime?.phase === 'starting' || serviceRunning}
                 data-testid="desktop-chat-start-service"
               >
-                {serviceRunning ? formatRuntimePhase(runtime?.phase) : runtime?.phase === 'starting' ? 'Starting…' : 'Start Service'}
+                {serviceRunning ? formatRuntimePhase(runtime?.phase) : runtime?.phase === 'starting' ? branding.startingRuntimeLabel : branding.startRuntimeLabel}
               </Button>
               <Button size="sm" variant="secondary" onClick={handleCreateNew} data-testid="desktop-chat-new-chat">
-                <MessageSquarePlus size={14} /> New chat
+                <MessageSquarePlus size={14} /> {branding.newThreadLabel}
               </Button>
             </div>
 
@@ -1039,17 +1048,16 @@ export default function DesktopChat() {
             )}
             {runtime?.pendingRestart && (
               <div className="text-xs rounded-lg border border-amber-200 bg-amber-50 text-amber-700 px-3 py-2 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
-                The latest config is already saved, but this chat is still using the previous runtime state. Restart the
-                desktop service to apply it.
+                {branding.pendingRestartLabel}
               </div>
             )}
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 space-y-4">
             {!selectedProject && filteredSessionGroups.length === 0 ? (
-              <EmptyState message="Select a project to start messaging." />
+              <EmptyState message={branding.emptySelectionLabel} />
             ) : filteredSessionGroups.length === 0 ? (
-              <EmptyState message="No matching sessions." />
+              <EmptyState message={branding.emptySearchLabel} />
             ) : (
               filteredSessionGroups.map((group) => (
                 <section key={group.project} className="space-y-2">
@@ -1067,16 +1075,16 @@ export default function DesktopChat() {
                   >
                     <div>
                       <p className="text-sm font-medium">{group.project}</p>
-                      <p className="text-[10px] uppercase tracking-wide opacity-70">{group.sessions.length} sessions</p>
+                      <p className="text-[10px] uppercase tracking-wide opacity-70">{group.sessions.length} {branding.collectionLabel}</p>
                     </div>
                     {group.project === selectedProject && (
-                      <span className="text-[10px] uppercase tracking-wide text-accent">active project</span>
+                      <span className="text-[10px] uppercase tracking-wide text-accent">{branding.activeScopeLabel}</span>
                     )}
                   </button>
 
                   {group.sessions.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-gray-200/80 dark:border-white/[0.08] px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
-                      No desktop sessions yet.
+                      {branding.emptyThreadsLabel}
                     </div>
                   ) : (
                     group.sessions.map((session) => (
@@ -1123,9 +1131,11 @@ export default function DesktopChat() {
                                 {session.last_message.content.replace(/\n/g, ' ')}
                               </p>
                             )}
-                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">
-                              {session.session_key}
-                            </p>
+                            {showSessionKey && (
+                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">
+                                {session.session_key}
+                              </p>
+                            )}
                           </button>
 
                           <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -1175,7 +1185,7 @@ export default function DesktopChat() {
                   className="text-lg font-semibold text-gray-900 dark:text-white"
                   data-testid="desktop-chat-active-title"
                 >
-                  {activeSessionName || 'New desktop conversation'}
+                  {activeSessionName || branding.activeConversationFallback}
                 </h2>
                 <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
                   {selectedProject ? (
@@ -1183,19 +1193,19 @@ export default function DesktopChat() {
                       {selectedProject}
                     </span>
                   ) : (
-                    <span>Select a project to start chatting.</span>
+                    <span>{branding.startConversationLabel}</span>
                   )}
-                  {activeSessionKey ? <span>{activeSessionKey}</span> : null}
+                  {showSessionKey && activeSessionKey ? <span>{activeSessionKey}</span> : null}
                   <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-white/[0.06] px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-300">
                     {formatRuntimePhase(runtime?.phase)}
                   </span>
                   {bridgeConnected ? (
                     <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                      <Circle size={6} className="fill-current" /> bridge online
+                      <Circle size={6} className="fill-current" /> {branding.runtimeOnlineLabel}
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1">
-                      <WifiOff size={12} /> bridge offline
+                      <WifiOff size={12} /> {branding.runtimeOfflineLabel}
                     </span>
                   )}
                 </div>
@@ -1206,7 +1216,7 @@ export default function DesktopChat() {
           <div className="flex-1 overflow-y-auto py-6 space-y-5">
             {renderedMessages.length === 0 ? (
               <p className="text-center text-sm text-gray-400 py-12">
-                Send a message to create a desktop session in the selected project.
+                {branding.emptyConversationLabel}
               </p>
             ) : (
               renderedMessages.map((message) => {
@@ -1321,7 +1331,7 @@ export default function DesktopChat() {
                   }
                 }}
                 rows={4}
-                placeholder={!serviceRunning ? 'Start the service first' : !bridgeConnected ? 'Waiting for the desktop bridge to connect' : taskRunning ? 'Task is running. Click stop to interrupt.' : 'Send a message to the desktop channel'}
+                placeholder={!serviceRunning ? branding.startFirstPlaceholder : !bridgeConnected ? branding.waitingRuntimePlaceholder : taskRunning ? 'Task is running. Click stop to interrupt.' : branding.sendPlaceholder}
                 disabled={!serviceRunning || !bridgeConnected || sending || !selectedProject || taskRunning}
                 className="min-h-[112px] resize-none"
               />

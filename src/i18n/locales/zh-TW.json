@@ -1,7 +1,8 @@
 {
   "nav": {
     "dashboard": "總覽",
-    "chat": "桌面聊天",
+    "chat": "聊天",
+    "chatDesktop": "桌面聊天",
     "chatWeb": "聊天",
     "workspace": "工作區",
     "projects": "專案",

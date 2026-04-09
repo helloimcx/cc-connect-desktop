@@ -3,7 +3,7 @@ import { useAuthStore } from '@/store/auth';
 import Layout from '@/components/Layout/Layout';
 import Login from '@/pages/Login';
 import Dashboard from '@/pages/Dashboard';
-import DesktopChat from '@/pages/Desktop/Chat';
+import ThreadChat from '@/pages/Threads/ThreadChat';
 import WebChat from '@/pages/Web/Chat';
 import DesktopWorkspace from '@/pages/Desktop/Workspace';
 import ProjectList from '@/pages/Projects/ProjectList';
@@ -60,7 +60,7 @@ export default function App() {
       <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
-        <Route path="chat" element={chatRoute ? (desktopChat ? <DesktopChat /> : <WebChat />) : <Navigate to="/" replace />} />
+        <Route path="chat" element={chatRoute ? (desktopChat ? <ThreadChat /> : <WebChat />) : <Navigate to="/" replace />} />
         <Route path="workspace" element={desktopWorkspace ? <DesktopWorkspace /> : <Navigate to="/" replace />} />
         <Route path="projects" element={desktopManaged && desktopWorkspace ? <Navigate to="/workspace" replace /> : <ProjectList />} />
         <Route path="projects/:name" element={<DesktopProjectRedirect />} />
