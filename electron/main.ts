@@ -306,6 +306,181 @@ async function runSmokeTest() {
       async () => {
         const ready = await window.webContents.executeJavaScript(
           `(() => {
+            const button = document.querySelector('[data-testid="desktop-workspace-add-project"]');
+            return button instanceof HTMLButtonElement ? true : null;
+          })()`,
+          true,
+        );
+        return ready ? true : null;
+      },
+      { timeoutMs: 30000, label: 'workspace project controls ready' },
+    );
+    record('workspace_project_controls_ready');
+
+    const projectAdded = await window.webContents.executeJavaScript(
+      `(() => {
+        const button = document.querySelector('[data-testid="desktop-workspace-add-project"]');
+        if (!(button instanceof HTMLButtonElement)) {
+          return false;
+        }
+        button.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!projectAdded) {
+      throw new Error('Smoke test could not add a project in Workspace');
+    }
+
+    const projectRendered = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const projects = Array.from(document.querySelectorAll('[data-testid^="desktop-workspace-project-card-"]'));
+            const projectNameInput = document.querySelector('[data-testid="desktop-workspace-project-name"]');
+            const bodyText = document.body?.innerText || '';
+            return projectNameInput instanceof HTMLInputElement
+              ? {
+                  count: projects.length,
+                  projectName: projectNameInput.value,
+                  dirty: bodyText.includes('You have unsaved changes'),
+                }
+              : null;
+          })()`,
+          true,
+        );
+        return result?.count === 2 &&
+          result?.projectName === 'project-2' &&
+          result?.dirty
+          ? result
+          : null;
+      },
+      { timeoutMs: 30000, label: 'workspace project added' },
+    );
+    record('workspace_project_added', projectRendered);
+
+    const projectPersistedAfterUrlSync = await window.webContents.executeJavaScript(
+      `new Promise((resolve) => {
+        window.setTimeout(() => {
+          const projects = Array.from(document.querySelectorAll('[data-testid^="desktop-workspace-project-card-"]'));
+          const projectNameInput = document.querySelector('[data-testid="desktop-workspace-project-name"]');
+          resolve(
+            projectNameInput instanceof HTMLInputElement
+              ? {
+                  count: projects.length,
+                  projectName: projectNameInput.value,
+                  hash: window.location.hash || '',
+                }
+              : null,
+          );
+        }, 300);
+      })`,
+      true,
+    );
+    if (
+      !projectPersistedAfterUrlSync ||
+      projectPersistedAfterUrlSync.count !== 2 ||
+      projectPersistedAfterUrlSync.projectName !== 'project-2'
+    ) {
+      throw new Error('Workspace project add did not persist after selection sync');
+    }
+    record('workspace_project_add_persisted', projectPersistedAfterUrlSync);
+
+    const projectReselected = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const card = document.querySelector('[data-testid="desktop-workspace-project-card-0"]');
+            const selectButton = card?.querySelector('button');
+            const projectNameInput = document.querySelector('[data-testid="desktop-workspace-project-name"]');
+            if (!(selectButton instanceof HTMLButtonElement)) {
+              return null;
+            }
+            selectButton.click();
+            return projectNameInput instanceof HTMLInputElement ? projectNameInput.value : null;
+          })()`,
+          true,
+        );
+        return result === 'desktop-demo' ? result : null;
+      },
+      { timeoutMs: 30000, label: 'workspace project reselected' },
+    );
+    record('workspace_project_reselected', { projectName: projectReselected });
+
+    const workspaceConfigApplied = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const button = document.querySelector('[data-testid="desktop-workspace-save-restart"]');
+            const bodyText = document.body?.innerText || '';
+            if (!(button instanceof HTMLButtonElement)) {
+              return null;
+            }
+            if (!bodyText.includes('Workspace config applied')) {
+              button.click();
+              return null;
+            }
+            const projects = Array.from(document.querySelectorAll('[data-testid^="desktop-workspace-project-card-"]'));
+            return {
+              bodyText,
+              projects: projects.length,
+            };
+          })()`,
+          true,
+        );
+        return result?.projects === 2 && result?.bodyText?.includes('Workspace config applied') ? result : null;
+      },
+      { timeoutMs: 45000, label: 'workspace config saved and restarted' },
+    );
+    record('workspace_config_applied', { projects: workspaceConfigApplied.projects });
+
+    const workspaceProjectSelectionStable = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const card = document.querySelector('[data-testid="desktop-workspace-project-card-1"]');
+            const selectButton = card?.querySelector('button');
+            const projectNameInput = document.querySelector('[data-testid="desktop-workspace-project-name"]');
+            if (!(selectButton instanceof HTMLButtonElement) || !(projectNameInput instanceof HTMLInputElement)) {
+              return null;
+            }
+            if (projectNameInput.value !== 'project-2') {
+              selectButton.click();
+              return null;
+            }
+            return {
+              projectName: projectNameInput.value,
+            };
+          })()`,
+          true,
+        );
+        return result?.projectName === 'project-2' ? result : null;
+      },
+      { timeoutMs: 15000, label: 'workspace project selection stable' },
+    );
+
+    const workspaceProjectSelectionPersisted = await window.webContents.executeJavaScript(
+      `new Promise((resolve) => {
+        window.setTimeout(() => {
+          const projectNameInput = document.querySelector('[data-testid="desktop-workspace-project-name"]');
+          resolve(
+            projectNameInput instanceof HTMLInputElement
+              ? { projectName: projectNameInput.value }
+              : null,
+          );
+        }, 300);
+      })`,
+      true,
+    );
+    if (workspaceProjectSelectionPersisted?.projectName !== 'project-2') {
+      throw new Error('Workspace project selection did not persist after clicking project-2');
+    }
+    record('workspace_project_selection_stable', workspaceProjectSelectionStable);
+
+    await waitFor(
+      async () => {
+        const ready = await window.webContents.executeJavaScript(
+          `(() => {
             const button = document.querySelector('[data-testid="desktop-workspace-add-provider"]');
             return button instanceof HTMLButtonElement ? true : null;
           })()`,

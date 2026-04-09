@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Save, Trash2, Wrench } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { Button, Card, Input, Select, Textarea } from '@/components/ui';
@@ -155,6 +155,23 @@ function ensureProjects(config: DesktopConnectConfig) {
     config.projects = [];
   }
   return config.projects;
+}
+
+function createProjectDraft(index: number): DesktopProjectConfig {
+  return {
+    name: `project-${index}`,
+    agent: {
+      type: DEFAULT_DESKTOP_AGENT_TYPE,
+      options: {
+        model: getDefaultDesktopAgentModel(DEFAULT_DESKTOP_AGENT_TYPE),
+        work_dir: '.',
+      },
+      providers: [],
+    },
+    platforms: [],
+    admin_from: '',
+    disabled_commands: [],
+  };
 }
 
 function formatRuntimePhase(phase?: DesktopRuntimeStatus['phase']) {
@@ -372,6 +389,7 @@ export default function DesktopWorkspace() {
   const [autoStartService, setAutoStartService] = useState(false);
   const [defaultProject, setDefaultProject] = useState('');
   const requestedProject = searchParams.get('project') || '';
+  const requestedProjectRef = useRef(requestedProject);
   const runtimeReady = runtime?.phase === 'api_ready' || runtime?.phase === 'bridge_ready';
   const settingsDirty = useMemo(() => {
     if (!persistedSettings) {
@@ -389,6 +407,10 @@ export default function DesktopWorkspace() {
     [configDraft, persistedConfigSerialized],
   );
   const rawDirty = rawDraft !== persistedRawDraft;
+
+  useEffect(() => {
+    requestedProjectRef.current = requestedProject;
+  }, [requestedProject]);
 
   const loadAll = useCallback(async () => {
     const [nextRuntime, nextConfig] = await Promise.all([getRuntimeStatus(), readConfigFile()]);
@@ -411,15 +433,16 @@ export default function DesktopWorkspace() {
     setSelectedIndex((current) => {
       const projects = nextConfig.parsed?.projects || [];
       const total = projects.length;
-      if (requestedProject) {
-        const matchedIndex = projects.findIndex((project) => project.name === requestedProject);
+      const preferredProject = requestedProjectRef.current;
+      if (preferredProject) {
+        const matchedIndex = projects.findIndex((project) => project.name === preferredProject);
         if (matchedIndex >= 0) {
           return matchedIndex;
         }
       }
       return total === 0 ? 0 : Math.min(current, total - 1);
     });
-  }, [requestedProject]);
+  }, []);
 
   useEffect(() => {
     void loadAll();
@@ -436,6 +459,22 @@ export default function DesktopWorkspace() {
   const projectNames = useMemo(() => projects.map((project) => project.name), [projects]);
 
   useEffect(() => {
+    if (visualDirty) {
+      return;
+    }
+    if (!requestedProject) {
+      return;
+    }
+    const matchedIndex = projects.findIndex((project) => project.name === requestedProject);
+    if (matchedIndex >= 0 && matchedIndex !== selectedIndex) {
+      setSelectedIndex(matchedIndex);
+    }
+  }, [projects, requestedProject, visualDirty]);
+
+  useEffect(() => {
+    if (visualDirty) {
+      return;
+    }
     if (!selectedProject?.name) {
       return;
     }
@@ -445,7 +484,7 @@ export default function DesktopWorkspace() {
     const next = new URLSearchParams(searchParams);
     next.set('project', selectedProject.name);
     setSearchParams(next, { replace: true });
-  }, [searchParams, selectedProject?.name, setSearchParams]);
+  }, [searchParams, selectedProject?.name, setSearchParams, visualDirty]);
 
   const updateSelectedProject = useCallback((updater: (project: DesktopProjectConfig) => DesktopProjectConfig) => {
     setNotice(null);
@@ -570,26 +609,14 @@ export default function DesktopWorkspace() {
   }, [configDraft, loadAll, rawDraft, runtimeReady]);
 
   const handleAddProject = useCallback(() => {
+    const nextProjectIndex = projects.length + 1;
     setConfigDraft((current) => {
       const next = clone(current || {});
-      const projects = ensureProjects(next);
-      projects.push({
-        name: `project-${projects.length + 1}`,
-        agent: {
-          type: DEFAULT_DESKTOP_AGENT_TYPE,
-          options: {
-            model: getDefaultDesktopAgentModel(DEFAULT_DESKTOP_AGENT_TYPE),
-            work_dir: '.',
-          },
-          providers: [],
-        },
-        platforms: [],
-        admin_from: '',
-        disabled_commands: [],
-      });
+      ensureProjects(next).push(createProjectDraft(nextProjectIndex));
       return next;
     });
-    setSelectedIndex(projects.length);
+    setNotice(null);
+    setSelectedIndex(nextProjectIndex - 1);
   }, [projects.length]);
 
   const handleRemoveProject = useCallback((index: number) => {
@@ -833,15 +860,15 @@ export default function DesktopWorkspace() {
               <div className="space-y-3 border-r border-gray-200/80 dark:border-white/[0.08] pr-5">
                 <div className="flex items-center justify-between">
                   <h3 className="font-medium text-gray-900 dark:text-white">Projects</h3>
-                  <Button size="sm" onClick={handleAddProject}>
+                  <Button size="sm" onClick={handleAddProject} data-testid="desktop-workspace-add-project">
                     <Plus size={14} /> Add
                   </Button>
                 </div>
                 <div className="space-y-2">
                   {projects.map((project, index) => (
-                    <button
+                    <div
                       key={`${project.name}-${index}`}
-                      onClick={() => setSelectedIndex(index)}
+                      data-testid={`desktop-workspace-project-card-${index}`}
                       className={`w-full text-left rounded-xl px-4 py-3 border transition-colors ${
                         index === selectedIndex
                           ? 'border-accent/40 bg-accent/10'
@@ -849,22 +876,26 @@ export default function DesktopWorkspace() {
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-gray-900 dark:text-white truncate">{project.name}</span>
                         <button
                           type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleRemoveProject(index);
-                          }}
+                          onClick={() => setSelectedIndex(index)}
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <span className="font-medium text-gray-900 dark:text-white truncate block">{project.name}</span>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
+                            {project.agent?.type || 'unknown'} · {project.platforms?.length || 0} platforms
+                          </p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveProject(index)}
                           className="text-gray-400 hover:text-red-500"
+                          aria-label={`Remove project ${project.name || index + 1}`}
                         >
                           <Trash2 size={14} />
                         </button>
                       </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
-                        {project.agent?.type || 'unknown'} · {project.platforms?.length || 0} platforms
-                      </p>
-                    </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -879,6 +910,7 @@ export default function DesktopWorkspace() {
                     <div className="grid grid-cols-2 gap-4">
                       <Input
                         label="Project name"
+                        data-testid="desktop-workspace-project-name"
                         value={selectedProject.name}
                         onChange={(event) =>
                           updateSelectedProject((project) => ({ ...project, name: event.target.value }))
@@ -1510,6 +1542,7 @@ export default function DesktopWorkspace() {
                       </Button>
                       <Button
                         variant="secondary"
+                        data-testid="desktop-workspace-save-restart"
                         onClick={() => void handleSaveAndRestart()}
                         loading={pendingAction === 'save-restart'}
                         disabled={!visualDirty && !restartPending && pendingAction !== 'save-restart'}

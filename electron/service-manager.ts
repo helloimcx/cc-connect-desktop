@@ -18,6 +18,7 @@ import * as TOML from '@iarna/toml';
 const DEFAULT_PROJECT_NAME = 'desktop-demo';
 const MANAGEMENT_READY_TIMEOUT_MS = 20000;
 const MANAGEMENT_READY_POLL_MS = 300;
+const STOP_TIMEOUT_MS = 5000;
 
 const DEFAULT_CONFIG_TEMPLATE = `# Managed by cc-connect-desktop
 [log]
@@ -162,7 +163,7 @@ export class ServiceManager extends EventEmitter {
   }
 
   async start() {
-    if (this.child && (this.state.status === 'starting' || this.state.status === 'running')) {
+    if (this.child && (this.stopping || this.state.status === 'starting' || this.state.status === 'running')) {
       return this.getServiceState();
     }
     if (this.startPromise) {
@@ -210,6 +211,9 @@ export class ServiceManager extends EventEmitter {
       child.stderr.on('data', (chunk) => this.pushLog(String(chunk).trimEnd()));
 
       child.on('spawn', () => {
+        if (this.child !== child) {
+          return;
+        }
         this.state = {
           status: 'starting',
           pid: child.pid,
@@ -219,6 +223,9 @@ export class ServiceManager extends EventEmitter {
       });
 
       child.on('exit', (code, signal) => {
+        if (this.child !== child) {
+          return;
+        }
         const stopping = this.stopping;
         const terminatingForStartupError = this.terminatingForStartupError;
         this.stopping = false;
@@ -238,6 +245,9 @@ export class ServiceManager extends EventEmitter {
       });
 
       child.on('error', (error) => {
+        if (this.child !== child) {
+          return;
+        }
         this.child = null;
         this.stopping = false;
         this.terminatingForStartupError = false;
@@ -284,10 +294,45 @@ export class ServiceManager extends EventEmitter {
 
     const child = this.child;
     this.stopping = true;
-    child.kill('SIGTERM');
-    this.child = null;
-    this.state = { status: 'stopped' };
-    this.emit('state');
+    try {
+      child.kill('SIGTERM');
+    } catch (error) {
+      this.child = null;
+      this.stopping = false;
+      this.state = {
+        status: 'error',
+        lastError: error instanceof Error ? error.message : String(error),
+      };
+      this.emit('state');
+      return this.getServiceState();
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('Timed out waiting for cc-connect to stop'));
+      }, STOP_TIMEOUT_MS);
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        child.removeListener('exit', onExit);
+        child.removeListener('error', onError);
+      };
+
+      const onExit = () => {
+        cleanup();
+        resolve();
+      };
+
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+
+      child.once('exit', onExit);
+      child.once('error', onError);
+    });
+
     return this.getServiceState();
   }
 
