@@ -85,6 +85,8 @@ function toThreadSummary(workspaceId: string, session: ManagementSession): Threa
     excerpt: threadExcerpt(session),
     participantName: session.user_name || session.chat_name,
     runId: session.live ? `run:${id}` : undefined,
+    bridgeSessionKey: session.session_key,
+    agentType: session.agent_type,
   };
 }
 
@@ -237,12 +239,43 @@ export class CcConnectController extends EventEmitter {
     return (payload.sessions || []).map((session) => toThreadSummary(workspaceId, session));
   }
 
+  async createThread(workspaceId: string, title?: string): Promise<ThreadDetail> {
+    const chatId = `core-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const sessionKey = `desktop:${workspaceId}:${chatId}`;
+    const created = await this.managementPost<{ id?: string }>(`/projects/${encodeURIComponent(workspaceId)}/sessions`, {
+      session_key: sessionKey,
+      name: title || `New thread ${new Date().toLocaleTimeString()}`,
+    });
+    const sessions = await this.managementGet<{ sessions: ManagementSession[] }>(`/projects/${encodeURIComponent(workspaceId)}/sessions`);
+    const matched =
+      (sessions.sessions || []).find((session) => session.id === created.id) ||
+      (sessions.sessions || []).find((session) => session.session_key === sessionKey);
+    if (!matched) {
+      throw new Error('Created thread could not be loaded');
+    }
+    return this.getThread(encodeThreadId(workspaceId, matched.id));
+  }
+
   async getThread(threadId: string): Promise<ThreadDetail> {
     const { workspaceId, sessionId } = decodeThreadId(threadId);
     const detail = await this.managementGet<ManagementSessionDetail>(
       `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}?history_limit=200`,
     );
     return toThreadDetail(workspaceId, detail);
+  }
+
+  async renameThread(threadId: string, title: string): Promise<ThreadDetail> {
+    const { workspaceId, sessionId } = decodeThreadId(threadId);
+    await this.managementRequest('PATCH', `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}`, {
+      name: title,
+    });
+    return this.getThread(threadId);
+  }
+
+  async deleteThread(threadId: string): Promise<{ deleted: boolean }> {
+    const { workspaceId, sessionId } = decodeThreadId(threadId);
+    await this.managementRequest('DELETE', `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}`);
+    return { deleted: true };
   }
 
   async sendThreadMessage(threadId: string, content: string): Promise<{ runId: string }> {

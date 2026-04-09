@@ -1398,6 +1398,7 @@ async function runSmokeTest() {
             if (input.value !== ${JSON.stringify(renamedSessionName)}) {
               setter?.call(input, ${JSON.stringify(renamedSessionName)});
               input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
               return null;
             }
             save.click();
@@ -1442,6 +1443,7 @@ async function runSmokeTest() {
             if (input.value !== ${JSON.stringify(renamedSessionName)}) {
               setter?.call(input, ${JSON.stringify(renamedSessionName)});
               input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
               return null;
             }
             const rows = Array.from(document.querySelectorAll('[data-testid="desktop-chat-session-row"]'));
@@ -1469,6 +1471,7 @@ async function runSmokeTest() {
             if (input.value !== '__definitely_missing_session__') {
               setter?.call(input, '__definitely_missing_session__');
               input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
               return null;
             }
             return (document.body?.innerText || '').includes('No matching sessions.')

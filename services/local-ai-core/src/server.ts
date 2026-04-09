@@ -33,7 +33,10 @@ export interface LocalAiCoreBindings extends EventEmitter {
   bridgeSendMessage(input: DesktopBridgeSendInput): Promise<DesktopBridgeSendResult>;
   listWorkspaces(): Promise<WorkspaceSummary[]>;
   listThreads(workspaceId: string): Promise<ThreadSummary[]>;
+  createThread(workspaceId: string, title?: string): Promise<ThreadDetail>;
   getThread(threadId: string): Promise<ThreadDetail>;
+  renameThread(threadId: string, title: string): Promise<ThreadDetail>;
+  deleteThread(threadId: string): Promise<{ deleted: boolean }>;
   sendThreadMessage(threadId: string, content: string): Promise<{ runId: string }>;
   sendThreadAction(threadId: string, content: string): Promise<{ runId: string }>;
   interruptRun(runId: string): Promise<{ interrupted: boolean }>;
@@ -69,7 +72,7 @@ function setCorsHeaders(req: IncomingMessage, res: ServerResponse) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
@@ -214,9 +217,29 @@ export class LocalAiCoreServer {
         json(res, 200, { threads: workspaceId ? await this.bindings.listThreads(workspaceId) : [] });
         return;
       }
+      if (req.method === 'POST' && path === '/api/local/v1/threads') {
+        const body = await readJsonBody(req);
+        json(
+          res,
+          200,
+          await this.bindings.createThread(String(body.workspaceId || ''), String(body.title || '') || undefined),
+        );
+        return;
+      }
       if (req.method === 'GET' && path.startsWith('/api/local/v1/threads/')) {
         const threadId = decodeURIComponent(path.slice('/api/local/v1/threads/'.length));
         json(res, 200, await this.bindings.getThread(threadId));
+        return;
+      }
+      if (req.method === 'PATCH' && path.startsWith('/api/local/v1/threads/')) {
+        const threadId = decodeURIComponent(path.slice('/api/local/v1/threads/'.length));
+        const body = await readJsonBody(req);
+        json(res, 200, await this.bindings.renameThread(threadId, String(body.title || '')));
+        return;
+      }
+      if (req.method === 'DELETE' && path.startsWith('/api/local/v1/threads/')) {
+        const threadId = decodeURIComponent(path.slice('/api/local/v1/threads/'.length));
+        json(res, 200, await this.bindings.deleteThread(threadId));
         return;
       }
       if (req.method === 'POST' && path.startsWith('/api/local/v1/threads/') && path.endsWith('/messages')) {

@@ -20,6 +20,8 @@ export interface ThreadSummary {
   excerpt: string;
   participantName?: string;
   runId?: string;
+  bridgeSessionKey?: string;
+  agentType?: string;
 }
 
 export interface ThreadMessage {

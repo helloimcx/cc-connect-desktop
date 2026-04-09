@@ -162,8 +162,20 @@ export async function listThreads(workspaceId: string) {
   return coreRequest<{ threads: ThreadSummary[] }>('GET', `/threads?workspace_id=${encodeURIComponent(workspaceId)}`);
 }
 
+export async function createThread(workspaceId: string, title?: string) {
+  return coreRequest<ThreadDetail>('POST', '/threads', { workspaceId, title });
+}
+
 export async function getThread(threadId: string) {
   return coreRequest<ThreadDetail>('GET', `/threads/${encodeURIComponent(threadId)}`);
+}
+
+export async function renameThread(threadId: string, title: string) {
+  return coreRequest<ThreadDetail>('PATCH', `/threads/${encodeURIComponent(threadId)}`, { title });
+}
+
+export async function deleteThread(threadId: string) {
+  return coreRequest<{ deleted: boolean }>('DELETE', `/threads/${encodeURIComponent(threadId)}`);
 }
 
 export async function sendMessage(threadId: string, content: string) {
