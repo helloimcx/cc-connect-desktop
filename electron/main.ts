@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
+import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type {
@@ -9,13 +10,18 @@ import type {
   DesktopSettingsInput,
 } from '../shared/desktop.js';
 import { deriveDesktopRuntimePhase, normalizeDesktopBridgeButtonOption, supportsInteractivePermission } from '../shared/desktop.js';
+import type { LocalAiCoreBindings } from '../services/local-ai-core/src/server.js';
+import { LocalAiCoreServer } from '../services/local-ai-core/src/server.js';
 import { ServiceManager } from './service-manager.js';
 import { BridgeAdapter } from './bridge-adapter.js';
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let serviceManager: ServiceManager;
 let bridgeAdapter: BridgeAdapter;
+let localAiCoreServer: LocalAiCoreServer | null = null;
+let localAiCoreBindings: LocalAiCoreBindings | null = null;
 const smokeBridgeSendInputs: DesktopBridgeSendInput[] = [];
+const coreRunThreadMap = new Map<string, string>();
 
 const userDataOverride = process.env.CC_CONNECT_DESKTOP_USER_DATA_DIR?.trim();
 const smokeOutputPath = process.env.CC_CONNECT_DESKTOP_SMOKE_OUTPUT?.trim();
@@ -40,6 +46,21 @@ function getBridgeAdapter() {
   return bridgeAdapter;
 }
 
+function encodeThreadId(project: string, sessionId: string) {
+  return `${encodeURIComponent(project)}::${encodeURIComponent(sessionId)}`;
+}
+
+function decodeThreadId(threadId: string) {
+  const [workspacePart, sessionPart] = threadId.split('::');
+  if (!workspacePart || !sessionPart) {
+    throw new Error(`Invalid thread id: ${threadId}`);
+  }
+  return {
+    workspaceId: decodeURIComponent(workspacePart),
+    sessionId: decodeURIComponent(sessionPart),
+  };
+}
+
 function buildRuntimeStatus(bridge: ReturnType<BridgeAdapter['getState']>): Promise<DesktopRuntimeStatus> {
   return getServiceManager().getRuntimeStatus().then((runtime) => ({
     ...runtime,
@@ -50,6 +71,7 @@ function buildRuntimeStatus(bridge: ReturnType<BridgeAdapter['getState']>): Prom
 
 async function broadcastRuntime() {
   const runtime = await buildRuntimeStatus(getBridgeAdapter().getState());
+  localAiCoreBindings?.emit('runtime', runtime);
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send('desktop:runtime', runtime);
   });
@@ -117,6 +139,183 @@ function emitSmokeBridgeEvent(payload: DesktopBridgeEvent) {
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send('desktop:bridge', payload);
   });
+}
+
+async function managementRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const runtime = await buildRuntimeStatus(getBridgeAdapter().getState());
+  const response = await fetch(`${runtime.managementBaseUrl}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${runtime.settings.managementToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const payload = await response.json() as { ok?: boolean; data?: T; error?: string };
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.error || `cc-connect request failed: ${response.status}`);
+  }
+  return payload.data as T;
+}
+
+function createLocalAiCoreBindings(): LocalAiCoreBindings {
+  const bindings = new EventEmitter() as LocalAiCoreBindings;
+
+  bindings.getRuntimeStatus = () => buildRuntimeStatus(getBridgeAdapter().getState());
+  bindings.startService = async () => {
+    const result = await getServiceManager().start();
+    if (result.status === 'running') {
+      void getBridgeAdapter().connect();
+    }
+    await broadcastRuntime();
+    return result;
+  };
+  bindings.stopService = async () => {
+    getBridgeAdapter().disconnect();
+    const result = await getServiceManager().stop();
+    await broadcastRuntime();
+    return result;
+  };
+  bindings.restartService = async () => {
+    getBridgeAdapter().disconnect();
+    const result = await getServiceManager().restart();
+    if (result.status === 'running') {
+      void getBridgeAdapter().connect();
+    }
+    await broadcastRuntime();
+    return result;
+  };
+  bindings.getLogs = (limit?: number) => getServiceManager().getLogs(limit);
+  bindings.readConfigFile = () => getServiceManager().readConfigState();
+  bindings.saveRawConfigFile = (raw: string) => getServiceManager().writeRawConfig(raw);
+  bindings.saveStructuredConfigFile = (config: DesktopConnectConfig) => getServiceManager().writeStructuredConfig(config);
+  bindings.saveSettings = async (input: DesktopSettingsInput) => {
+    const settings = getServiceManager().updateSettings(input);
+    await broadcastRuntime();
+    return settings;
+  };
+  bindings.bridgeConnect = async () => {
+    const result = await getBridgeAdapter().connect();
+    await broadcastRuntime();
+    return result;
+  };
+  bindings.bridgeDisconnect = async () => {
+    const result = getBridgeAdapter().disconnect();
+    await broadcastRuntime();
+    return result;
+  };
+  bindings.bridgeSendMessage = (input: DesktopBridgeSendInput) => getBridgeAdapter().sendMessage(input);
+  bindings.listWorkspaces = async () => {
+    const payload = await managementRequest<{ projects: Array<{
+      name: string;
+      agent_type: string;
+      platforms: string[];
+      sessions_count: number;
+      heartbeat_enabled: boolean;
+    }> }>('GET', '/projects');
+    return (payload.projects || []).map((project) => ({
+      id: project.name,
+      name: project.name,
+      agentType: project.agent_type,
+      platforms: project.platforms || [],
+      sessionsCount: project.sessions_count,
+      heartbeatEnabled: Boolean(project.heartbeat_enabled),
+    }));
+  };
+  bindings.listThreads = async (workspaceId: string) => {
+    const payload = await managementRequest<{ sessions: Array<any> }>('GET', `/projects/${encodeURIComponent(workspaceId)}/sessions`);
+    return (payload.sessions || []).map((session) => ({
+      id: encodeThreadId(workspaceId, session.id),
+      workspaceId,
+      title: String(session.name || session.user_name || session.chat_name || session.id),
+      live: Boolean(session.live || session.active),
+      updatedAt: session.updated_at,
+      createdAt: session.created_at,
+      historyCount: session.history_count,
+      excerpt: session.last_message?.content?.replace(/\n/g, ' ') || '',
+      participantName: session.user_name || session.chat_name,
+      runId: session.live ? `run:${encodeThreadId(workspaceId, session.id)}` : undefined,
+    }));
+  };
+  bindings.getThread = async (threadId: string) => {
+    const { workspaceId, sessionId } = decodeThreadId(threadId);
+    const detail = await managementRequest<any>(
+      'GET',
+      `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}?history_limit=200`,
+    );
+    return {
+      id: threadId,
+      workspaceId,
+      title: String(detail.name || detail.user_name || detail.chat_name || detail.id),
+      live: Boolean(detail.live || detail.active),
+      updatedAt: detail.updated_at,
+      createdAt: detail.created_at,
+      historyCount: detail.history_count,
+      excerpt: detail.last_message?.content?.replace(/\n/g, ' ') || '',
+      participantName: detail.user_name || detail.chat_name,
+      runId: detail.live ? `run:${threadId}` : undefined,
+      messages: (detail.history || []).map((message: any, index: number) => ({
+        id: `${message.timestamp || index}-${message.role}-${index}`,
+        role: message.role === 'user' ? 'user' : message.role === 'assistant' ? 'assistant' : 'system',
+        content: message.content,
+        timestamp: message.timestamp,
+        kind: message.kind === 'progress' ? 'progress' : message.role === 'system' ? 'system' : 'final',
+      })),
+    };
+  };
+  bindings.sendThreadMessage = async (threadId: string, content: string) => {
+    const { workspaceId, sessionId } = decodeThreadId(threadId);
+    const detail = await managementRequest<any>(
+      'GET',
+      `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}?history_limit=1`,
+    );
+    const sessionKey = String(detail.session_key || '');
+    if (sessionKey.startsWith('desktop:')) {
+      const [, project = workspaceId, chatId = 'main'] = sessionKey.split(':');
+      const result = await getBridgeAdapter().sendMessage({ project, chatId, content });
+      coreRunThreadMap.set(result.messageId, threadId);
+      return { runId: result.messageId };
+    }
+    await managementRequest('POST', `/projects/${encodeURIComponent(workspaceId)}/sessions/switch`, {
+      session_key: detail.session_key,
+      session_id: detail.id,
+    }).catch(() => undefined);
+    await managementRequest('POST', `/projects/${encodeURIComponent(workspaceId)}/send`, {
+      session_key: detail.session_key,
+      message: content,
+    });
+    const runId = `run:${threadId}:${Date.now()}`;
+    coreRunThreadMap.set(runId, threadId);
+    return { runId };
+  };
+  bindings.sendThreadAction = (threadId: string, content: string) => bindings.sendThreadMessage(threadId, content);
+  bindings.interruptRun = async (runId: string) => {
+    const threadId = coreRunThreadMap.get(runId);
+    if (!threadId) {
+      return { interrupted: false };
+    }
+    const { workspaceId, sessionId } = decodeThreadId(threadId);
+    const detail = await managementRequest<any>(
+      'GET',
+      `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}?history_limit=1`,
+    );
+    const sessionKey = String(detail.session_key || '');
+    if (!sessionKey.startsWith('desktop:')) {
+      return { interrupted: false };
+    }
+    const [, project = workspaceId, chatId = 'main'] = sessionKey.split(':');
+    await getBridgeAdapter().sendMessage({ project, chatId, content: '/stop' });
+    return { interrupted: true };
+  };
+  bindings.listKnowledgeSources = async () => [];
+  bindings.getCapabilities = async () => ({
+    adapters: {
+      channels: ['cc-connect'],
+      agents: ['opencode', 'codex', 'claudecode', 'cursor', 'gemini', 'qoder', 'iflow'],
+      knowledge: false,
+    },
+  });
+  return bindings;
 }
 
 async function runSmokeTest() {
@@ -1470,9 +1669,20 @@ app.whenReady().then(async () => {
     () => getServiceManager().getSettings(),
     () => getServiceManager().getServiceState().status === 'running',
   );
+  localAiCoreBindings = createLocalAiCoreBindings();
+  localAiCoreServer = new LocalAiCoreServer(localAiCoreBindings);
 
   registerIPC();
   createWindow();
+  try {
+    await localAiCoreServer.start();
+  } catch (error: any) {
+    if (error?.code === 'EADDRINUSE') {
+      localAiCoreServer = null;
+    } else {
+      throw error;
+    }
+  }
 
   getServiceManager().on('state', () => {
     syncBridgeWithServiceState();
@@ -1485,6 +1695,7 @@ app.whenReady().then(async () => {
     void broadcastRuntime();
   });
   getBridgeAdapter().on('event', (payload) => {
+    localAiCoreBindings?.emit('bridge', payload);
     BrowserWindow.getAllWindows().forEach((window) => {
       window.webContents.send('desktop:bridge', payload);
     });
@@ -1516,4 +1727,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  void localAiCoreServer?.stop().catch(() => undefined);
 });

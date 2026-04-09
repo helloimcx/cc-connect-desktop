@@ -1,0 +1,28 @@
+[log]
+level = "info"
+
+[management]
+enabled = true
+port = 9_820
+token = "97aea37cc385046dd19d3d9ef89bc286"
+cors_origins = [ "null", "http://localhost:5173", "http://127.0.0.1:5173" ]
+
+[bridge]
+enabled = true
+port = 9_810
+token = "de6788b5a63934a23f50f588eb2fc257"
+path = "/bridge/ws"
+
+[[projects]]
+name = "desktop-demo"
+
+  [projects.agent]
+  type = "acp"
+
+    [projects.agent.options]
+    command = "opencode"
+    args = [ "acp" ]
+    work_dir = "."
+
+      [projects.agent.options.env]
+      OPENCODE_CONFIG_CONTENT = '{"model":"opencode/minimax-m2.5-free"}'

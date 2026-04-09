@@ -9,9 +9,9 @@ import './index.css';
 import './i18n';
 import { useAuthStore } from './store/auth';
 import { useThemeStore } from './store/theme';
-import { getDesktopLogs, getRuntimeStatus, onRuntimeEvent } from './api/desktop';
+import { getDesktopLogs, getRuntimeStatus, initializeDesktopProvider, onRuntimeEvent } from './api/desktop';
 import { api } from './api/client';
-import { isDesktopApp } from './app/runtime';
+import { getRuntimeProvider, supportsDesktopRuntime } from './app/runtime';
 
 useAuthStore.getState().init();
 useThemeStore.getState().init();
@@ -87,15 +87,23 @@ function BootstrapFailureScreen({
 
 function BootstrapApp() {
   const [state, setState] = useState<BootstrapState>({ status: 'loading' });
+  const [managedRuntime, setManagedRuntime] = useState(false);
 
   const bootstrap = useCallback(async () => {
     setState({ status: 'loading' });
-    if (isDesktopApp()) {
+    const provider = await initializeDesktopProvider();
+    const hasManagedRuntime = Boolean(provider);
+    setManagedRuntime(hasManagedRuntime);
+    if (hasManagedRuntime) {
       try {
         const runtime = await getRuntimeStatus();
         api.setBaseUrl(runtime.managementBaseUrl);
         api.setToken(runtime.settings.managementToken);
-        useAuthStore.getState().setDesktopSession(runtime.settings.managementToken, runtime.managementBaseUrl);
+        useAuthStore.getState().setManagedSession(
+          runtime.settings.managementToken,
+          runtime.managementBaseUrl,
+          getRuntimeProvider() === 'local_core' ? 'local_core' : 'electron',
+        );
       } catch (error) {
         let logs: string[] = [];
         try {
@@ -120,15 +128,19 @@ function BootstrapApp() {
   }, [bootstrap]);
 
   useEffect(() => {
-    if (!isDesktopApp()) {
+    if (!managedRuntime || !supportsDesktopRuntime()) {
       return;
     }
     return onRuntimeEvent((runtime) => {
       api.setBaseUrl(runtime.managementBaseUrl);
       api.setToken(runtime.settings.managementToken);
-      useAuthStore.getState().setDesktopSession(runtime.settings.managementToken, runtime.managementBaseUrl);
+      useAuthStore.getState().setManagedSession(
+        runtime.settings.managementToken,
+        runtime.managementBaseUrl,
+        getRuntimeProvider() === 'local_core' ? 'local_core' : 'electron',
+      );
     });
-  }, []);
+  }, [managedRuntime]);
 
   if (state.status === 'loading') {
     return <LoadingScreen />;

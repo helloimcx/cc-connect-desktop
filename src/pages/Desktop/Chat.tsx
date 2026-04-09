@@ -26,6 +26,7 @@ import {
   startDesktopService,
 } from '@/api/desktop';
 import { cn } from '@/lib/utils';
+import { sessionLabel, sessionMatchesSearch, sortSessionsByLiveAndUpdated, timeAgo } from '@/lib/session-utils';
 import type {
   DesktopBridgeButtonOption,
   DesktopBridgeEvent,
@@ -128,33 +129,6 @@ function formatMessageTimestamp(timestamp?: string) {
   }).format(date);
 }
 
-function sortDesktopSessions(a: Session, b: Session) {
-  if (a.live !== b.live) {
-    return a.live ? -1 : 1;
-  }
-  return (b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || '');
-}
-
-function timeAgo(iso: string) {
-  if (!iso) {
-    return '';
-  }
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) {
-    return 'just now';
-  }
-  if (mins < 60) {
-    return `${mins}m`;
-  }
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) {
-    return `${hours}h`;
-  }
-  const days = Math.floor(hours / 24);
-  return `${days}d`;
-}
-
 function formatRuntimePhase(phase?: DesktopRuntimeStatus['phase']) {
   switch (phase) {
     case 'starting':
@@ -168,26 +142,6 @@ function formatRuntimePhase(phase?: DesktopRuntimeStatus['phase']) {
     default:
       return 'stopped';
   }
-}
-
-function sessionLabel(session: Session) {
-  return session.name || session.user_name || session.chat_name || `Session ${session.id.slice(0, 8)}`;
-}
-
-function sessionMatchesSearch(session: Session, query: string) {
-  if (!query) {
-    return true;
-  }
-  const haystack = [
-    sessionLabel(session),
-    session.session_key,
-    session.last_message?.content || '',
-    session.user_name || '',
-    session.chat_name || '',
-  ]
-    .join(' ')
-    .toLowerCase();
-  return haystack.includes(query);
 }
 
 function sessionProjectFromKey(sessionKey?: string) {
@@ -478,7 +432,7 @@ export default function DesktopChat() {
       return [];
     }
     const data = await listSessions(project);
-    const nextSessions = (data.sessions || []).filter(sessionMatchesDesktop).sort(sortDesktopSessions);
+    const nextSessions = sortSessionsByLiveAndUpdated((data.sessions || []).filter(sessionMatchesDesktop));
     const activeSession = nextSessions.find((session) => session.id === activeSessionId);
     if (activeSession?.agent_type) {
       setActiveSessionAgentType(activeSession.agent_type);
@@ -502,7 +456,7 @@ export default function DesktopChat() {
           const data = await listSessions(project);
           return {
             project,
-            sessions: (data.sessions || []).filter(sessionMatchesDesktop).sort(sortDesktopSessions),
+            sessions: sortSessionsByLiveAndUpdated((data.sessions || []).filter(sessionMatchesDesktop)),
           };
         }),
       )

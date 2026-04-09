@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import { useThemeStore } from '@/store/theme';
 import { useAuthStore } from '@/store/auth';
 import { useState } from 'react';
-import { supportsDesktopChat, supportsDesktopWorkspace } from '@/app/runtime';
+import { supportsChatRoute, supportsDesktopChat, supportsDesktopWorkspace } from '@/app/runtime';
 
 const navItems = [
   { key: 'dashboard', path: '/', icon: LayoutDashboard },
@@ -48,6 +48,7 @@ export default function Sidebar() {
   const logout = useAuthStore((s) => s.logout);
   const desktopManaged = useAuthStore((s) => s.desktopManaged);
   const desktopChat = supportsDesktopChat();
+  const chatRoute = supportsChatRoute();
   const desktopWorkspace = supportsDesktopWorkspace();
   const [collapsed, setCollapsed] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
@@ -63,7 +64,7 @@ export default function Sidebar() {
   const ThemeIcon = themeIcons[theme];
 
   const visibleNavItems = navItems.filter((item) => {
-    if (item.key === 'chat' && !desktopChat) {
+    if (item.key === 'chat' && !chatRoute) {
       return false;
     }
     if (item.key === 'workspace' && !desktopWorkspace) {
@@ -121,7 +122,7 @@ export default function Sidebar() {
             }
           >
             <Icon size={20} className="shrink-0" />
-            {!collapsed && <span>{t(`nav.${key}`)}</span>}
+            {!collapsed && <span>{key === 'chat' && !desktopChat ? t('nav.chatWeb') : t(`nav.${key}`)}</span>}
           </NavLink>
         ))}
       </nav>

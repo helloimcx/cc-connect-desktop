@@ -96,7 +96,10 @@ export default function SessionList() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
           {filtered.map((s) => (
-            <Link key={`${s._project}-${s.id}`} to={`/sessions/${s._project}/${s.id}`}>
+            <Link
+              key={`${s._project}-${s.id}`}
+              to={`/sessions/${encodeURIComponent(s._project)}/${encodeURIComponent(s.id)}`}
+            >
               <div className={cn(
                 'group relative rounded-xl border p-4 transition-all duration-200 cursor-pointer h-full',
                 'bg-white/60 dark:bg-white/[0.03] backdrop-blur-sm',

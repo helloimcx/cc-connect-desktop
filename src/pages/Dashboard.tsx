@@ -13,7 +13,7 @@ import {
 } from '@/api/desktop';
 import { formatUptime } from '@/lib/utils';
 import type { DesktopRuntimeStatus } from '../../shared/desktop';
-import { isDesktopApp, supportsDesktopRuntime, supportsDesktopWorkspace } from '@/app/runtime';
+import { supportsDesktopRuntime, supportsDesktopWorkspace } from '@/app/runtime';
 
 function formatRuntimePhase(phase?: DesktopRuntimeStatus['phase']) {
   switch (phase) {
@@ -37,7 +37,6 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const desktop = isDesktopApp();
   const desktopRuntime = supportsDesktopRuntime();
   const desktopWorkspace = supportsDesktopWorkspace();
 
@@ -46,7 +45,7 @@ export default function Dashboard() {
       setLoading(true);
       setError('');
       let nextRuntime = runtimeOverride ?? null;
-      if (desktop) {
+      if (desktopRuntime) {
         nextRuntime = runtimeOverride ?? await getRuntimeStatus();
         setRuntime(nextRuntime);
         if (nextRuntime.phase !== 'api_ready' && nextRuntime.phase !== 'bridge_ready') {
@@ -63,13 +62,13 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [desktop]);
+  }, [desktopRuntime]);
 
   useEffect(() => {
     void fetchData();
     const handler = () => fetchData();
     window.addEventListener('cc:refresh', handler);
-    const stopRuntime = desktop ? onRuntimeEvent((nextRuntime) => {
+    const stopRuntime = desktopRuntime ? onRuntimeEvent((nextRuntime) => {
       setRuntime(nextRuntime);
       if (nextRuntime.phase === 'api_ready' || nextRuntime.phase === 'bridge_ready') {
         void fetchData(nextRuntime);
@@ -83,13 +82,13 @@ export default function Dashboard() {
       window.removeEventListener('cc:refresh', handler);
       stopRuntime();
     };
-  }, [desktop, fetchData]);
+  }, [desktopRuntime, fetchData]);
 
   if (loading && !status) {
     return <div className="flex items-center justify-center h-64 text-gray-400"><Activity className="animate-pulse" size={24} /></div>;
   }
 
-  if (error && !desktop) {
+  if (error && !desktopRuntime) {
     return <div className="text-center py-16 text-red-500">{error}</div>;
   }
 
@@ -174,7 +173,7 @@ export default function Dashboard() {
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{t('nav.projects')}</h3>
-          <Link to={desktop ? '/workspace' : '/projects'} className="text-xs text-accent hover:underline">{t('common.viewAll')}</Link>
+          <Link to={desktopRuntime ? '/workspace' : '/projects'} className="text-xs text-accent hover:underline">{t('common.viewAll')}</Link>
         </div>
         {projects.length === 0 ? (
           <EmptyState message={t('projects.noProjects')} icon={Layers} />
@@ -183,7 +182,7 @@ export default function Dashboard() {
             {projects.map((p) => (
               <Link
                 key={p.name}
-                to={desktop ? `/workspace?project=${encodeURIComponent(p.name)}` : `/projects/${p.name}`}
+                to={desktopRuntime ? `/workspace?project=${encodeURIComponent(p.name)}` : `/projects/${p.name}`}
                 className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors group"
               >
                 <div className="flex items-center gap-3">
@@ -227,16 +226,23 @@ export default function Dashboard() {
 
       {!desktopRuntime && (
         <Card>
-          <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-2xl bg-sky-100 dark:bg-sky-950/30 text-sky-600 dark:text-sky-300 flex items-center justify-center shrink-0">
-              <Server size={18} />
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-2xl bg-sky-100 dark:bg-sky-950/30 text-sky-600 dark:text-sky-300 flex items-center justify-center shrink-0">
+                <Server size={18} />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Web Admin</h3>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  This browser build manages a remote `cc-connect` instance. Chat is available here, while desktop runtime controls and workspace runtime settings stay in the desktop app.
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Web Admin</h3>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                This browser build manages a remote `cc-connect` instance. Desktop runtime controls, desktop chat, and workspace runtime settings stay in the desktop app.
-              </p>
-            </div>
+            <Link to="/chat">
+              <Button size="sm">
+                <Cable size={14} /> Open Chat
+              </Button>
+            </Link>
           </div>
         </Card>
       )}

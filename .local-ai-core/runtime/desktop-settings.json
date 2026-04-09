@@ -1,0 +1,11 @@
+{
+  "binaryPath": "/Users/mochuxian/code/github/cc-connect/cc-connect",
+  "configPath": "/Users/mochuxian/code/cc-connect-desktop/.local-ai-core/runtime/config.toml",
+  "autoStartService": false,
+  "defaultProject": "desktop-demo",
+  "managementPort": 9820,
+  "managementToken": "97aea37cc385046dd19d3d9ef89bc286",
+  "bridgePort": 9810,
+  "bridgeToken": "de6788b5a63934a23f50f588eb2fc257",
+  "bridgePath": "/bridge/ws"
+}

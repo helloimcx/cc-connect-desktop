@@ -7,12 +7,15 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:web": "pnpm exec vite --host 127.0.0.1 --port 5173",
+    "dev:core": "pnpm build:electron && node scripts/launch-core.mjs",
     "build": "vite build && node scripts/write-electron-package.mjs && tsc -p tsconfig.electron.json",
     "build:web": "vite build",
     "build:renderer": "vite build",
     "build:electron": "node scripts/write-electron-package.mjs && tsc -p tsconfig.electron.json",
+    "build:core": "pnpm build:electron",
     "e2e:smoke": "pnpm build && node scripts/e2e-smoke.mjs",
     "start": "node scripts/dev.mjs",
+    "start:core": "node scripts/launch-core.mjs",
     "start:prod": "node scripts/launch-electron.mjs .",
     "preview": "vite preview",
     "preview:web": "vite preview --host 127.0.0.1 --port 4173"

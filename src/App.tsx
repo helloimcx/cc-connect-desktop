@@ -4,6 +4,7 @@ import Layout from '@/components/Layout/Layout';
 import Login from '@/pages/Login';
 import Dashboard from '@/pages/Dashboard';
 import DesktopChat from '@/pages/Desktop/Chat';
+import WebChat from '@/pages/Web/Chat';
 import DesktopWorkspace from '@/pages/Desktop/Workspace';
 import ProjectList from '@/pages/Projects/ProjectList';
 import ProjectDetail from '@/pages/Projects/ProjectDetail';
@@ -13,7 +14,7 @@ import CronList from '@/pages/Cron/CronList';
 import BridgeAdapters from '@/pages/Bridge/BridgeAdapters';
 import SystemConfig from '@/pages/System/Config';
 import SystemLogs from '@/pages/System/Logs';
-import { supportsDesktopChat, supportsDesktopWorkspace } from '@/app/runtime';
+import { supportsChatRoute, supportsDesktopChat, supportsDesktopWorkspace } from '@/app/runtime';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -51,6 +52,7 @@ export default function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const desktopManaged = useAuthStore((s) => s.desktopManaged);
   const desktopChat = supportsDesktopChat();
+  const chatRoute = supportsChatRoute();
   const desktopWorkspace = supportsDesktopWorkspace();
 
   return (
@@ -58,7 +60,7 @@ export default function App() {
       <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
-        <Route path="chat" element={desktopChat ? <DesktopChat /> : <Navigate to="/" replace />} />
+        <Route path="chat" element={chatRoute ? (desktopChat ? <DesktopChat /> : <WebChat />) : <Navigate to="/" replace />} />
         <Route path="workspace" element={desktopWorkspace ? <DesktopWorkspace /> : <Navigate to="/" replace />} />
         <Route path="projects" element={desktopManaged && desktopWorkspace ? <Navigate to="/workspace" replace /> : <ProjectList />} />
         <Route path="projects/:name" element={<DesktopProjectRedirect />} />

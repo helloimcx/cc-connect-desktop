@@ -1,0 +1,21 @@
+[log]
+level = "info"
+
+[management]
+enabled = true
+port = 9_820
+token = ""
+cors_origins = [ "null", "http://localhost:5173", "http://127.0.0.1:5173" ]
+
+[bridge]
+enabled = true
+port = 9_810
+token = ""
+path = "/bridge/ws"
+
+[[projects]]
+name = "desktop-demo"
+
+  [projects.agent]
+  type = "opencode"
+  options = { }

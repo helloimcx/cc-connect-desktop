@@ -1,11 +1,12 @@
 # cc-connect-desktop
 
-`cc-connect` backend 服务的桌面管理客户端，基于 Electron + React 构建。
+`cc-connect` backend 服务的桌面管理客户端，正在演进为基于 Local AI Core 的单机版 Super AI App。
 
 ## 运行模式
 
 - **桌面模式** — Electron 启动并管理本地 `cc-connect` 进程，通过 WebSocket 桥接实现实时聊天
 - **Web 管理模式** — 通过 API Token + Server URL 连接远程 `cc-connect` 实例
+- **Local AI Core 模式** — 通过本地 `127.0.0.1:9831` 的核心服务统一提供 runtime、chat 与事件流
 
 ## 技术栈
 
@@ -16,6 +17,7 @@ React 19 · Electron 35 · Vite · TypeScript · Tailwind CSS · Zustand · i18n
 ```bash
 pnpm install
 pnpm dev          # 启动开发环境（Vite + Electron）
+pnpm start:core   # 启动已构建的 Local AI Core
 ```
 
 ## 常用命令
@@ -24,9 +26,12 @@ pnpm dev          # 启动开发环境（Vite + Electron）
 |---|---|
 | `pnpm dev` | 启动开发环境 |
 | `pnpm dev:web` | 仅启动 Web 开发服务器 |
+| `pnpm dev:core` | 构建并启动 Local AI Core |
 | `pnpm build` | 完整生产构建 |
 | `pnpm build:renderer` | 仅构建 React 前端 |
 | `pnpm build:electron` | 仅构建 Electron 主进程 |
+| `pnpm build:core` | 构建 Local AI Core 产物 |
+| `pnpm start:core` | 运行已构建的 Local AI Core |
 | `pnpm start:prod` | 运行已构建的 Electron 应用 |
 | `pnpm e2e:smoke` | E2E 冒烟测试 |
 
@@ -41,6 +46,9 @@ pnpm dev          # 启动开发环境（Vite + Electron）
 
 ```
 ├── electron/        # Electron 主进程（IPC、服务管理、WebSocket 桥接）
+├── apps/            # 未来的桌面/Web 前端壳目录
+├── packages/        # contracts、core-sdk、adapters、knowledge-api
+├── services/        # Local AI Core
 ├── src/             # React 渲染进程
 │   ├── pages/       # 页面组件
 │   ├── components/  # UI 组件库

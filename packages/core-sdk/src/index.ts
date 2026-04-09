@@ -1,0 +1,213 @@
+import type {
+  ConfigFileState,
+  DesktopBridgeEvent,
+  DesktopBridgeSendInput,
+  DesktopBridgeSendResult,
+  DesktopRuntimeStatus,
+  DesktopSettings,
+  DesktopSettingsInput,
+  DesktopServiceState,
+  KnowledgeSource,
+  LocalCoreCapabilities,
+  LocalCoreEvent,
+  ThreadDetail,
+  ThreadSummary,
+  WorkspaceSummary,
+} from '../../contracts/src';
+
+export const LOCAL_AI_CORE_ORIGIN = 'http://127.0.0.1:9831';
+export const LOCAL_AI_CORE_BASE = `${LOCAL_AI_CORE_ORIGIN}/api/local/v1`;
+
+type JsonEnvelope<T> = {
+  ok: boolean;
+  data: T;
+  error?: string;
+};
+
+const listeners = new Set<(event: LocalCoreEvent) => void>();
+let eventSource: EventSource | null = null;
+
+async function coreRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${LOCAL_AI_CORE_BASE}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await response.json() as JsonEnvelope<T>;
+  if (!response.ok || !json.ok) {
+    throw new Error(json.error || `Local AI Core request failed: ${response.status}`);
+  }
+  return json.data;
+}
+
+function ensureEventSource() {
+  if (eventSource || typeof window === 'undefined') {
+    return;
+  }
+  eventSource = new EventSource(`${LOCAL_AI_CORE_BASE}/events`);
+  const forward = (event: MessageEvent<string>) => {
+    try {
+      const payload = JSON.parse(event.data) as LocalCoreEvent;
+      listeners.forEach((listener) => listener(payload));
+    } catch {
+      // Ignore malformed payloads from a local dev server.
+    }
+  };
+  [
+    'runtime.updated',
+    'thread.updated',
+    'message.created',
+    'message.updated',
+    'run.updated',
+    'presence.updated',
+    'bridge.updated',
+  ].forEach((eventName) => {
+    eventSource?.addEventListener(eventName, forward as EventListener);
+  });
+  eventSource.onerror = () => {
+    eventSource?.close();
+    eventSource = null;
+    if (listeners.size > 0) {
+      window.setTimeout(() => ensureEventSource(), 1000);
+    }
+  };
+}
+
+function maybeCloseEventSource() {
+  if (listeners.size === 0 && eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+}
+
+export async function detectLocalAiCore(timeoutMs = 350) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${LOCAL_AI_CORE_BASE}/health`, { signal: controller.signal });
+    const json = await response.json() as JsonEnvelope<{ name: string }>;
+    return response.ok && json.ok && json.data?.name === 'local-ai-core';
+  } catch {
+    return false;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+export function subscribeEvents(listener: (event: LocalCoreEvent) => void) {
+  listeners.add(listener);
+  ensureEventSource();
+  return () => {
+    listeners.delete(listener);
+    maybeCloseEventSource();
+  };
+}
+
+export async function getCoreRuntime() {
+  return coreRequest<DesktopRuntimeStatus>('GET', '/runtime');
+}
+
+export async function startCoreService() {
+  return coreRequest<DesktopServiceState>('POST', '/runtime/service/start');
+}
+
+export async function stopCoreService() {
+  return coreRequest<DesktopServiceState>('POST', '/runtime/service/stop');
+}
+
+export async function restartCoreService() {
+  return coreRequest<DesktopServiceState>('POST', '/runtime/service/restart');
+}
+
+export async function getCoreLogs(limit?: number) {
+  const suffix = typeof limit === 'number' ? `?limit=${encodeURIComponent(String(limit))}` : '';
+  return coreRequest<string[]>('GET', `/runtime/logs${suffix}`);
+}
+
+export async function readCoreConfigFile() {
+  return coreRequest<ConfigFileState>('GET', '/runtime/config');
+}
+
+export async function saveCoreRawConfigFile(raw: string) {
+  return coreRequest<ConfigFileState>('POST', '/runtime/config/raw', { raw });
+}
+
+export async function saveCoreStructuredConfigFile(config: unknown) {
+  return coreRequest<ConfigFileState>('POST', '/runtime/config/structured', { config });
+}
+
+export async function saveCoreSettings(input: DesktopSettingsInput) {
+  return coreRequest<DesktopSettings>('POST', '/runtime/settings', input);
+}
+
+export async function coreBridgeConnect() {
+  return coreRequest<unknown>('POST', '/runtime/bridge/connect');
+}
+
+export async function coreBridgeDisconnect() {
+  return coreRequest<unknown>('POST', '/runtime/bridge/disconnect');
+}
+
+export async function coreBridgeSendMessage(input: DesktopBridgeSendInput) {
+  return coreRequest<DesktopBridgeSendResult>('POST', '/runtime/bridge/send-message', input);
+}
+
+export async function listWorkspaces() {
+  return coreRequest<{ workspaces: WorkspaceSummary[] }>('GET', '/workspaces');
+}
+
+export async function listThreads(workspaceId: string) {
+  return coreRequest<{ threads: ThreadSummary[] }>('GET', `/threads?workspace_id=${encodeURIComponent(workspaceId)}`);
+}
+
+export async function getThread(threadId: string) {
+  return coreRequest<ThreadDetail>('GET', `/threads/${encodeURIComponent(threadId)}`);
+}
+
+export async function sendMessage(threadId: string, content: string) {
+  return coreRequest<{ runId: string }>('POST', `/threads/${encodeURIComponent(threadId)}/messages`, { content });
+}
+
+export async function sendAction(threadId: string, content: string) {
+  return coreRequest<{ runId: string }>('POST', `/threads/${encodeURIComponent(threadId)}/actions`, { content });
+}
+
+export async function interruptRun(runId: string) {
+  return coreRequest<{ interrupted: boolean }>('POST', `/runs/${encodeURIComponent(runId)}/interrupt`);
+}
+
+export async function listKnowledgeSources() {
+  return coreRequest<{ sources: KnowledgeSource[] }>('GET', '/knowledge/sources');
+}
+
+export async function getCapabilities() {
+  return coreRequest<LocalCoreCapabilities>('GET', '/capabilities');
+}
+
+export function onRuntimeUpdated(listener: (runtime: DesktopRuntimeStatus) => void) {
+  return subscribeEvents((event) => {
+    if (event.type === 'runtime.updated') {
+      listener(event.runtime);
+    }
+  });
+}
+
+export function onBridgeUpdated(listener: (event: DesktopBridgeEvent) => void) {
+  return subscribeEvents((event) => {
+    if (event.type === 'bridge.updated') {
+      listener(event.bridge);
+    }
+    if (
+      event.type === 'message.created' ||
+      event.type === 'message.updated' ||
+      event.type === 'run.updated' ||
+      event.type === 'presence.updated'
+    ) {
+      if ('bridge' in event && event.bridge) {
+        listener(event.bridge);
+      }
+    }
+  });
+}
