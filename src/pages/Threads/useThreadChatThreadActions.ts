@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { deleteSession, renameSession } from '@/api/sessions';
 import { createThread, deleteThread as deleteCoreThread, renameThread } from '../../../packages/core-sdk/src';
-import type { ChatThreadSummary, SessionActionTarget } from './thread-chat-model';
+import type { ChatThreadSummary, ThreadActionTarget } from './thread-chat-model';
 import type {
   ThreadChatConversationRefs,
   ThreadChatIdentitySetters,
@@ -11,11 +11,11 @@ import type {
 } from './thread-chat-action-types';
 
 type UseThreadChatThreadActionsInput = {
-  activeSessionId: string;
+  activeThreadId: string;
   brandingNewThreadLabel: string;
-  deleteTarget: SessionActionTarget | null;
+  deleteTarget: ThreadActionTarget | null;
   renameDraft: string;
-  renameTarget: SessionActionTarget | null;
+  renameTarget: ThreadActionTarget | null;
   searchParams: URLSearchParams;
   setSearchParams: ThreadChatSearchParamsSetter;
 } & Pick<ThreadChatSharedActionContext, 'runtimeProvider' | 'selectedProject' | 'updateTaskState'> &
@@ -26,7 +26,7 @@ type UseThreadChatThreadActionsInput = {
   Pick<ThreadChatConversationRefs, 'holdBlankComposerRef' | 'nextMessageOrderRef' | 'pendingTurnRef' | 'progressSequenceByTurnRef'>;
 
 export function useThreadChatThreadActions({
-  activeSessionId,
+  activeThreadId,
   brandingNewThreadLabel,
   deleteTarget,
   renameDraft,
@@ -143,7 +143,7 @@ export function useThreadChatThreadActions({
       } else {
         await renameSession(renameTarget.project, renameTarget.id, { name });
       }
-      if (renameTarget.id === activeSessionId) {
+      if (renameTarget.id === activeThreadId) {
         setActiveSessionName(name);
       }
       await refreshSessionsForProject(renameTarget.project);
@@ -153,7 +153,7 @@ export function useThreadChatThreadActions({
       setPendingSessionAction(null);
     }
   }, [
-    activeSessionId,
+    activeThreadId,
     refreshSessionsForProject,
     renameDraft,
     renameTarget,
@@ -175,7 +175,7 @@ export function useThreadChatThreadActions({
       } else {
         await deleteSession(deleteTarget.project, deleteTarget.id);
       }
-      if (deleteTarget.id === activeSessionId) {
+      if (deleteTarget.id === activeThreadId) {
         resetBlankConversation();
       }
       await refreshSessionsForProject(deleteTarget.project);
@@ -184,7 +184,7 @@ export function useThreadChatThreadActions({
       setPendingSessionAction(null);
     }
   }, [
-    activeSessionId,
+    activeThreadId,
     deleteTarget,
     refreshSessionsForProject,
     resetBlankConversation,

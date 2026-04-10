@@ -10,11 +10,11 @@ import {
   upsertThreadInGroup,
   type ChatMessage,
   type ChatTaskState,
-  type SessionGroup,
+  type ThreadGroup,
 } from './thread-chat-model';
 
 type UseThreadChatConversationStateInput = {
-  activeSessionId: string;
+  activeThreadId: string;
   brandingReplyTimeoutLabel: string;
   setActiveRunId: Dispatch<SetStateAction<string>>;
   setActiveSessionAgentType: Dispatch<SetStateAction<string>>;
@@ -23,11 +23,11 @@ type UseThreadChatConversationStateInput = {
   setActiveSessionName: Dispatch<SetStateAction<string>>;
   setBridgeError: Dispatch<SetStateAction<string>>;
   setSelectedProject: Dispatch<SetStateAction<string>>;
-  setSessionGroups: Dispatch<SetStateAction<SessionGroup[]>>;
+  setThreadGroups: Dispatch<SetStateAction<ThreadGroup[]>>;
 };
 
 export function useThreadChatConversationState({
-  activeSessionId,
+  activeThreadId,
   brandingReplyTimeoutLabel,
   setActiveRunId,
   setActiveSessionAgentType,
@@ -36,7 +36,7 @@ export function useThreadChatConversationState({
   setActiveSessionName,
   setBridgeError,
   setSelectedProject,
-  setSessionGroups,
+  setThreadGroups,
 }: UseThreadChatConversationStateInput) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [typing, setTyping] = useState(false);
@@ -49,7 +49,7 @@ export function useThreadChatConversationState({
   const holdBlankComposerRef = useRef(false);
   const progressSequenceByTurnRef = useRef<Record<string, number>>({});
   const taskStateRef = useRef<ChatTaskState>('idle');
-  const activeSessionIdRef = useRef('');
+  const activeThreadIdRef = useRef('');
   const localCorePollGenerationRef = useRef(0);
 
   const renderedMessages = useMemo(() => sortChatMessages(messages), [messages]);
@@ -57,8 +57,8 @@ export function useThreadChatConversationState({
   const taskHint = formatTaskHint(taskState, typing);
 
   useEffect(() => {
-    activeSessionIdRef.current = activeSessionId;
-  }, [activeSessionId]);
+    activeThreadIdRef.current = activeThreadId;
+  }, [activeThreadId]);
 
   const updateTaskState = useCallback((next: ChatTaskState) => {
     taskStateRef.current = next;
@@ -155,7 +155,7 @@ export function useThreadChatConversationState({
     setActiveSessionName(detail.title);
     setActiveSessionAgentType(detail.agentType || '');
     setActiveRunId(detail.runId || '');
-    setSessionGroups((current) => upsertThreadInGroup(current, detail.workspaceId, toCoreChatThreadSummary(detail)));
+    setThreadGroups((current) => upsertThreadInGroup(current, detail.workspaceId, toCoreChatThreadSummary(detail)));
     holdBlankComposerRef.current = false;
     progressSequenceByTurnRef.current = {};
     const nextMessages = toMessagesFromThread(detail.messages || []);
@@ -169,7 +169,7 @@ export function useThreadChatConversationState({
     setActiveSessionKey,
     setActiveSessionName,
     setSelectedProject,
-    setSessionGroups,
+    setThreadGroups,
   ]);
 
   const startLocalCoreThreadPolling = useCallback((threadId: string, baselineAssistantCount: number) => {
@@ -180,12 +180,12 @@ export function useThreadChatConversationState({
     let lastSignature = '';
 
     const tick = async () => {
-      if (localCorePollGenerationRef.current !== generation || activeSessionIdRef.current !== threadId) {
+      if (localCorePollGenerationRef.current !== generation || activeThreadIdRef.current !== threadId) {
         return;
       }
       try {
         const detail = await getThread(threadId);
-        if (localCorePollGenerationRef.current !== generation || activeSessionIdRef.current !== threadId) {
+        if (localCorePollGenerationRef.current !== generation || activeThreadIdRef.current !== threadId) {
           return;
         }
         applyLocalCoreThreadDetail(detail);
@@ -206,7 +206,7 @@ export function useThreadChatConversationState({
           void tick();
         }, 1500);
       } catch (error) {
-        if (localCorePollGenerationRef.current !== generation || activeSessionIdRef.current !== threadId) {
+        if (localCorePollGenerationRef.current !== generation || activeThreadIdRef.current !== threadId) {
           return;
         }
         setTyping(false);

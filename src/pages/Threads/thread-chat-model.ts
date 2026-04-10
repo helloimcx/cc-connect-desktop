@@ -31,16 +31,20 @@ export interface ChatMessage {
 
 export type ChatTaskState = 'idle' | 'running' | 'awaiting_permission' | 'permission_submitted' | 'stopping';
 
-export interface SessionGroup {
+export interface ThreadGroup {
   project: string;
   sessions: ChatThreadSummary[];
 }
 
-export interface SessionActionTarget {
+export type SessionGroup = ThreadGroup;
+
+export interface ThreadActionTarget {
   id: string;
   name: string;
   project: string;
 }
+
+export type SessionActionTarget = ThreadActionTarget;
 
 export interface ChatThreadSummary {
   id: string;
@@ -212,19 +216,21 @@ export function normalizeBridgeActionRows(input: unknown): DesktopBridgeButtonOp
     .filter((row) => row.length > 0);
 }
 
-export function upsertSessionGroup(groups: SessionGroup[], project: string, sessions: ChatThreadSummary[]) {
+export function upsertThreadGroup(groups: ThreadGroup[], project: string, sessions: ChatThreadSummary[]) {
   const next = groups.filter((group) => group.project !== project);
   next.push({ project, sessions });
   return next.sort((a, b) => a.project.localeCompare(b.project));
 }
 
-export function upsertThreadInGroup(groups: SessionGroup[], project: string, thread: ChatThreadSummary) {
+export const upsertSessionGroup = upsertThreadGroup;
+
+export function upsertThreadInGroup(groups: ThreadGroup[], project: string, thread: ChatThreadSummary) {
   const current = groups.find((group) => group.project === project)?.sessions || [];
   const nextSessions = sortChatThreadsByLiveAndUpdated([
     thread,
     ...current.filter((item) => item.id !== thread.id),
   ]);
-  return upsertSessionGroup(groups, project, nextSessions);
+  return upsertThreadGroup(groups, project, nextSessions);
 }
 
 export function isPermissionActionRow(rows: DesktopBridgeButtonOption[][]) {

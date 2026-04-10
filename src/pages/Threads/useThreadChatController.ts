@@ -8,8 +8,8 @@ import {
   sendAction,
 } from '../../../packages/core-sdk/src';
 import {
-  type SessionActionTarget,
-  type SessionGroup,
+  type ThreadActionTarget,
+  type ThreadGroup,
 } from './thread-chat-model';
 import { useThreadChatRuntimeState } from './useThreadChatRuntimeState';
 import { useThreadChatSessionBrowser } from './useThreadChatSessionBrowser';
@@ -19,28 +19,26 @@ import { useThreadChatConversationState } from './useThreadChatConversationState
 
 export function useThreadChatController() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [projects, setProjects] = useState<string[]>([]);
-  const [selectedProject, setSelectedProject] = useState('');
-  const [sessionGroups, setSessionGroups] = useState<SessionGroup[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState('');
-  const [activeSessionKey, setActiveSessionKey] = useState('');
-  const [activeSessionName, setActiveSessionName] = useState('');
-  const [activeSessionAgentType, setActiveSessionAgentType] = useState('');
+  const [workspaceIds, setWorkspaceIds] = useState<string[]>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('');
+  const [threadGroups, setThreadGroups] = useState<ThreadGroup[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState('');
+  const [activeBridgeSessionKey, setActiveBridgeSessionKey] = useState('');
+  const [activeThreadName, setActiveThreadName] = useState('');
+  const [activeAgentType, setActiveAgentType] = useState('');
   const [activeRunId, setActiveRunId] = useState('');
   const [draft, setDraft] = useState('');
-  const [sessionSearch, setSessionSearch] = useState('');
-  const [renameTarget, setRenameTarget] = useState<SessionActionTarget | null>(null);
+  const [threadSearch, setThreadSearch] = useState('');
+  const [renameTarget, setRenameTarget] = useState<ThreadActionTarget | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<SessionActionTarget | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ThreadActionTarget | null>(null);
   const [pendingSessionAction, setPendingSessionAction] = useState<'rename' | 'delete' | null>(null);
   const [pendingBridgeActionId, setPendingBridgeActionId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [bridgeError, setBridgeError] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
-  const requestedProject = searchParams.get('project') || '';
-  const requestedSessionId = searchParams.get('session') || '';
-  const requestedWorkspaceId = requestedProject;
-  const requestedThreadId = requestedSessionId;
+  const requestedWorkspaceId = searchParams.get('project') || '';
+  const requestedThreadId = searchParams.get('session') || '';
   const branding = getRuntimeBranding();
   const {
     applyLocalCoreThreadDetail,
@@ -69,16 +67,16 @@ export function useThreadChatController() {
     typing,
     updateTaskState,
   } = useThreadChatConversationState({
-    activeSessionId,
+    activeThreadId,
     brandingReplyTimeoutLabel: branding.replyTimeoutLabel,
     setActiveRunId,
-    setActiveSessionAgentType,
-    setActiveSessionId,
-    setActiveSessionKey,
-    setActiveSessionName,
+    setActiveSessionAgentType: setActiveAgentType,
+    setActiveSessionId: setActiveThreadId,
+    setActiveSessionKey: setActiveBridgeSessionKey,
+    setActiveSessionName: setActiveThreadName,
     setBridgeError,
-    setSelectedProject,
-    setSessionGroups,
+    setSelectedProject: setSelectedWorkspaceId,
+    setThreadGroups,
   });
 
   const {
@@ -90,22 +88,18 @@ export function useThreadChatController() {
     showSessionKey,
     transportReady,
   } = useThreadChatRuntimeState({
-    requestedProject,
-    selectedProject,
-    setSelectedProject,
+    requestedProject: requestedWorkspaceId,
+    selectedProject: selectedWorkspaceId,
+    setSelectedProject: setSelectedWorkspaceId,
     clearReplyTimeout,
     updateTaskState,
     setTyping,
   });
-  const selectedWorkspaceId = selectedProject;
-  const activeThreadId = activeSessionId;
-  const activeBridgeSessionKey = activeSessionKey;
-  const activeAgentType = activeSessionAgentType;
 
   const {
-    filteredThreadGroups: filteredSessionGroups,
-    loadActiveThread: loadActiveSession,
-    refreshThreadsForWorkspace: refreshSessionsForProject,
+    filteredThreadGroups,
+    loadActiveThread,
+    refreshThreadsForWorkspace,
   } = useThreadChatSessionBrowser({
     activeThreadId,
     requestedWorkspaceId,
@@ -115,20 +109,20 @@ export function useThreadChatController() {
     searchParams,
     selectedWorkspaceId,
     serviceRunning,
-    workspaceIds: projects,
-    threadGroups: sessionGroups,
-    threadSearch: sessionSearch,
+    workspaceIds,
+    threadGroups,
+    threadSearch,
     setActiveRunId,
-    setActiveSessionAgentType,
-    setActiveSessionId,
-    setActiveSessionKey,
-    setActiveSessionName,
+    setActiveSessionAgentType: setActiveAgentType,
+    setActiveSessionId: setActiveThreadId,
+    setActiveSessionKey: setActiveBridgeSessionKey,
+    setActiveSessionName: setActiveThreadName,
     setBridgeError,
     setMessages,
-    setProjects,
+    setProjects: setWorkspaceIds,
     setSearchParams,
-    setSelectedProject,
-    setSessionGroups,
+    setSelectedProject: setSelectedWorkspaceId,
+    setThreadGroups,
     setTyping,
     applyLocalCoreThreadDetail,
     clearLocalCorePolling,
@@ -164,7 +158,7 @@ export function useThreadChatController() {
     clearReplyTimeout,
     finalizeTurnMessages,
     nextProgressMessageId,
-    refreshThreadsForWorkspace: refreshSessionsForProject,
+    refreshThreadsForWorkspace,
     reserveAssistantMessageOrder,
     reserveNextMessageOrder,
     setActiveRunId,
@@ -190,31 +184,31 @@ export function useThreadChatController() {
     openRenameModal,
   } = useThreadChatActions({
     activeRunId,
-    activeSessionId,
-    activeSessionKey,
+    activeThreadId,
+    activeBridgeSessionKey,
     brandingNewThreadLabel: branding.newThreadLabel,
     deleteTarget,
     draft,
-    loadActiveSession,
+    loadActiveThread,
     messages,
     renameDraft,
     renameTarget,
     runtimeProvider,
     searchParams,
-    selectedProject,
+    selectedWorkspaceId,
     taskState,
     updateTaskState,
     applyLocalCoreThreadDetail,
     armReplyTimeout,
     clearLocalCorePolling,
     clearReplyTimeout,
-    refreshSessionsForProject,
+    refreshSessionsForProject: refreshThreadsForWorkspace,
     reserveNextMessageOrder,
     setActiveRunId,
-    setActiveSessionAgentType,
-    setActiveSessionId,
-    setActiveSessionKey,
-    setActiveSessionName,
+    setActiveSessionAgentType: setActiveAgentType,
+    setActiveSessionId: setActiveThreadId,
+    setActiveSessionKey: setActiveBridgeSessionKey,
+    setActiveSessionName: setActiveThreadName,
     setBridgeError,
     setDeleteTarget,
     setDraft,
@@ -236,27 +230,27 @@ export function useThreadChatController() {
 
   return {
     activeRunId,
-    activeSessionId,
-    activeSessionKey,
-    activeSessionName,
+    activeSessionId: activeThreadId,
+    activeSessionKey: activeBridgeSessionKey,
+    activeSessionName: activeThreadName,
     bridgeError,
     branding,
     deleteTarget,
     draft,
     endRef,
-    filteredSessionGroups,
+    filteredSessionGroups: filteredThreadGroups,
     handleBridgeAction,
     handleCreateNew,
     handleDeleteSession,
     handleRenameSession,
     handleSend,
     handleStopTask,
-    loadActiveSession,
+    loadActiveSession: loadActiveThread,
     loading,
     openRenameModal,
     pendingBridgeActionId,
     pendingSessionAction,
-    projects,
+    projects: workspaceIds,
     refreshRuntime,
     renameDraft,
     renameTarget,
@@ -264,14 +258,14 @@ export function useThreadChatController() {
     runtime,
     sending,
     serviceRunning,
-    sessionSearch,
-    selectedProject,
+    sessionSearch: threadSearch,
+    selectedProject: selectedWorkspaceId,
     setDeleteTarget,
     setDraft,
     setRenameDraft,
     setRenameTarget,
-    setSelectedProject,
-    setSessionSearch,
+    setSelectedProject: setSelectedWorkspaceId,
+    setSessionSearch: setThreadSearch,
     showSessionKey,
     taskHint,
     taskRunning,

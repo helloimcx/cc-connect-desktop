@@ -12,11 +12,11 @@ import type {
 
 type UseThreadChatSendingActionsInput = {
   activeRunId: string;
-  activeSessionId: string;
-  activeSessionKey: string;
+  activeThreadId: string;
+  activeBridgeSessionKey: string;
   brandingNewThreadLabel: string;
   draft: string;
-  loadActiveSession: (project: string, sessionId: string) => Promise<void>;
+  loadActiveThread: (workspaceId: string, threadId: string) => Promise<void>;
   messages: ChatMessage[];
   taskState: ChatTaskState;
   armReplyTimeout: (mode?: 'reply' | 'permission_continue') => void;
@@ -32,11 +32,11 @@ type UseThreadChatSendingActionsInput = {
 
 export function useThreadChatSendingActions({
   activeRunId,
-  activeSessionId,
-  activeSessionKey,
+  activeThreadId,
+  activeBridgeSessionKey,
   brandingNewThreadLabel,
   draft,
-  loadActiveSession,
+  loadActiveThread,
   messages,
   runtimeProvider,
   selectedProject,
@@ -69,8 +69,8 @@ export function useThreadChatSendingActions({
     if (!selectedProject) {
       throw new Error('Choose a project first');
     }
-    if (activeSessionId) {
-      return { id: activeSessionId, sessionKey: activeSessionKey };
+    if (activeThreadId) {
+      return { id: activeThreadId, sessionKey: activeBridgeSessionKey };
     }
 
     if (runtimeProvider === 'local_core') {
@@ -97,7 +97,7 @@ export function useThreadChatSendingActions({
     setActiveSessionKey(sessionKey);
     setActiveSessionName(sessionLabel(created));
     if (nextId) {
-      await loadActiveSession(selectedProject, nextId);
+      await loadActiveThread(selectedProject, nextId);
     } else {
       setMessages([]);
       pendingTurnRef.current = null;
@@ -106,13 +106,13 @@ export function useThreadChatSendingActions({
     }
     return { id: nextId, sessionKey };
   }, [
-    activeSessionId,
-    activeSessionKey,
+    activeBridgeSessionKey,
+    activeThreadId,
     applyLocalCoreThreadDetail,
     brandingNewThreadLabel,
     holdBlankComposerRef,
     lastSessionByProjectRef,
-    loadActiveSession,
+    loadActiveThread,
     nextMessageOrderRef,
     pendingTurnRef,
     progressSequenceByTurnRef,
@@ -203,8 +203,8 @@ export function useThreadChatSendingActions({
     try {
       if (runtimeProvider === 'local_core' && activeRunId) {
         await interruptRun(activeRunId);
-      } else if (activeSessionKey) {
-        const [, project = selectedProject, chatId = 'main'] = activeSessionKey.split(':');
+      } else if (activeBridgeSessionKey) {
+        const [, project = selectedProject, chatId = 'main'] = activeBridgeSessionKey.split(':');
         await bridgeSendMessage({
           project,
           chatId,
@@ -224,7 +224,7 @@ export function useThreadChatSendingActions({
     }
   }, [
     activeRunId,
-    activeSessionKey,
+    activeBridgeSessionKey,
     clearLocalCorePolling,
     clearReplyTimeout,
     runtimeProvider,

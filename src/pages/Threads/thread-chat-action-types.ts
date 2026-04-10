@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { RuntimeProvider } from '@/app/runtime';
 import type { ThreadDetail } from '../../../packages/contracts/src';
-import type { ChatMessage, ChatTaskState, SessionActionTarget, SessionGroup } from './thread-chat-model';
+import type { ChatMessage, ChatTaskState, ThreadActionTarget, ThreadGroup } from './thread-chat-model';
 
 export type ThreadChatSearchParamsSetter = (
   nextInit: URLSearchParams,
@@ -45,10 +45,10 @@ export type ThreadChatIdentitySetters = {
 };
 
 export type ThreadChatModalSetters = {
-  setDeleteTarget: Dispatch<SetStateAction<SessionActionTarget | null>>;
+  setDeleteTarget: Dispatch<SetStateAction<ThreadActionTarget | null>>;
   setPendingSessionAction: Dispatch<SetStateAction<'rename' | 'delete' | null>>;
   setRenameDraft: Dispatch<SetStateAction<string>>;
-  setRenameTarget: Dispatch<SetStateAction<SessionActionTarget | null>>;
+  setRenameTarget: Dispatch<SetStateAction<ThreadActionTarget | null>>;
 };
 
 export type ThreadChatSharedActionContext = {
@@ -88,6 +88,6 @@ export type ThreadChatBrowserSetters = {
   setActiveSessionName: Dispatch<SetStateAction<string>>;
   setProjects: Dispatch<SetStateAction<string[]>>;
   setSelectedProject: Dispatch<SetStateAction<string>>;
-  setSessionGroups: Dispatch<SetStateAction<SessionGroup[]>>;
+  setThreadGroups: Dispatch<SetStateAction<ThreadGroup[]>>;
   setSearchParams: ThreadChatSearchParamsSetter;
 };

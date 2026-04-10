@@ -1,7 +1,7 @@
 import type { Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { ThreadDetail } from '../../../packages/contracts/src';
 import type { RuntimeProvider } from '@/app/runtime';
-import type { ChatMessage, ChatTaskState, SessionActionTarget } from './thread-chat-model';
+import type { ChatMessage, ChatTaskState, ThreadActionTarget } from './thread-chat-model';
 import type {
   ThreadChatCoreSetters,
   ThreadChatIdentitySetters,
@@ -14,18 +14,18 @@ import { useThreadChatThreadActions } from './useThreadChatThreadActions';
 
 type UseThreadChatActionsInput = {
   activeRunId: string;
-  activeSessionId: string;
-  activeSessionKey: string;
+  activeThreadId: string;
+  activeBridgeSessionKey: string;
   brandingNewThreadLabel: string;
-  deleteTarget: SessionActionTarget | null;
+  deleteTarget: ThreadActionTarget | null;
   draft: string;
-  loadActiveSession: (project: string, sessionId: string) => Promise<void>;
+  loadActiveThread: (workspaceId: string, threadId: string) => Promise<void>;
   messages: ChatMessage[];
   renameDraft: string;
-  renameTarget: SessionActionTarget | null;
+  renameTarget: ThreadActionTarget | null;
   runtimeProvider: RuntimeProvider;
   searchParams: URLSearchParams;
-  selectedProject: string;
+  selectedWorkspaceId: string;
   taskState: ChatTaskState;
   updateTaskState: (next: ChatTaskState) => void;
   applyLocalCoreThreadDetail: (detail: ThreadDetail) => void;
@@ -40,12 +40,12 @@ type UseThreadChatActionsInput = {
   setActiveSessionKey: Dispatch<SetStateAction<string>>;
   setActiveSessionName: Dispatch<SetStateAction<string>>;
   setBridgeError: Dispatch<SetStateAction<string>>;
-  setDeleteTarget: Dispatch<SetStateAction<SessionActionTarget | null>>;
+  setDeleteTarget: Dispatch<SetStateAction<ThreadActionTarget | null>>;
   setDraft: Dispatch<SetStateAction<string>>;
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   setPendingSessionAction: Dispatch<SetStateAction<'rename' | 'delete' | null>>;
   setRenameDraft: Dispatch<SetStateAction<string>>;
-  setRenameTarget: Dispatch<SetStateAction<SessionActionTarget | null>>;
+  setRenameTarget: Dispatch<SetStateAction<ThreadActionTarget | null>>;
   setSearchParams: (nextInit: URLSearchParams, navigateOptions?: { replace?: boolean }) => void;
   setSending: Dispatch<SetStateAction<boolean>>;
   setTyping: Dispatch<SetStateAction<boolean>>;
@@ -60,18 +60,18 @@ type UseThreadChatActionsInput = {
 
 export function useThreadChatActions({
   activeRunId,
-  activeSessionId,
-  activeSessionKey,
+  activeThreadId,
+  activeBridgeSessionKey,
   brandingNewThreadLabel,
   deleteTarget,
   draft,
-  loadActiveSession,
+  loadActiveThread,
   messages,
   renameDraft,
   renameTarget,
   runtimeProvider,
   searchParams,
-  selectedProject,
+  selectedWorkspaceId,
   taskState,
   updateTaskState,
   applyLocalCoreThreadDetail,
@@ -105,7 +105,7 @@ export function useThreadChatActions({
 }: UseThreadChatActionsInput) {
   const sharedContext: ThreadChatSharedActionContext = {
     runtimeProvider,
-    selectedProject,
+    selectedProject: selectedWorkspaceId,
     updateTaskState,
     applyLocalCoreThreadDetail,
     clearLocalCorePolling,
@@ -152,11 +152,11 @@ export function useThreadChatActions({
 
   const { handleSend, handleStopTask } = useThreadChatSendingActions({
     activeRunId,
-    activeSessionId,
-    activeSessionKey,
+    activeThreadId,
+    activeBridgeSessionKey,
     brandingNewThreadLabel,
     draft,
-    loadActiveSession,
+    loadActiveThread,
     messages,
     taskState,
     armReplyTimeout,
@@ -176,7 +176,7 @@ export function useThreadChatActions({
     handleRenameSession,
     openRenameModal,
   } = useThreadChatThreadActions({
-    activeSessionId,
+    activeThreadId,
     brandingNewThreadLabel,
     deleteTarget,
     renameDraft,
