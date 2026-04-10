@@ -1,10 +1,8 @@
-import { useCallback, useEffect, useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { listProjects } from '@/api/projects';
 import { getSession, listSessions } from '@/api/sessions';
-import { listThreads, listWorkspaces, getThread } from '../../../packages/core-sdk/src';
-import type { ThreadDetail } from '../../../packages/contracts/src';
-import type { RuntimeProvider } from '@/app/runtime';
-import type { ChatMessage, ChatTaskState, SessionGroup } from './thread-chat-model';
+import { getThread, listThreads, listWorkspaces } from '../../../packages/core-sdk/src';
+import type { SessionGroup } from './thread-chat-model';
 import {
   chatThreadMatchesSearch,
   sessionMatchesDesktop,
@@ -15,54 +13,45 @@ import {
   upsertSessionGroup,
   upsertThreadInGroup,
 } from './thread-chat-model';
+import type {
+  ThreadChatBrowserSetters,
+  ThreadChatConversationRefs,
+  ThreadChatIdentitySetters,
+  ThreadChatSendingRefs,
+  ThreadChatSharedHookContext,
+} from './thread-chat-action-types';
 
 type UseThreadChatSessionBrowserInput = {
-  activeSessionId: string;
-  requestedProject: string;
-  requestedSessionId: string;
-  runtimeDefaultProject?: string;
-  runtimeProvider: RuntimeProvider;
+  activeThreadId: string;
+  requestedWorkspaceId: string;
+  requestedThreadId: string;
+  runtimeDefaultWorkspaceId?: string;
   searchParams: URLSearchParams;
-  selectedProject: string;
   serviceRunning: boolean;
-  projects: string[];
-  sessionGroups: SessionGroup[];
-  sessionSearch: string;
-  setActiveRunId: Dispatch<SetStateAction<string>>;
-  setActiveSessionAgentType: Dispatch<SetStateAction<string>>;
-  setActiveSessionId: Dispatch<SetStateAction<string>>;
-  setActiveSessionKey: Dispatch<SetStateAction<string>>;
-  setActiveSessionName: Dispatch<SetStateAction<string>>;
-  setBridgeError: Dispatch<SetStateAction<string>>;
-  setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
-  setProjects: Dispatch<SetStateAction<string[]>>;
-  setSearchParams: (nextInit: URLSearchParams, navigateOptions?: { replace?: boolean }) => void;
-  setSelectedProject: Dispatch<SetStateAction<string>>;
-  setSessionGroups: Dispatch<SetStateAction<SessionGroup[]>>;
-  setTyping: Dispatch<SetStateAction<boolean>>;
-  applyLocalCoreThreadDetail: (detail: ThreadDetail) => void;
-  clearLocalCorePolling: () => void;
-  clearReplyTimeout: () => void;
-  updateTaskState: (next: ChatTaskState) => void;
-  holdBlankComposerRef: MutableRefObject<boolean>;
-  lastSessionByProjectRef: MutableRefObject<Record<string, string>>;
-  nextMessageOrderRef: MutableRefObject<number>;
-  pendingTurnRef: MutableRefObject<{ sessionKey: string; userOrder: number } | null>;
-  progressSequenceByTurnRef: MutableRefObject<Record<string, number>>;
-};
+  selectedWorkspaceId: string;
+  workspaceIds: string[];
+  threadGroups: SessionGroup[];
+  threadSearch: string;
+} & Pick<ThreadChatSharedHookContext, 'runtimeProvider' | 'updateTaskState'> &
+  Pick<ThreadChatSharedHookContext, 'applyLocalCoreThreadDetail' | 'clearLocalCorePolling' | 'clearReplyTimeout'> &
+  Pick<ThreadChatSharedHookContext, 'setBridgeError' | 'setMessages' | 'setTyping'> &
+  Pick<ThreadChatConversationRefs, 'holdBlankComposerRef' | 'nextMessageOrderRef' | 'pendingTurnRef' | 'progressSequenceByTurnRef'> &
+  Pick<ThreadChatSendingRefs, 'lastSessionByProjectRef'> &
+  Pick<ThreadChatIdentitySetters, 'setActiveRunId' | 'setActiveSessionAgentType' | 'setActiveSessionId' | 'setActiveSessionKey' | 'setActiveSessionName'> &
+  Pick<ThreadChatBrowserSetters, 'setProjects' | 'setSelectedProject' | 'setSessionGroups' | 'setSearchParams'>;
 
 export function useThreadChatSessionBrowser({
-  activeSessionId,
-  requestedProject,
-  requestedSessionId,
-  runtimeDefaultProject,
+  activeThreadId,
+  requestedWorkspaceId,
+  requestedThreadId,
+  runtimeDefaultWorkspaceId,
   runtimeProvider,
   searchParams,
-  selectedProject,
   serviceRunning,
-  projects,
-  sessionGroups,
-  sessionSearch,
+  selectedWorkspaceId,
+  workspaceIds,
+  threadGroups,
+  threadSearch,
   setActiveRunId,
   setActiveSessionAgentType,
   setActiveSessionId,
@@ -85,69 +74,67 @@ export function useThreadChatSessionBrowser({
   pendingTurnRef,
   progressSequenceByTurnRef,
 }: UseThreadChatSessionBrowserInput) {
-  const sessionsForSelectedProject = useMemo(
-    () => sessionGroups.find((group) => group.project === selectedProject)?.sessions || [],
-    [selectedProject, sessionGroups],
+  const threadsForSelectedWorkspace = useMemo(
+    () => threadGroups.find((group) => group.project === selectedWorkspaceId)?.sessions || [],
+    [selectedWorkspaceId, threadGroups],
   );
 
-  const filteredSessionGroups = useMemo(() => {
-    const query = sessionSearch.trim().toLowerCase();
-    return projects
-      .map((project) => {
-        const sessions = (sessionGroups.find((group) => group.project === project)?.sessions || []).filter((session) =>
-          chatThreadMatchesSearch(session, query),
+  const filteredThreadGroups = useMemo(() => {
+    const query = threadSearch.trim().toLowerCase();
+    return workspaceIds
+      .map((workspaceId) => {
+        const threads = (threadGroups.find((group) => group.project === workspaceId)?.sessions || []).filter((thread) =>
+          chatThreadMatchesSearch(thread, query),
         );
-        return { project, sessions };
+        return { project: workspaceId, sessions: threads };
       })
-      .filter((group) => group.sessions.length > 0 || (!query && group.project === selectedProject));
-  }, [projects, selectedProject, sessionGroups, sessionSearch]);
+      .filter((group) => group.sessions.length > 0 || (!query && group.project === selectedWorkspaceId));
+  }, [selectedWorkspaceId, threadGroups, threadSearch, workspaceIds]);
 
-  const refreshSessionsForProject = useCallback(async (project: string) => {
-    if (!project || !serviceRunning) {
+  const refreshThreadsForWorkspace = useCallback(async (workspaceId: string) => {
+    if (!workspaceId || !serviceRunning) {
       return [];
     }
-    const nextSessions = runtimeProvider === 'local_core'
-      ? sortChatThreadsByLiveAndUpdated((await listThreads(project)).threads.map((thread) => toCoreChatThreadSummary(thread)))
+    const nextThreads = runtimeProvider === 'local_core'
+      ? sortChatThreadsByLiveAndUpdated((await listThreads(workspaceId)).threads.map((thread) => toCoreChatThreadSummary(thread)))
       : sortChatThreadsByLiveAndUpdated(
-          ((await listSessions(project)).sessions || [])
+          ((await listSessions(workspaceId)).sessions || [])
             .filter(sessionMatchesDesktop)
-            .map((session) => toChatThreadSummary(project, session)),
+            .map((session) => toChatThreadSummary(workspaceId, session)),
         );
-    const activeSession = nextSessions.find((session) => session.id === activeSessionId);
-    if (activeSession?.agentType) {
-      setActiveSessionAgentType(activeSession.agentType);
+    const activeThread = nextThreads.find((thread) => thread.id === activeThreadId);
+    if (activeThread?.agentType) {
+      setActiveSessionAgentType(activeThread.agentType);
     }
-    setSessionGroups((current) => upsertSessionGroup(current, project, nextSessions));
-    return nextSessions;
-  }, [activeSessionId, runtimeProvider, serviceRunning, setActiveSessionAgentType, setSessionGroups]);
+    setSessionGroups((current) => upsertSessionGroup(current, workspaceId, nextThreads));
+    return nextThreads;
+  }, [activeThreadId, runtimeProvider, serviceRunning, setActiveSessionAgentType, setSessionGroups]);
 
-  const refreshProjectsAndSessions = useCallback(async () => {
+  const refreshWorkspacesAndThreads = useCallback(async () => {
     if (!serviceRunning) {
       setProjects([]);
       setSessionGroups([]);
       return [];
     }
-    const names = runtimeProvider === 'local_core'
+    const nextWorkspaceIds = runtimeProvider === 'local_core'
       ? (await listWorkspaces()).workspaces.map((workspace) => workspace.id)
       : (await listProjects()).projects.map((project) => project.name);
-    setProjects(names);
-    const groups = (
+    setProjects(nextWorkspaceIds);
+    const nextGroups = (
       await Promise.all(
-        names.map(async (project) => {
-          return {
-            project,
-            sessions: await refreshSessionsForProject(project),
-          };
-        }),
+        nextWorkspaceIds.map(async (workspaceId) => ({
+          project: workspaceId,
+          sessions: await refreshThreadsForWorkspace(workspaceId),
+        })),
       )
     ).sort((a, b) => a.project.localeCompare(b.project));
-    setSessionGroups(groups);
-    setSelectedProject((current) => current || requestedProject || runtimeDefaultProject || names[0] || '');
-    return groups;
+    setSessionGroups(nextGroups);
+    setSelectedProject((current) => current || requestedWorkspaceId || runtimeDefaultWorkspaceId || nextWorkspaceIds[0] || '');
+    return nextGroups;
   }, [
-    refreshSessionsForProject,
-    requestedProject,
-    runtimeDefaultProject,
+    refreshThreadsForWorkspace,
+    requestedWorkspaceId,
+    runtimeDefaultWorkspaceId,
     runtimeProvider,
     serviceRunning,
     setProjects,
@@ -155,27 +142,33 @@ export function useThreadChatSessionBrowser({
     setSessionGroups,
   ]);
 
-  const loadActiveSession = useCallback(async (project: string, sessionId: string) => {
-    if (!project || !sessionId || !serviceRunning) {
+  const loadActiveThread = useCallback(async (workspaceId: string, threadId: string) => {
+    if (!workspaceId || !threadId || !serviceRunning) {
       return;
     }
     clearLocalCorePolling();
     updateTaskState('idle');
     setTyping(false);
     if (runtimeProvider === 'local_core') {
-      const detail = await getThread(sessionId);
+      const detail = await getThread(threadId);
+      if (holdBlankComposerRef.current) {
+        return;
+      }
       applyLocalCoreThreadDetail(detail);
       return;
     }
-    const detail = await getSession(project, sessionId, 200);
-    lastSessionByProjectRef.current[project] = detail.id;
-    setSelectedProject(project);
+    const detail = await getSession(workspaceId, threadId, 200);
+    if (holdBlankComposerRef.current) {
+      return;
+    }
+    lastSessionByProjectRef.current[workspaceId] = detail.id;
+    setSelectedProject(workspaceId);
     setActiveSessionId(detail.id);
     setActiveSessionKey(detail.session_key);
-    setActiveSessionName(toChatThreadSummary(project, detail).name);
+    setActiveSessionName(toChatThreadSummary(workspaceId, detail).name);
     setActiveSessionAgentType(detail.agent_type || '');
     setActiveRunId('');
-    setSessionGroups((current) => upsertThreadInGroup(current, project, toChatThreadSummary(project, detail)));
+    setSessionGroups((current) => upsertThreadInGroup(current, workspaceId, toChatThreadSummary(workspaceId, detail)));
     holdBlankComposerRef.current = false;
     progressSequenceByTurnRef.current = {};
     const nextMessages = toMessages(detail.history || []);
@@ -220,14 +213,14 @@ export function useThreadChatSessionBrowser({
       clearReplyTimeout();
       return;
     }
-    void refreshProjectsAndSessions();
+    void refreshWorkspacesAndThreads();
   }, [
     clearLocalCorePolling,
     clearReplyTimeout,
     nextMessageOrderRef,
     pendingTurnRef,
     progressSequenceByTurnRef,
-    refreshProjectsAndSessions,
+    refreshWorkspacesAndThreads,
     serviceRunning,
     setActiveRunId,
     setActiveSessionAgentType,
@@ -239,32 +232,32 @@ export function useThreadChatSessionBrowser({
   ]);
 
   useEffect(() => {
-    if (!selectedProject || !serviceRunning) {
+    if (!selectedWorkspaceId || !serviceRunning) {
       return;
     }
 
-    const activeInProject = sessionsForSelectedProject.find((session) => session.id === activeSessionId);
-    if (activeInProject) {
+    const activeInWorkspace = threadsForSelectedWorkspace.find((thread) => thread.id === activeThreadId);
+    if (activeInWorkspace) {
       return;
     }
 
-    const preferredSessionId = requestedProject === selectedProject ? requestedSessionId : '';
-    const rememberedSessionId = lastSessionByProjectRef.current[selectedProject];
-    if (!activeSessionId && holdBlankComposerRef.current) {
+    const preferredThreadId = requestedWorkspaceId === selectedWorkspaceId ? requestedThreadId : '';
+    const rememberedThreadId = lastSessionByProjectRef.current[selectedWorkspaceId];
+    if (!activeThreadId && holdBlankComposerRef.current) {
       return;
     }
-    const targetSession =
-      sessionsForSelectedProject.find((session) => session.id === preferredSessionId) ||
-      sessionsForSelectedProject.find((session) => session.id === rememberedSessionId) ||
-      sessionsForSelectedProject[0];
+    const targetThread =
+      threadsForSelectedWorkspace.find((thread) => thread.id === preferredThreadId) ||
+      threadsForSelectedWorkspace.find((thread) => thread.id === rememberedThreadId) ||
+      threadsForSelectedWorkspace[0];
 
-    if (targetSession) {
+    if (targetThread) {
       setTyping(false);
       updateTaskState('idle');
       setBridgeError('');
       clearLocalCorePolling();
       clearReplyTimeout();
-      void loadActiveSession(selectedProject, targetSession.id);
+      void loadActiveThread(selectedWorkspaceId, targetThread.id);
       return;
     }
 
@@ -283,20 +276,19 @@ export function useThreadChatSessionBrowser({
     progressSequenceByTurnRef.current = {};
     clearLocalCorePolling();
   }, [
-    activeSessionId,
+    activeThreadId,
     clearLocalCorePolling,
     clearReplyTimeout,
     holdBlankComposerRef,
     lastSessionByProjectRef,
-    loadActiveSession,
+    loadActiveThread,
     nextMessageOrderRef,
     pendingTurnRef,
     progressSequenceByTurnRef,
-    requestedProject,
-    requestedSessionId,
-    selectedProject,
+    requestedThreadId,
+    requestedWorkspaceId,
+    selectedWorkspaceId,
     serviceRunning,
-    sessionsForSelectedProject,
     setActiveRunId,
     setActiveSessionAgentType,
     setActiveSessionId,
@@ -305,33 +297,34 @@ export function useThreadChatSessionBrowser({
     setBridgeError,
     setMessages,
     setTyping,
+    threadsForSelectedWorkspace,
     updateTaskState,
   ]);
 
   useEffect(() => {
-    if (!selectedProject && !activeSessionId) {
+    if (!selectedWorkspaceId && !activeThreadId) {
       return;
     }
     const next = new URLSearchParams(searchParams);
-    if (selectedProject) {
-      next.set('project', selectedProject);
+    if (selectedWorkspaceId) {
+      next.set('project', selectedWorkspaceId);
     } else {
       next.delete('project');
     }
-    if (activeSessionId) {
-      next.set('session', activeSessionId);
+    if (activeThreadId) {
+      next.set('session', activeThreadId);
     } else {
       next.delete('session');
     }
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [activeSessionId, searchParams, selectedProject, setSearchParams]);
+  }, [activeThreadId, searchParams, selectedWorkspaceId, setSearchParams]);
 
   return {
-    filteredSessionGroups,
-    loadActiveSession,
-    refreshProjectsAndSessions,
-    refreshSessionsForProject,
+    filteredThreadGroups,
+    loadActiveThread,
+    refreshThreadsForWorkspace,
+    refreshWorkspacesAndThreads,
   };
 }

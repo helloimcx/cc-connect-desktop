@@ -39,6 +39,8 @@ export function useThreadChatController() {
   const endRef = useRef<HTMLDivElement>(null);
   const requestedProject = searchParams.get('project') || '';
   const requestedSessionId = searchParams.get('session') || '';
+  const requestedWorkspaceId = requestedProject;
+  const requestedThreadId = requestedSessionId;
   const branding = getRuntimeBranding();
   const {
     applyLocalCoreThreadDetail,
@@ -95,23 +97,27 @@ export function useThreadChatController() {
     updateTaskState,
     setTyping,
   });
+  const selectedWorkspaceId = selectedProject;
+  const activeThreadId = activeSessionId;
+  const activeBridgeSessionKey = activeSessionKey;
+  const activeAgentType = activeSessionAgentType;
 
   const {
-    filteredSessionGroups,
-    loadActiveSession,
-    refreshSessionsForProject,
+    filteredThreadGroups: filteredSessionGroups,
+    loadActiveThread: loadActiveSession,
+    refreshThreadsForWorkspace: refreshSessionsForProject,
   } = useThreadChatSessionBrowser({
-    activeSessionId,
-    requestedProject,
-    requestedSessionId,
-    runtimeDefaultProject: runtime?.settings.defaultProject,
+    activeThreadId,
+    requestedWorkspaceId,
+    requestedThreadId,
+    runtimeDefaultWorkspaceId: runtime?.settings.defaultProject,
     runtimeProvider,
     searchParams,
-    selectedProject,
+    selectedWorkspaceId,
     serviceRunning,
-    projects,
-    sessionGroups,
-    sessionSearch,
+    workspaceIds: projects,
+    threadGroups: sessionGroups,
+    threadSearch: sessionSearch,
     setActiveRunId,
     setActiveSessionAgentType,
     setActiveSessionId,
@@ -146,18 +152,19 @@ export function useThreadChatController() {
   }, [serviceRunning]);
 
   const { handleBridgeAction } = useThreadChatBridge({
-    activeSessionAgentType,
-    activeSessionId,
-    activeSessionKey,
+    activeAgentType,
+    activeThreadId,
+    activeRunId,
+    activeBridgeSessionKey,
     messages,
     runtimeProvider,
-    selectedProject,
+    selectedWorkspaceId,
     clearActionStatuses,
     clearLocalCorePolling,
     clearReplyTimeout,
     finalizeTurnMessages,
     nextProgressMessageId,
-    refreshSessionsForProject,
+    refreshThreadsForWorkspace: refreshSessionsForProject,
     reserveAssistantMessageOrder,
     reserveNextMessageOrder,
     setActiveRunId,
@@ -171,6 +178,7 @@ export function useThreadChatController() {
     pendingTurnRef,
     progressSequenceByTurnRef,
     sendAction,
+    taskStateRef,
   });
 
   const {

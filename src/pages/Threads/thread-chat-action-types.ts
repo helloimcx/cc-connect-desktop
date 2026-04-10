@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { RuntimeProvider } from '@/app/runtime';
 import type { ThreadDetail } from '../../../packages/contracts/src';
-import type { ChatMessage, ChatTaskState, SessionActionTarget } from './thread-chat-model';
+import type { ChatMessage, ChatTaskState, SessionActionTarget, SessionGroup } from './thread-chat-model';
 
 export type ThreadChatSearchParamsSetter = (
   nextInit: URLSearchParams,
@@ -10,6 +10,10 @@ export type ThreadChatSearchParamsSetter = (
 
 export type ThreadChatRefreshSessionsForProject = (
   project: string,
+) => Promise<Array<{ id: string; bridgeSessionKey?: string }>>;
+
+export type ThreadChatRefreshThreadsForWorkspace = (
+  workspaceId: string,
 ) => Promise<Array<{ id: string; bridgeSessionKey?: string }>>;
 
 export type ThreadChatPendingTurnRef = MutableRefObject<{ sessionKey: string; userOrder: number } | null>;
@@ -57,3 +61,33 @@ export type ThreadChatSharedActionContext = {
   refreshSessionsForProject: ThreadChatRefreshSessionsForProject;
 } & ThreadChatCoreSetters &
   ThreadChatConversationRefs;
+
+export type ThreadChatSharedHookContext = {
+  runtimeProvider: RuntimeProvider;
+  selectedWorkspaceId: string;
+  updateTaskState: (next: ChatTaskState) => void;
+  applyLocalCoreThreadDetail: (detail: ThreadDetail) => void;
+  clearLocalCorePolling: () => void;
+  clearReplyTimeout: () => void;
+  refreshThreadsForWorkspace: ThreadChatRefreshThreadsForWorkspace;
+} & ThreadChatCoreSetters &
+  ThreadChatConversationRefs;
+
+export type ThreadChatActiveThreadIdentity = {
+  activeThreadId: string;
+  activeBridgeSessionKey: string;
+  activeAgentType: string;
+  activeRunId: string;
+};
+
+export type ThreadChatBrowserSetters = {
+  setActiveRunId: Dispatch<SetStateAction<string>>;
+  setActiveSessionAgentType: Dispatch<SetStateAction<string>>;
+  setActiveSessionId: Dispatch<SetStateAction<string>>;
+  setActiveSessionKey: Dispatch<SetStateAction<string>>;
+  setActiveSessionName: Dispatch<SetStateAction<string>>;
+  setProjects: Dispatch<SetStateAction<string[]>>;
+  setSelectedProject: Dispatch<SetStateAction<string>>;
+  setSessionGroups: Dispatch<SetStateAction<SessionGroup[]>>;
+  setSearchParams: ThreadChatSearchParamsSetter;
+};
