@@ -5,6 +5,7 @@ import {
   MessagesSquare,
   Wrench,
   FolderKanban,
+  Library,
   MessageSquare,
   Clock,
   Cable,
@@ -22,12 +23,13 @@ import { getRuntimeProvider } from '@/app/runtime';
 import { useThemeStore } from '@/store/theme';
 import { useAuthStore } from '@/store/auth';
 import { useState } from 'react';
-import { supportsChatRoute, supportsDesktopChat, supportsDesktopWorkspace } from '@/app/runtime';
+import { supportsChatRoute, supportsDesktopChat, supportsDesktopWorkspace, supportsKnowledgeModule } from '@/app/runtime';
 
 const navItems = [
   { key: 'dashboard', path: '/', icon: LayoutDashboard },
   { key: 'chat', path: '/chat', icon: MessagesSquare },
   { key: 'workspace', path: '/workspace', icon: Wrench },
+  { key: 'knowledge', path: '/knowledge', icon: Library },
   { key: 'projects', path: '/projects', icon: FolderKanban },
   { key: 'sessions', path: '/sessions', icon: MessageSquare },
   { key: 'cron', path: '/cron', icon: Clock },
@@ -51,6 +53,7 @@ export default function Sidebar() {
   const desktopChat = supportsDesktopChat();
   const chatRoute = supportsChatRoute();
   const desktopWorkspace = supportsDesktopWorkspace();
+  const knowledgeModule = supportsKnowledgeModule();
   const runtimeProvider = getRuntimeProvider();
   const [collapsed, setCollapsed] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
@@ -70,6 +73,9 @@ export default function Sidebar() {
       return false;
     }
     if (item.key === 'workspace' && !desktopWorkspace) {
+      return false;
+    }
+    if (item.key === 'knowledge' && !knowledgeModule) {
       return false;
     }
     if (desktopManaged) {

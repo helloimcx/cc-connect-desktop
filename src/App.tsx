@@ -14,7 +14,9 @@ import CronList from '@/pages/Cron/CronList';
 import BridgeAdapters from '@/pages/Bridge/BridgeAdapters';
 import SystemConfig from '@/pages/System/Config';
 import SystemLogs from '@/pages/System/Logs';
-import { supportsChatRoute, supportsDesktopChat, supportsDesktopWorkspace } from '@/app/runtime';
+import KnowledgeHome from '@/pages/Knowledge/KnowledgeHome';
+import KnowledgeDetail from '@/pages/Knowledge/KnowledgeDetail';
+import { supportsChatRoute, supportsDesktopChat, supportsDesktopWorkspace, supportsKnowledgeModule } from '@/app/runtime';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -54,6 +56,7 @@ export default function App() {
   const desktopChat = supportsDesktopChat();
   const chatRoute = supportsChatRoute();
   const desktopWorkspace = supportsDesktopWorkspace();
+  const knowledgeModule = supportsKnowledgeModule();
 
   return (
     <Routes>
@@ -62,6 +65,8 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="chat" element={chatRoute ? (desktopChat ? <ThreadChat /> : <WebChat />) : <Navigate to="/" replace />} />
         <Route path="workspace" element={desktopWorkspace ? <DesktopWorkspace /> : <Navigate to="/" replace />} />
+        <Route path="knowledge" element={knowledgeModule ? <KnowledgeHome /> : <Navigate to="/" replace />} />
+        <Route path="knowledge/:knowledgebaseId" element={knowledgeModule ? <KnowledgeDetail /> : <Navigate to="/" replace />} />
         <Route path="projects" element={desktopManaged && desktopWorkspace ? <Navigate to="/workspace" replace /> : <ProjectList />} />
         <Route path="projects/:name" element={<DesktopProjectRedirect />} />
         <Route path="sessions" element={<DesktopSessionsRedirect />} />

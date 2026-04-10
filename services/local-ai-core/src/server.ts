@@ -13,6 +13,17 @@ import type {
   LocalCoreCapabilities,
   LocalCoreEvent,
   KnowledgeSource,
+  KnowledgeBase,
+  KnowledgeBaseCreateInput,
+  KnowledgeBaseUpdateInput,
+  KnowledgeConfig,
+  KnowledgeFile,
+  KnowledgeFolder,
+  KnowledgeFolderCreateInput,
+  KnowledgeFolderUpdateInput,
+  KnowledgeSearchInput,
+  KnowledgeSearchResult,
+  KnowledgeUploadResult,
   ThreadDetail,
   ThreadSummary,
   WorkspaceSummary,
@@ -41,6 +52,24 @@ export interface LocalAiCoreBindings extends EventEmitter {
   sendThreadAction(threadId: string, content: string): Promise<{ runId: string }>;
   interruptRun(runId: string): Promise<{ interrupted: boolean }>;
   listKnowledgeSources(): Promise<KnowledgeSource[]>;
+  getKnowledgeConfig(): Promise<KnowledgeConfig>;
+  updateKnowledgeConfig(input: Partial<KnowledgeConfig>): Promise<KnowledgeConfig>;
+  listKnowledgeFolders(): Promise<KnowledgeFolder[]>;
+  createKnowledgeFolder(input: KnowledgeFolderCreateInput): Promise<KnowledgeFolder>;
+  updateKnowledgeFolder(id: string, input: KnowledgeFolderUpdateInput): Promise<KnowledgeFolder>;
+  deleteKnowledgeFolder(id: string): Promise<{ deleted: boolean }>;
+  listKnowledgeBases(): Promise<KnowledgeBase[]>;
+  getKnowledgeBase(id: string): Promise<KnowledgeBase>;
+  createKnowledgeBase(input: KnowledgeBaseCreateInput): Promise<KnowledgeBase>;
+  updateKnowledgeBase(id: string, input: KnowledgeBaseUpdateInput): Promise<KnowledgeBase>;
+  deleteKnowledgeBase(id: string): Promise<{ deleted: boolean }>;
+  listKnowledgeBaseFiles(knowledgeBaseId: string): Promise<KnowledgeFile[]>;
+  uploadKnowledgeBaseFiles(
+    knowledgeBaseId: string,
+    request: { contentType: string; body: Uint8Array },
+  ): Promise<KnowledgeUploadResult[]>;
+  deleteKnowledgeBaseFile(knowledgeBaseId: string, fileId: string): Promise<{ deleted: boolean }>;
+  searchKnowledgeBase(knowledgeBaseId: string, input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]>;
   getCapabilities(): Promise<LocalCoreCapabilities>;
 }
 
@@ -56,14 +85,19 @@ function json<T>(res: ServerResponse, statusCode: number, data: T, ok = true, er
 }
 
 async function readJsonBody(req: IncomingMessage) {
+  const body = await readRawBody(req);
+  if (!body.length) {
+    return {};
+  }
+  return JSON.parse(Buffer.from(body).toString('utf8')) as Record<string, unknown>;
+}
+
+async function readRawBody(req: IncomingMessage) {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
-  if (chunks.length === 0) {
-    return {};
-  }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+  return Buffer.concat(chunks);
 }
 
 function setCorsHeaders(req: IncomingMessage, res: ServerResponse) {
@@ -261,6 +295,93 @@ export class LocalAiCoreServer {
       }
       if (req.method === 'GET' && path === '/api/local/v1/knowledge/sources') {
         json(res, 200, { sources: await this.bindings.listKnowledgeSources() });
+        return;
+      }
+      if (req.method === 'GET' && path === '/api/local/v1/knowledge/config') {
+        json(res, 200, await this.bindings.getKnowledgeConfig());
+        return;
+      }
+      if (req.method === 'POST' && path === '/api/local/v1/knowledge/config') {
+        const body = await readJsonBody(req);
+        json(res, 200, await this.bindings.updateKnowledgeConfig(body as Partial<KnowledgeConfig>));
+        return;
+      }
+      if (req.method === 'GET' && path === '/api/local/v1/knowledge/folders') {
+        json(res, 200, { folders: await this.bindings.listKnowledgeFolders() });
+        return;
+      }
+      if (req.method === 'POST' && path === '/api/local/v1/knowledge/folders') {
+        const body = await readJsonBody(req);
+        json(res, 200, await this.bindings.createKnowledgeFolder(body as unknown as KnowledgeFolderCreateInput));
+        return;
+      }
+      if (req.method === 'PATCH' && path.startsWith('/api/local/v1/knowledge/folders/')) {
+        const folderId = decodeURIComponent(path.slice('/api/local/v1/knowledge/folders/'.length));
+        const body = await readJsonBody(req);
+        json(res, 200, await this.bindings.updateKnowledgeFolder(folderId, body as unknown as KnowledgeFolderUpdateInput));
+        return;
+      }
+      if (req.method === 'DELETE' && path.startsWith('/api/local/v1/knowledge/folders/')) {
+        const folderId = decodeURIComponent(path.slice('/api/local/v1/knowledge/folders/'.length));
+        json(res, 200, await this.bindings.deleteKnowledgeFolder(folderId));
+        return;
+      }
+      if (req.method === 'GET' && path === '/api/local/v1/knowledge/bases') {
+        json(res, 200, { bases: await this.bindings.listKnowledgeBases() });
+        return;
+      }
+      if (req.method === 'POST' && path === '/api/local/v1/knowledge/bases') {
+        const body = await readJsonBody(req);
+        json(res, 200, await this.bindings.createKnowledgeBase(body as unknown as KnowledgeBaseCreateInput));
+        return;
+      }
+      if (req.method === 'GET' && path.startsWith('/api/local/v1/knowledge/bases/') && !path.endsWith('/files') && !path.endsWith('/search')) {
+        const knowledgeBaseId = decodeURIComponent(path.slice('/api/local/v1/knowledge/bases/'.length));
+        json(res, 200, await this.bindings.getKnowledgeBase(knowledgeBaseId));
+        return;
+      }
+      if (req.method === 'PATCH' && path.startsWith('/api/local/v1/knowledge/bases/')) {
+        const knowledgeBaseId = decodeURIComponent(path.slice('/api/local/v1/knowledge/bases/'.length));
+        const body = await readJsonBody(req);
+        json(res, 200, await this.bindings.updateKnowledgeBase(knowledgeBaseId, body as KnowledgeBaseUpdateInput));
+        return;
+      }
+      if (req.method === 'DELETE' && path.startsWith('/api/local/v1/knowledge/bases/') && !path.includes('/files/')) {
+        const knowledgeBaseId = decodeURIComponent(path.slice('/api/local/v1/knowledge/bases/'.length));
+        json(res, 200, await this.bindings.deleteKnowledgeBase(knowledgeBaseId));
+        return;
+      }
+      if (req.method === 'GET' && path.startsWith('/api/local/v1/knowledge/bases/') && path.endsWith('/files')) {
+        const knowledgeBaseId = decodeURIComponent(path.slice('/api/local/v1/knowledge/bases/'.length, -'/files'.length));
+        json(res, 200, { files: await this.bindings.listKnowledgeBaseFiles(knowledgeBaseId) });
+        return;
+      }
+      if (req.method === 'POST' && path.startsWith('/api/local/v1/knowledge/bases/') && path.endsWith('/files')) {
+        const knowledgeBaseId = decodeURIComponent(path.slice('/api/local/v1/knowledge/bases/'.length, -'/files'.length));
+        const contentType = String(req.headers['content-type'] || '').trim();
+        if (!contentType) {
+          throw new Error('Upload content type is required.');
+        }
+        const body = await readRawBody(req);
+        json(
+          res,
+          200,
+          { results: await this.bindings.uploadKnowledgeBaseFiles(knowledgeBaseId, { contentType, body }) },
+        );
+        return;
+      }
+      if (req.method === 'DELETE' && path.includes('/api/local/v1/knowledge/bases/') && path.includes('/files/')) {
+        const prefix = '/api/local/v1/knowledge/bases/';
+        const fileMarker = '/files/';
+        const knowledgeBaseId = decodeURIComponent(path.slice(prefix.length, path.indexOf(fileMarker)));
+        const fileId = decodeURIComponent(path.slice(path.indexOf(fileMarker) + fileMarker.length));
+        json(res, 200, await this.bindings.deleteKnowledgeBaseFile(knowledgeBaseId, fileId));
+        return;
+      }
+      if (req.method === 'POST' && path.startsWith('/api/local/v1/knowledge/bases/') && path.endsWith('/search')) {
+        const knowledgeBaseId = decodeURIComponent(path.slice('/api/local/v1/knowledge/bases/'.length, -'/search'.length));
+        const body = await readJsonBody(req);
+        json(res, 200, { results: await this.bindings.searchKnowledgeBase(knowledgeBaseId, body as unknown as KnowledgeSearchInput) });
         return;
       }
       if (req.method === 'GET' && path === '/api/local/v1/capabilities') {

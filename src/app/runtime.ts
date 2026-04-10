@@ -47,3 +47,7 @@ export function supportsChatRoute() {
 export function supportsDesktopWorkspace() {
   return supportsDesktopRuntime();
 }
+
+export function supportsKnowledgeModule() {
+  return supportsDesktopRuntime();
+}

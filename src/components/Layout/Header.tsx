@@ -9,6 +9,7 @@ const routeTitles: Record<string, string> = {
   '/': 'nav.dashboard',
   '/chat': 'nav.chat',
   '/workspace': 'nav.workspace',
+  '/knowledge': 'nav.knowledge',
   '/sessions': 'nav.sessions',
   '/cron': 'nav.cron',
   '/bridge': 'nav.bridge',

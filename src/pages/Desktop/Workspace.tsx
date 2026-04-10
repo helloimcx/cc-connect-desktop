@@ -53,6 +53,11 @@ interface PersistedDesktopSettings {
   configPath: string;
   autoStartService: boolean;
   defaultProject: string;
+  knowledgeBaseUrl: string;
+  knowledgeAuthMode: 'none' | 'bearer' | 'header';
+  knowledgeToken: string;
+  knowledgeHeaderName: string;
+  knowledgeDefaultCollection: string;
 }
 
 const PROGRESS_STYLE_OPTIONS = ['legacy', 'compact', 'card'] as const;
@@ -388,6 +393,11 @@ export default function DesktopWorkspace() {
   const [configPath, setConfigPath] = useState('');
   const [autoStartService, setAutoStartService] = useState(false);
   const [defaultProject, setDefaultProject] = useState('');
+  const [knowledgeBaseUrl, setKnowledgeBaseUrl] = useState('');
+  const [knowledgeAuthMode, setKnowledgeAuthMode] = useState<'none' | 'bearer' | 'header'>('none');
+  const [knowledgeToken, setKnowledgeToken] = useState('');
+  const [knowledgeHeaderName, setKnowledgeHeaderName] = useState('X-API-Key');
+  const [knowledgeDefaultCollection, setKnowledgeDefaultCollection] = useState('personal_knowledge');
   const requestedProject = searchParams.get('project') || '';
   const requestedProjectRef = useRef(requestedProject);
   const runtimeReady = runtime?.phase === 'api_ready' || runtime?.phase === 'bridge_ready';
@@ -399,9 +409,25 @@ export default function DesktopWorkspace() {
       binaryPath !== persistedSettings.binaryPath ||
       configPath !== persistedSettings.configPath ||
       autoStartService !== persistedSettings.autoStartService ||
-      defaultProject !== persistedSettings.defaultProject
+      defaultProject !== persistedSettings.defaultProject ||
+      knowledgeBaseUrl !== persistedSettings.knowledgeBaseUrl ||
+      knowledgeAuthMode !== persistedSettings.knowledgeAuthMode ||
+      knowledgeToken !== persistedSettings.knowledgeToken ||
+      knowledgeHeaderName !== persistedSettings.knowledgeHeaderName ||
+      knowledgeDefaultCollection !== persistedSettings.knowledgeDefaultCollection
     );
-  }, [autoStartService, binaryPath, configPath, defaultProject, persistedSettings]);
+  }, [
+    autoStartService,
+    binaryPath,
+    configPath,
+    defaultProject,
+    knowledgeAuthMode,
+    knowledgeBaseUrl,
+    knowledgeDefaultCollection,
+    knowledgeHeaderName,
+    knowledgeToken,
+    persistedSettings,
+  ]);
   const visualDirty = useMemo(
     () => stableSerialize(configDraft || { projects: [] }) !== persistedConfigSerialized,
     [configDraft, persistedConfigSerialized],
@@ -424,11 +450,21 @@ export default function DesktopWorkspace() {
     setConfigPath(nextRuntime.settings.configPath);
     setAutoStartService(nextRuntime.settings.autoStartService);
     setDefaultProject(nextRuntime.settings.defaultProject);
+    setKnowledgeBaseUrl(nextRuntime.settings.knowledge.baseUrl || '');
+    setKnowledgeAuthMode(nextRuntime.settings.knowledge.authMode || 'none');
+    setKnowledgeToken(nextRuntime.settings.knowledge.token || '');
+    setKnowledgeHeaderName(nextRuntime.settings.knowledge.headerName || 'X-API-Key');
+    setKnowledgeDefaultCollection(nextRuntime.settings.knowledge.defaultCollection || 'personal_knowledge');
     setPersistedSettings({
       binaryPath: nextRuntime.settings.binaryPath,
       configPath: nextRuntime.settings.configPath,
       autoStartService: nextRuntime.settings.autoStartService,
       defaultProject: nextRuntime.settings.defaultProject,
+      knowledgeBaseUrl: nextRuntime.settings.knowledge.baseUrl || '',
+      knowledgeAuthMode: nextRuntime.settings.knowledge.authMode || 'none',
+      knowledgeToken: nextRuntime.settings.knowledge.token || '',
+      knowledgeHeaderName: nextRuntime.settings.knowledge.headerName || 'X-API-Key',
+      knowledgeDefaultCollection: nextRuntime.settings.knowledge.defaultCollection || 'personal_knowledge',
     });
     setSelectedIndex((current) => {
       const projects = nextConfig.parsed?.projects || [];
@@ -530,6 +566,13 @@ export default function DesktopWorkspace() {
         configPath,
         autoStartService,
         defaultProject,
+        knowledge: {
+          baseUrl: knowledgeBaseUrl,
+          authMode: knowledgeAuthMode,
+          token: knowledgeToken,
+          headerName: knowledgeHeaderName,
+          defaultCollection: knowledgeDefaultCollection,
+        },
       });
       await loadAll();
       setNotice({
@@ -550,7 +593,21 @@ export default function DesktopWorkspace() {
     } finally {
       setPendingAction(null);
     }
-  }, [autoStartService, binaryPath, configPath, defaultProject, loadAll, runtime?.settings.binaryPath, runtime?.settings.configPath, runtimeReady]);
+  }, [
+    autoStartService,
+    binaryPath,
+    configPath,
+    defaultProject,
+    knowledgeAuthMode,
+    knowledgeBaseUrl,
+    knowledgeDefaultCollection,
+    knowledgeHeaderName,
+    knowledgeToken,
+    loadAll,
+    runtime?.settings.binaryPath,
+    runtime?.settings.configPath,
+    runtimeReady,
+  ]);
 
   const handleSaveVisual = useCallback(async () => {
     if (!configDraft) {
@@ -771,6 +828,64 @@ export default function DesktopWorkspace() {
           <Input label="cc-connect binary" value={binaryPath} onChange={(event) => setBinaryPath(event.target.value)} />
           <Input label="Config file" value={configPath} onChange={(event) => setConfigPath(event.target.value)} />
           <Input label="Default chat project" value={defaultProject} onChange={(event) => setDefaultProject(event.target.value)} />
+
+          <div className="rounded-xl border border-gray-200/80 p-4 dark:border-white/[0.08]">
+            <div className="mb-3">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Knowledge / ai_vector</h3>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Local AI Core uses these settings to upload files and query the external ai_vector RAG service.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <Input
+                label="ai_vector base URL"
+                value={knowledgeBaseUrl}
+                onChange={(event) => setKnowledgeBaseUrl(event.target.value)}
+                placeholder="http://127.0.0.1:16007"
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <Select
+                  label="Auth mode"
+                  value={knowledgeAuthMode}
+                  onChange={(event) => setKnowledgeAuthMode(event.target.value as 'none' | 'bearer' | 'header')}
+                >
+                  <option value="none">none</option>
+                  <option value="bearer">bearer</option>
+                  <option value="header">header</option>
+                </Select>
+                <Input
+                  label="Default collection"
+                  value={knowledgeDefaultCollection}
+                  onChange={(event) => setKnowledgeDefaultCollection(event.target.value)}
+                  placeholder="personal_knowledge"
+                />
+              </div>
+              {knowledgeAuthMode !== 'none' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label={knowledgeAuthMode === 'bearer' ? 'Bearer token' : 'Auth token'}
+                    type="password"
+                    value={knowledgeToken}
+                    onChange={(event) => setKnowledgeToken(event.target.value)}
+                  />
+                  {knowledgeAuthMode === 'header' ? (
+                    <Input
+                      label="Header name"
+                      value={knowledgeHeaderName}
+                      onChange={(event) => setKnowledgeHeaderName(event.target.value)}
+                      placeholder="X-API-Key"
+                    />
+                  ) : (
+                    <Input
+                      label="Header name"
+                      value="Authorization"
+                      readOnly
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
 
           <label className="flex items-center gap-3 text-sm text-gray-700 dark:text-gray-300">
             <input

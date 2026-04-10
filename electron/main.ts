@@ -10,10 +10,25 @@ import type {
   DesktopSettingsInput,
 } from '../shared/desktop.js';
 import { deriveDesktopRuntimePhase, normalizeDesktopBridgeButtonOption, supportsInteractivePermission } from '../shared/desktop.js';
+import type {
+  KnowledgeBase,
+  KnowledgeBaseCreateInput,
+  KnowledgeBaseUpdateInput,
+  KnowledgeConfig,
+  KnowledgeFile,
+  KnowledgeFolder,
+  KnowledgeFolderCreateInput,
+  KnowledgeFolderUpdateInput,
+  KnowledgeSearchInput,
+  KnowledgeSearchResult,
+  KnowledgeSource,
+  KnowledgeUploadResult,
+} from '../packages/contracts/src/index.js';
 import type { LocalAiCoreBindings } from '../services/local-ai-core/src/server.js';
 import { LocalAiCoreServer } from '../services/local-ai-core/src/server.js';
 import { ServiceManager } from './service-manager.js';
 import { BridgeAdapter } from './bridge-adapter.js';
+import { AiVectorKnowledgeProvider } from '../packages/knowledge-api/src/index.js';
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let serviceManager: ServiceManager;
@@ -160,6 +175,17 @@ async function managementRequest<T>(method: string, path: string, body?: unknown
 
 function createLocalAiCoreBindings(): LocalAiCoreBindings {
   const bindings = new EventEmitter() as LocalAiCoreBindings;
+  const knowledgeProvider = new AiVectorKnowledgeProvider({
+    userDataPath: app.getPath('userData'),
+    getConfig: () => getServiceManager().getSettings().knowledge,
+    setConfig: async (input) => {
+      const settings = getServiceManager().updateSettings({
+        knowledge: input,
+      });
+      await broadcastRuntime();
+      return settings.knowledge;
+    },
+  });
 
   bindings.getRuntimeStatus = () => buildRuntimeStatus(getBridgeAdapter().getState());
   bindings.startService = async () => {
@@ -307,12 +333,44 @@ function createLocalAiCoreBindings(): LocalAiCoreBindings {
     await getBridgeAdapter().sendMessage({ project, chatId, content: '/stop' });
     return { interrupted: true };
   };
-  bindings.listKnowledgeSources = async () => [];
+  bindings.listKnowledgeSources = async (): Promise<KnowledgeSource[]> => knowledgeProvider.listSources();
+  bindings.getKnowledgeConfig = async (): Promise<KnowledgeConfig> => knowledgeProvider.getConfig();
+  bindings.updateKnowledgeConfig = async (input: Partial<KnowledgeConfig>): Promise<KnowledgeConfig> =>
+    knowledgeProvider.updateConfig(input);
+  bindings.listKnowledgeFolders = async (): Promise<KnowledgeFolder[]> => knowledgeProvider.listFolders();
+  bindings.createKnowledgeFolder = async (input: KnowledgeFolderCreateInput): Promise<KnowledgeFolder> =>
+    knowledgeProvider.createFolder(input);
+  bindings.updateKnowledgeFolder = async (
+    id: string,
+    input: KnowledgeFolderUpdateInput,
+  ): Promise<KnowledgeFolder> => knowledgeProvider.updateFolder(id, input);
+  bindings.deleteKnowledgeFolder = async (id: string) => knowledgeProvider.deleteFolder(id);
+  bindings.listKnowledgeBases = async (): Promise<KnowledgeBase[]> => knowledgeProvider.listKnowledgeBases();
+  bindings.getKnowledgeBase = async (id: string): Promise<KnowledgeBase> => knowledgeProvider.getKnowledgeBase(id);
+  bindings.createKnowledgeBase = async (input: KnowledgeBaseCreateInput): Promise<KnowledgeBase> =>
+    knowledgeProvider.createKnowledgeBase(input);
+  bindings.updateKnowledgeBase = async (
+    id: string,
+    input: KnowledgeBaseUpdateInput,
+  ): Promise<KnowledgeBase> => knowledgeProvider.updateKnowledgeBase(id, input);
+  bindings.deleteKnowledgeBase = async (id: string) => knowledgeProvider.deleteKnowledgeBase(id);
+  bindings.listKnowledgeBaseFiles = async (knowledgeBaseId: string): Promise<KnowledgeFile[]> =>
+    knowledgeProvider.listKnowledgeBaseFiles(knowledgeBaseId);
+  bindings.uploadKnowledgeBaseFiles = async (
+    knowledgeBaseId: string,
+    request: { contentType: string; body: Uint8Array },
+  ): Promise<KnowledgeUploadResult[]> => knowledgeProvider.uploadKnowledgeBaseFiles(knowledgeBaseId, request);
+  bindings.deleteKnowledgeBaseFile = async (knowledgeBaseId: string, fileId: string) =>
+    knowledgeProvider.deleteKnowledgeBaseFile(knowledgeBaseId, fileId);
+  bindings.searchKnowledgeBase = async (
+    knowledgeBaseId: string,
+    input: KnowledgeSearchInput,
+  ): Promise<KnowledgeSearchResult[]> => knowledgeProvider.searchKnowledgeBase(knowledgeBaseId, input);
   bindings.getCapabilities = async () => ({
     adapters: {
       channels: ['cc-connect'],
       agents: ['opencode', 'codex', 'claudecode', 'cursor', 'gemini', 'qoder', 'iflow'],
-      knowledge: false,
+      knowledge: true,
     },
   });
   return bindings;

@@ -61,6 +61,7 @@ export interface DesktopSettings {
   bridgePort: number;
   bridgeToken: string;
   bridgePath: string;
+  knowledge: DesktopKnowledgeSettings;
 }
 
 export interface DesktopServiceState {
@@ -234,6 +235,17 @@ export interface DesktopSettingsInput {
   configPath?: string;
   autoStartService?: boolean;
   defaultProject?: string;
+  knowledge?: Partial<DesktopKnowledgeSettings>;
+}
+
+export type DesktopKnowledgeAuthMode = 'none' | 'bearer' | 'header';
+
+export interface DesktopKnowledgeSettings {
+  baseUrl: string;
+  authMode: DesktopKnowledgeAuthMode;
+  token: string;
+  headerName: string;
+  defaultCollection: string;
 }
 
 export interface DesktopPlatformConfig {

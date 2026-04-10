@@ -6,6 +6,16 @@ import type {
   DesktopRuntimeStatus,
   DesktopSettings,
   DesktopSettingsInput,
+  KnowledgeBase,
+  KnowledgeBaseCreateInput,
+  KnowledgeBaseUpdateInput,
+  KnowledgeConfig,
+  KnowledgeFile,
+  KnowledgeFolder,
+  KnowledgeFolderCreateInput,
+  KnowledgeFolderUpdateInput,
+  KnowledgeSearchInput,
+  KnowledgeSearchResult,
   DesktopServiceState,
   KnowledgeSource,
   LocalCoreCapabilities,
@@ -192,6 +202,105 @@ export async function interruptRun(runId: string) {
 
 export async function listKnowledgeSources() {
   return coreRequest<{ sources: KnowledgeSource[] }>('GET', '/knowledge/sources');
+}
+
+export async function getKnowledgeConfig() {
+  return coreRequest<KnowledgeConfig>('GET', '/knowledge/config');
+}
+
+export async function saveKnowledgeConfig(input: Partial<KnowledgeConfig>) {
+  return coreRequest<KnowledgeConfig>('POST', '/knowledge/config', input);
+}
+
+export async function listKnowledgeFolders() {
+  return coreRequest<{ folders: KnowledgeFolder[] }>('GET', '/knowledge/folders');
+}
+
+export async function createKnowledgeFolder(input: KnowledgeFolderCreateInput) {
+  return coreRequest<KnowledgeFolder>('POST', '/knowledge/folders', input);
+}
+
+export async function updateKnowledgeFolder(folderId: string, input: KnowledgeFolderUpdateInput) {
+  return coreRequest<KnowledgeFolder>('PATCH', `/knowledge/folders/${encodeURIComponent(folderId)}`, input);
+}
+
+export async function deleteKnowledgeFolder(folderId: string) {
+  return coreRequest<{ deleted: boolean }>('DELETE', `/knowledge/folders/${encodeURIComponent(folderId)}`);
+}
+
+export async function listKnowledgeBases() {
+  return coreRequest<{ bases: KnowledgeBase[] }>('GET', '/knowledge/bases');
+}
+
+export async function createKnowledgeBase(input: KnowledgeBaseCreateInput) {
+  return coreRequest<KnowledgeBase>('POST', '/knowledge/bases', input);
+}
+
+export async function getKnowledgeBase(knowledgeBaseId: string) {
+  return coreRequest<KnowledgeBase>('GET', `/knowledge/bases/${encodeURIComponent(knowledgeBaseId)}`);
+}
+
+export async function updateKnowledgeBase(knowledgeBaseId: string, input: KnowledgeBaseUpdateInput) {
+  return coreRequest<KnowledgeBase>('PATCH', `/knowledge/bases/${encodeURIComponent(knowledgeBaseId)}`, input);
+}
+
+export async function deleteKnowledgeBase(knowledgeBaseId: string) {
+  return coreRequest<{ deleted: boolean }>('DELETE', `/knowledge/bases/${encodeURIComponent(knowledgeBaseId)}`);
+}
+
+export async function listKnowledgeBaseFiles(knowledgeBaseId: string) {
+  return coreRequest<{ files: KnowledgeFile[] }>('GET', `/knowledge/bases/${encodeURIComponent(knowledgeBaseId)}/files`);
+}
+
+export async function uploadKnowledgeBaseFiles(
+  knowledgeBaseId: string,
+  input: {
+    files: File[];
+    collection: string;
+    folder?: string;
+  },
+) {
+  const formData = new FormData();
+  formData.append('collection', input.collection);
+  formData.append('knowledgebase_id', knowledgeBaseId);
+  if (input.folder) {
+    formData.append('folder', input.folder);
+  }
+  input.files.forEach((file) => {
+    formData.append('files', file, file.name);
+  });
+
+  const response = await fetch(`${LOCAL_AI_CORE_BASE}/knowledge/bases/${encodeURIComponent(knowledgeBaseId)}/files`, {
+    method: 'POST',
+    body: formData,
+  });
+  const json = await response.json() as JsonEnvelope<{ results: Array<{
+    fileId: string;
+    fileName: string;
+    fileType: string;
+    success: boolean;
+    message: string;
+    wordCount?: number | null;
+  }> }>;
+  if (!response.ok || !json.ok) {
+    throw new Error(json.error || `Local AI Core upload failed: ${response.status}`);
+  }
+  return json.data;
+}
+
+export async function deleteKnowledgeBaseFile(knowledgeBaseId: string, fileId: string) {
+  return coreRequest<{ deleted: boolean }>(
+    'DELETE',
+    `/knowledge/bases/${encodeURIComponent(knowledgeBaseId)}/files/${encodeURIComponent(fileId)}`,
+  );
+}
+
+export async function searchKnowledgeBase(knowledgeBaseId: string, input: KnowledgeSearchInput) {
+  return coreRequest<{ results: KnowledgeSearchResult[] }>(
+    'POST',
+    `/knowledge/bases/${encodeURIComponent(knowledgeBaseId)}/search`,
+    input,
+  );
 }
 
 export async function getCapabilities() {

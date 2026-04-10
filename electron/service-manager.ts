@@ -82,9 +82,16 @@ export class ServiceManager extends EventEmitter {
   }
 
   updateSettings(input: DesktopSettingsInput) {
+    const nextKnowledge = input.knowledge
+      ? {
+          ...this.settings.knowledge,
+          ...input.knowledge,
+        }
+      : this.settings.knowledge;
     this.settings = {
       ...this.settings,
       ...input,
+      knowledge: nextKnowledge,
     };
     this.persistSettings();
     this.emit('state');
@@ -386,6 +393,10 @@ export class ServiceManager extends EventEmitter {
       const next = {
         ...defaults,
         ...raw,
+        knowledge: {
+          ...defaults.knowledge,
+          ...(raw.knowledge || {}),
+        },
       };
       let changed = false;
 
@@ -422,6 +433,13 @@ export class ServiceManager extends EventEmitter {
       bridgePort: 9810,
       bridgeToken: randomToken(),
       bridgePath: '/bridge/ws',
+      knowledge: {
+        baseUrl: '',
+        authMode: 'none',
+        token: '',
+        headerName: 'X-API-Key',
+        defaultCollection: 'personal_knowledge',
+      },
     };
   }
 

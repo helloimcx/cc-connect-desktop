@@ -11,13 +11,24 @@ import type {
   DesktopServiceState,
   LocalCoreCapabilities,
   KnowledgeSource,
+  KnowledgeBase,
+  KnowledgeBaseCreateInput,
+  KnowledgeBaseUpdateInput,
+  KnowledgeConfig,
+  KnowledgeFile,
+  KnowledgeFolder,
+  KnowledgeFolderCreateInput,
+  KnowledgeFolderUpdateInput,
+  KnowledgeSearchInput,
+  KnowledgeSearchResult,
+  KnowledgeUploadResult,
   ThreadDetail,
   ThreadMessage,
   ThreadSummary,
   WorkspaceSummary,
 } from '../../contracts/src/index.js';
 import { deriveDesktopRuntimePhase } from '../../contracts/src/index.js';
-import { NoopKnowledgeProvider } from '../../knowledge-api/src/index.js';
+import { AiVectorKnowledgeProvider, type KnowledgeProvider } from '../../knowledge-api/src/index.js';
 import { BridgeAdapter } from '../../../electron/bridge-adapter.js';
 import { ServiceManager } from '../../../electron/service-manager.js';
 
@@ -110,7 +121,7 @@ function toThreadDetail(workspaceId: string, session: ManagementSessionDetail): 
 export class CcConnectController extends EventEmitter {
   private readonly serviceManager: ServiceManager;
   private readonly bridgeAdapter: BridgeAdapter;
-  private readonly knowledgeProvider = new NoopKnowledgeProvider();
+  private readonly knowledgeProvider: KnowledgeProvider;
   private readonly runThreadMap = new Map<string, string>();
 
   constructor(private readonly userDataPath: string) {
@@ -120,6 +131,17 @@ export class CcConnectController extends EventEmitter {
       () => this.serviceManager.getSettings(),
       () => this.serviceManager.getServiceState().status === 'running',
     );
+    this.knowledgeProvider = new AiVectorKnowledgeProvider({
+      userDataPath,
+      getConfig: () => this.serviceManager.getSettings().knowledge,
+      setConfig: async (input) => {
+        const settings = this.serviceManager.updateSettings({
+          knowledge: input,
+        });
+        await this.emitRuntime();
+        return settings.knowledge;
+      },
+    });
   }
 
   async init() {
@@ -329,12 +351,78 @@ export class CcConnectController extends EventEmitter {
     return this.knowledgeProvider.listSources();
   }
 
+  async getKnowledgeConfig(): Promise<KnowledgeConfig> {
+    return this.knowledgeProvider.getConfig();
+  }
+
+  async updateKnowledgeConfig(input: Partial<KnowledgeConfig>): Promise<KnowledgeConfig> {
+    return this.knowledgeProvider.updateConfig(input);
+  }
+
+  async listKnowledgeFolders(): Promise<KnowledgeFolder[]> {
+    return this.knowledgeProvider.listFolders();
+  }
+
+  async createKnowledgeFolder(input: KnowledgeFolderCreateInput): Promise<KnowledgeFolder> {
+    return this.knowledgeProvider.createFolder(input);
+  }
+
+  async updateKnowledgeFolder(id: string, input: KnowledgeFolderUpdateInput): Promise<KnowledgeFolder> {
+    return this.knowledgeProvider.updateFolder(id, input);
+  }
+
+  async deleteKnowledgeFolder(id: string): Promise<{ deleted: boolean }> {
+    return this.knowledgeProvider.deleteFolder(id);
+  }
+
+  async listKnowledgeBases(): Promise<KnowledgeBase[]> {
+    return this.knowledgeProvider.listKnowledgeBases();
+  }
+
+  async getKnowledgeBase(id: string): Promise<KnowledgeBase> {
+    return this.knowledgeProvider.getKnowledgeBase(id);
+  }
+
+  async createKnowledgeBase(input: KnowledgeBaseCreateInput): Promise<KnowledgeBase> {
+    return this.knowledgeProvider.createKnowledgeBase(input);
+  }
+
+  async updateKnowledgeBase(id: string, input: KnowledgeBaseUpdateInput): Promise<KnowledgeBase> {
+    return this.knowledgeProvider.updateKnowledgeBase(id, input);
+  }
+
+  async deleteKnowledgeBase(id: string): Promise<{ deleted: boolean }> {
+    return this.knowledgeProvider.deleteKnowledgeBase(id);
+  }
+
+  async listKnowledgeBaseFiles(knowledgeBaseId: string): Promise<KnowledgeFile[]> {
+    return this.knowledgeProvider.listKnowledgeBaseFiles(knowledgeBaseId);
+  }
+
+  async uploadKnowledgeBaseFiles(
+    knowledgeBaseId: string,
+    request: { contentType: string; body: Uint8Array },
+  ): Promise<KnowledgeUploadResult[]> {
+    return this.knowledgeProvider.uploadKnowledgeBaseFiles(knowledgeBaseId, request);
+  }
+
+  async deleteKnowledgeBaseFile(knowledgeBaseId: string, fileId: string): Promise<{ deleted: boolean }> {
+    return this.knowledgeProvider.deleteKnowledgeBaseFile(knowledgeBaseId, fileId);
+  }
+
+  async searchKnowledgeBase(
+    knowledgeBaseId: string,
+    input: KnowledgeSearchInput,
+  ): Promise<KnowledgeSearchResult[]> {
+    return this.knowledgeProvider.searchKnowledgeBase(knowledgeBaseId, input);
+  }
+
   async getCapabilities(): Promise<LocalCoreCapabilities> {
     return {
       adapters: {
         channels: ['cc-connect'],
         agents: ['opencode', 'codex', 'claudecode', 'cursor', 'gemini', 'qoder', 'iflow'],
-        knowledge: false,
+        knowledge: true,
       },
     };
   }
