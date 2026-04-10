@@ -1,11 +1,14 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { createSession } from '@/api/sessions';
 import { bridgeSendMessage } from '@/api/desktop';
 import { sessionLabel } from '@/lib/session-utils';
 import { createThread, interruptRun, sendMessage as sendThreadMessage } from '../../../packages/core-sdk/src';
-import type { ThreadDetail } from '../../../packages/contracts/src';
-import type { RuntimeProvider } from '@/app/runtime';
 import type { ChatMessage, ChatTaskState } from './thread-chat-model';
+import type {
+  ThreadChatIdentitySetters,
+  ThreadChatSendingRefs,
+  ThreadChatSharedActionContext,
+} from './thread-chat-action-types';
 
 type UseThreadChatSendingActionsInput = {
   activeRunId: string;
@@ -15,33 +18,17 @@ type UseThreadChatSendingActionsInput = {
   draft: string;
   loadActiveSession: (project: string, sessionId: string) => Promise<void>;
   messages: ChatMessage[];
-  runtimeProvider: RuntimeProvider;
-  selectedProject: string;
   taskState: ChatTaskState;
-  updateTaskState: (next: ChatTaskState) => void;
-  applyLocalCoreThreadDetail: (detail: ThreadDetail) => void;
   armReplyTimeout: (mode?: 'reply' | 'permission_continue') => void;
-  clearLocalCorePolling: () => void;
-  clearReplyTimeout: () => void;
-  refreshSessionsForProject: (project: string) => Promise<Array<{ id: string; bridgeSessionKey?: string }>>;
   reserveNextMessageOrder: () => number;
-  setActiveRunId: Dispatch<SetStateAction<string>>;
-  setActiveSessionId: Dispatch<SetStateAction<string>>;
-  setActiveSessionKey: Dispatch<SetStateAction<string>>;
-  setActiveSessionName: Dispatch<SetStateAction<string>>;
-  setBridgeError: Dispatch<SetStateAction<string>>;
   setDraft: Dispatch<SetStateAction<string>>;
-  setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   setSending: Dispatch<SetStateAction<boolean>>;
-  setTyping: Dispatch<SetStateAction<boolean>>;
   startLocalCoreThreadPolling: (threadId: string, baselineAssistantCount: number) => void;
-  holdBlankComposerRef: MutableRefObject<boolean>;
-  lastSessionByProjectRef: MutableRefObject<Record<string, string>>;
-  nextMessageOrderRef: MutableRefObject<number>;
-  pendingTurnRef: MutableRefObject<{ sessionKey: string; userOrder: number } | null>;
-  progressSequenceByTurnRef: MutableRefObject<Record<string, number>>;
-  taskStateRef: MutableRefObject<ChatTaskState>;
-};
+} & Pick<ThreadChatSharedActionContext, 'runtimeProvider' | 'selectedProject' | 'updateTaskState'> &
+  Pick<ThreadChatSharedActionContext, 'applyLocalCoreThreadDetail' | 'clearLocalCorePolling' | 'clearReplyTimeout'> &
+  Pick<ThreadChatSharedActionContext, 'refreshSessionsForProject' | 'setBridgeError' | 'setMessages' | 'setTyping'> &
+  Pick<ThreadChatIdentitySetters, 'setActiveRunId' | 'setActiveSessionId' | 'setActiveSessionKey' | 'setActiveSessionName'> &
+  Pick<ThreadChatSendingRefs, 'holdBlankComposerRef' | 'lastSessionByProjectRef' | 'nextMessageOrderRef' | 'pendingTurnRef' | 'progressSequenceByTurnRef' | 'taskStateRef'>;
 
 export function useThreadChatSendingActions({
   activeRunId,

@@ -1,9 +1,14 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback } from 'react';
 import { deleteSession, renameSession } from '@/api/sessions';
 import { createThread, deleteThread as deleteCoreThread, renameThread } from '../../../packages/core-sdk/src';
-import type { ThreadDetail } from '../../../packages/contracts/src';
-import type { RuntimeProvider } from '@/app/runtime';
-import type { ChatMessage, ChatTaskState, ChatThreadSummary, SessionActionTarget } from './thread-chat-model';
+import type { ChatThreadSummary, SessionActionTarget } from './thread-chat-model';
+import type {
+  ThreadChatConversationRefs,
+  ThreadChatIdentitySetters,
+  ThreadChatModalSetters,
+  ThreadChatSearchParamsSetter,
+  ThreadChatSharedActionContext,
+} from './thread-chat-action-types';
 
 type UseThreadChatThreadActionsInput = {
   activeSessionId: string;
@@ -11,32 +16,14 @@ type UseThreadChatThreadActionsInput = {
   deleteTarget: SessionActionTarget | null;
   renameDraft: string;
   renameTarget: SessionActionTarget | null;
-  runtimeProvider: RuntimeProvider;
   searchParams: URLSearchParams;
-  selectedProject: string;
-  updateTaskState: (next: ChatTaskState) => void;
-  applyLocalCoreThreadDetail: (detail: ThreadDetail) => void;
-  clearLocalCorePolling: () => void;
-  clearReplyTimeout: () => void;
-  refreshSessionsForProject: (project: string) => Promise<Array<{ id: string; bridgeSessionKey?: string }>>;
-  setActiveRunId: Dispatch<SetStateAction<string>>;
-  setActiveSessionAgentType: Dispatch<SetStateAction<string>>;
-  setActiveSessionId: Dispatch<SetStateAction<string>>;
-  setActiveSessionKey: Dispatch<SetStateAction<string>>;
-  setActiveSessionName: Dispatch<SetStateAction<string>>;
-  setBridgeError: Dispatch<SetStateAction<string>>;
-  setDeleteTarget: Dispatch<SetStateAction<SessionActionTarget | null>>;
-  setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
-  setPendingSessionAction: Dispatch<SetStateAction<'rename' | 'delete' | null>>;
-  setRenameDraft: Dispatch<SetStateAction<string>>;
-  setRenameTarget: Dispatch<SetStateAction<SessionActionTarget | null>>;
-  setSearchParams: (nextInit: URLSearchParams, navigateOptions?: { replace?: boolean }) => void;
-  setTyping: Dispatch<SetStateAction<boolean>>;
-  holdBlankComposerRef: MutableRefObject<boolean>;
-  nextMessageOrderRef: MutableRefObject<number>;
-  pendingTurnRef: MutableRefObject<{ sessionKey: string; userOrder: number } | null>;
-  progressSequenceByTurnRef: MutableRefObject<Record<string, number>>;
-};
+  setSearchParams: ThreadChatSearchParamsSetter;
+} & Pick<ThreadChatSharedActionContext, 'runtimeProvider' | 'selectedProject' | 'updateTaskState'> &
+  Pick<ThreadChatSharedActionContext, 'applyLocalCoreThreadDetail' | 'clearLocalCorePolling' | 'clearReplyTimeout'> &
+  Pick<ThreadChatSharedActionContext, 'refreshSessionsForProject' | 'setBridgeError' | 'setMessages' | 'setTyping'> &
+  Pick<ThreadChatIdentitySetters, 'setActiveRunId' | 'setActiveSessionAgentType' | 'setActiveSessionId' | 'setActiveSessionKey' | 'setActiveSessionName'> &
+  Pick<ThreadChatModalSetters, 'setDeleteTarget' | 'setPendingSessionAction' | 'setRenameDraft' | 'setRenameTarget'> &
+  Pick<ThreadChatConversationRefs, 'holdBlankComposerRef' | 'nextMessageOrderRef' | 'pendingTurnRef' | 'progressSequenceByTurnRef'>;
 
 export function useThreadChatThreadActions({
   activeSessionId,

@@ -2,6 +2,13 @@ import type { Dispatch, type MutableRefObject, type SetStateAction } from 'react
 import type { ThreadDetail } from '../../../packages/contracts/src';
 import type { RuntimeProvider } from '@/app/runtime';
 import type { ChatMessage, ChatTaskState, SessionActionTarget } from './thread-chat-model';
+import type {
+  ThreadChatCoreSetters,
+  ThreadChatIdentitySetters,
+  ThreadChatModalSetters,
+  ThreadChatSendingRefs,
+  ThreadChatSharedActionContext,
+} from './thread-chat-action-types';
 import { useThreadChatSendingActions } from './useThreadChatSendingActions';
 import { useThreadChatThreadActions } from './useThreadChatThreadActions';
 
@@ -96,6 +103,53 @@ export function useThreadChatActions({
   progressSequenceByTurnRef,
   taskStateRef,
 }: UseThreadChatActionsInput) {
+  const sharedContext: ThreadChatSharedActionContext = {
+    runtimeProvider,
+    selectedProject,
+    updateTaskState,
+    applyLocalCoreThreadDetail,
+    clearLocalCorePolling,
+    clearReplyTimeout,
+    refreshSessionsForProject,
+    setBridgeError,
+    setMessages,
+    setTyping,
+    holdBlankComposerRef,
+    nextMessageOrderRef,
+    pendingTurnRef,
+    progressSequenceByTurnRef,
+  };
+
+  const identitySetters: ThreadChatIdentitySetters = {
+    setActiveRunId,
+    setActiveSessionAgentType,
+    setActiveSessionId,
+    setActiveSessionKey,
+    setActiveSessionName,
+  };
+
+  const modalSetters: ThreadChatModalSetters = {
+    setDeleteTarget,
+    setPendingSessionAction,
+    setRenameDraft,
+    setRenameTarget,
+  };
+
+  const sendingRefs: ThreadChatSendingRefs = {
+    holdBlankComposerRef,
+    lastSessionByProjectRef,
+    nextMessageOrderRef,
+    pendingTurnRef,
+    progressSequenceByTurnRef,
+    taskStateRef,
+  };
+
+  const coreSetters: ThreadChatCoreSetters = {
+    setBridgeError,
+    setMessages,
+    setTyping,
+  };
+
   const { handleSend, handleStopTask } = useThreadChatSendingActions({
     activeRunId,
     activeSessionId,
@@ -104,32 +158,16 @@ export function useThreadChatActions({
     draft,
     loadActiveSession,
     messages,
-    runtimeProvider,
-    selectedProject,
     taskState,
-    updateTaskState,
-    applyLocalCoreThreadDetail,
     armReplyTimeout,
-    clearLocalCorePolling,
-    clearReplyTimeout,
-    refreshSessionsForProject,
     reserveNextMessageOrder,
-    setActiveRunId,
-    setActiveSessionId,
-    setActiveSessionKey,
-    setActiveSessionName,
-    setBridgeError,
     setDraft,
-    setMessages,
     setSending,
-    setTyping,
     startLocalCoreThreadPolling,
-    holdBlankComposerRef,
-    lastSessionByProjectRef,
-    nextMessageOrderRef,
-    pendingTurnRef,
-    progressSequenceByTurnRef,
-    taskStateRef,
+    ...sharedContext,
+    ...identitySetters,
+    ...coreSetters,
+    ...sendingRefs,
   });
 
   const {
@@ -143,31 +181,12 @@ export function useThreadChatActions({
     deleteTarget,
     renameDraft,
     renameTarget,
-    runtimeProvider,
     searchParams,
-    selectedProject,
-    updateTaskState,
-    applyLocalCoreThreadDetail,
-    clearLocalCorePolling,
-    clearReplyTimeout,
-    refreshSessionsForProject,
-    setActiveRunId,
-    setActiveSessionAgentType,
-    setActiveSessionId,
-    setActiveSessionKey,
-    setActiveSessionName,
-    setBridgeError,
-    setDeleteTarget,
-    setMessages,
-    setPendingSessionAction,
-    setRenameDraft,
-    setRenameTarget,
     setSearchParams,
-    setTyping,
-    holdBlankComposerRef,
-    nextMessageOrderRef,
-    pendingTurnRef,
-    progressSequenceByTurnRef,
+    ...sharedContext,
+    ...identitySetters,
+    ...modalSetters,
+    ...coreSetters,
   });
 
   return {
