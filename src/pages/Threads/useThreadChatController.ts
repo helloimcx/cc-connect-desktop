@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { listProjects } from '@/api/projects';
-import { createSession, deleteSession, getSession, listSessions, renameSession } from '@/api/sessions';
+import { createSession, deleteSession, renameSession } from '@/api/sessions';
 import {
   bridgeConnect,
   bridgeSendMessage,
@@ -14,8 +13,6 @@ import {
   deleteThread as deleteCoreThread,
   getThread,
   interruptRun,
-  listThreads,
-  listWorkspaces,
   renameThread,
   sendAction,
   sendMessage as sendThreadMessage,
@@ -31,20 +28,14 @@ import {
 } from '../../../shared/desktop';
 import {
   ASSISTANT_REPLY_TIMEOUT_MS,
-  chatThreadMatchesSearch,
   formatTaskHint,
   isInternalProgressMessage,
   isPermissionActionRow,
   normalizeBridgeActionRows,
-  sessionMatchesDesktop,
   sessionProjectFromKey,
   sortChatMessages,
-  sortChatThreadsByLiveAndUpdated,
-  toChatThreadSummary,
   toCoreChatThreadSummary,
-  toMessages,
   toMessagesFromThread,
-  upsertSessionGroup,
   upsertThreadInGroup,
   type ChatMessage,
   type ChatTaskState,
@@ -53,6 +44,7 @@ import {
   type SessionGroup,
 } from './thread-chat-model';
 import { useThreadChatRuntimeState } from './useThreadChatRuntimeState';
+import { useThreadChatSessionBrowser } from './useThreadChatSessionBrowser';
 
 function permissionSupportMessage(agentType?: string) {
   const name = agentType || 'This agent';
@@ -101,23 +93,6 @@ export function useThreadChatController() {
   const branding = getRuntimeBranding();
   const taskRunning = taskState !== 'idle';
   const taskHint = formatTaskHint(taskState, typing);
-
-  const sessionsForSelectedProject = useMemo(
-    () => sessionGroups.find((group) => group.project === selectedProject)?.sessions || [],
-    [selectedProject, sessionGroups],
-  );
-
-  const filteredSessionGroups = useMemo(() => {
-    const query = sessionSearch.trim().toLowerCase();
-    return projects
-      .map((project) => {
-        const sessions = (sessionGroups.find((group) => group.project === project)?.sessions || []).filter((session) =>
-          chatThreadMatchesSearch(session, query),
-        );
-        return { project, sessions };
-      })
-      .filter((group) => group.sessions.length > 0 || (!query && group.project === selectedProject));
-  }, [projects, selectedProject, sessionGroups, sessionSearch]);
 
   const renderedMessages = useMemo(() => sortChatMessages(messages), [messages]);
 
@@ -392,176 +367,45 @@ export function useThreadChatController() {
     updateTaskState,
   ]);
 
-  const refreshSessionsForProject = useCallback(async (project: string) => {
-    if (!project || !serviceRunning) {
-      return [];
-    }
-    const nextSessions = runtimeProvider === 'local_core'
-      ? sortChatThreadsByLiveAndUpdated((await listThreads(project)).threads.map((thread) => toCoreChatThreadSummary(thread)))
-      : sortChatThreadsByLiveAndUpdated(
-          ((await listSessions(project)).sessions || [])
-            .filter(sessionMatchesDesktop)
-            .map((session) => toChatThreadSummary(project, session)),
-        );
-    const activeSession = nextSessions.find((session) => session.id === activeSessionId);
-    if (activeSession?.agentType) {
-      setActiveSessionAgentType(activeSession.agentType);
-    }
-    setSessionGroups((current) => upsertSessionGroup(current, project, nextSessions));
-    return nextSessions;
-  }, [activeSessionId, runtimeProvider, serviceRunning]);
-
-  const refreshProjectsAndSessions = useCallback(async () => {
-    if (!serviceRunning) {
-      setProjects([]);
-      setSessionGroups([]);
-      return [];
-    }
-    const names = runtimeProvider === 'local_core'
-      ? (await listWorkspaces()).workspaces.map((workspace) => workspace.id)
-      : (await listProjects()).projects.map((project) => project.name);
-    setProjects(names);
-    const groups = (
-      await Promise.all(
-        names.map(async (project) => {
-          return {
-            project,
-            sessions: await refreshSessionsForProject(project),
-          };
-        }),
-      )
-    ).sort((a, b) => a.project.localeCompare(b.project));
-    setSessionGroups(groups);
-    setSelectedProject((current) => current || requestedProject || runtime?.settings.defaultProject || names[0] || '');
-    return groups;
-  }, [refreshSessionsForProject, requestedProject, runtime?.settings.defaultProject, runtimeProvider, serviceRunning]);
-
-  const loadActiveSession = useCallback(async (project: string, sessionId: string) => {
-    if (!project || !sessionId || !serviceRunning) {
-      return;
-    }
-    clearLocalCorePolling();
-    updateTaskState('idle');
-    setTyping(false);
-    if (runtimeProvider === 'local_core') {
-      const detail = await getThread(sessionId);
-      applyLocalCoreThreadDetail(detail);
-      return;
-    }
-    const detail = await getSession(project, sessionId, 200);
-    lastSessionByProjectRef.current[project] = detail.id;
-    setSelectedProject(project);
-    setActiveSessionId(detail.id);
-    setActiveSessionKey(detail.session_key);
-    setActiveSessionName(sessionLabel(detail));
-    setActiveSessionAgentType(detail.agent_type || '');
-    setActiveRunId('');
-    setSessionGroups((current) => upsertThreadInGroup(current, project, toChatThreadSummary(project, detail)));
-    holdBlankComposerRef.current = false;
-    progressSequenceByTurnRef.current = {};
-    const nextMessages = toMessages(detail.history || []);
-    nextMessageOrderRef.current = nextMessages.length;
-    pendingTurnRef.current = null;
-    setMessages(nextMessages);
-  }, [applyLocalCoreThreadDetail, clearLocalCorePolling, runtimeProvider, serviceRunning, updateTaskState]);
-
-  useEffect(() => {
-    if (!serviceRunning) {
-      setSessionGroups([]);
-      setMessages([]);
-      setActiveSessionAgentType('');
-      setActiveRunId('');
-      setBridgeError('');
-      pendingTurnRef.current = null;
-      nextMessageOrderRef.current = 0;
-      progressSequenceByTurnRef.current = {};
-      updateTaskState('idle');
-      setTyping(false);
-      clearLocalCorePolling();
-      clearReplyTimeout();
-      return;
-    }
-    void refreshProjectsAndSessions();
-    void bridgeConnect();
-  }, [clearLocalCorePolling, clearReplyTimeout, refreshProjectsAndSessions, serviceRunning, updateTaskState]);
-
-  useEffect(() => {
-    if (!selectedProject || !serviceRunning) {
-      return;
-    }
-
-    const currentSessions = sessionsForSelectedProject;
-    const activeInProject = currentSessions.find((session) => session.id === activeSessionId);
-    if (activeInProject) {
-      return;
-    }
-
-    const preferredSessionId = requestedProject === selectedProject ? requestedSessionId : '';
-    const rememberedSessionId = lastSessionByProjectRef.current[selectedProject];
-    if (!activeSessionId && holdBlankComposerRef.current) {
-      return;
-    }
-    const targetSession =
-      currentSessions.find((session) => session.id === preferredSessionId) ||
-      currentSessions.find((session) => session.id === rememberedSessionId) ||
-      currentSessions[0];
-
-    if (targetSession) {
-      setTyping(false);
-      updateTaskState('idle');
-      setBridgeError('');
-      clearLocalCorePolling();
-      clearReplyTimeout();
-      void loadActiveSession(selectedProject, targetSession.id);
-      return;
-    }
-
-    setTyping(false);
-    updateTaskState('idle');
-    setBridgeError('');
-    clearReplyTimeout();
-    setActiveSessionId('');
-    setActiveSessionKey('');
-    setActiveSessionName('');
-    setActiveSessionAgentType('');
-    setActiveRunId('');
-    setMessages([]);
-    pendingTurnRef.current = null;
-    nextMessageOrderRef.current = 0;
-    progressSequenceByTurnRef.current = {};
-    clearLocalCorePolling();
-  }, [
-    activeSessionId,
-    clearLocalCorePolling,
-    clearReplyTimeout,
+  const {
+    filteredSessionGroups,
     loadActiveSession,
+    refreshProjectsAndSessions,
+    refreshSessionsForProject,
+  } = useThreadChatSessionBrowser({
+    activeSessionId,
     requestedProject,
     requestedSessionId,
+    runtimeDefaultProject: runtime?.settings.defaultProject,
+    runtimeProvider,
+    searchParams,
     selectedProject,
     serviceRunning,
-    sessionsForSelectedProject,
+    projects,
+    sessionGroups,
+    sessionSearch,
+    setActiveRunId,
+    setActiveSessionAgentType,
+    setActiveSessionId,
+    setActiveSessionKey,
+    setActiveSessionName,
+    setBridgeError,
+    setMessages,
+    setProjects,
+    setSearchParams,
+    setSelectedProject,
+    setSessionGroups,
+    setTyping,
+    applyLocalCoreThreadDetail,
+    clearLocalCorePolling,
+    clearReplyTimeout,
     updateTaskState,
-  ]);
-
-  useEffect(() => {
-    if (!selectedProject && !activeSessionId) {
-      return;
-    }
-    const next = new URLSearchParams(searchParams);
-    if (selectedProject) {
-      next.set('project', selectedProject);
-    } else {
-      next.delete('project');
-    }
-    if (activeSessionId) {
-      next.set('session', activeSessionId);
-    } else {
-      next.delete('session');
-    }
-    if (next.toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true });
-    }
-  }, [activeSessionId, searchParams, selectedProject, setSearchParams]);
+    holdBlankComposerRef,
+    lastSessionByProjectRef,
+    nextMessageOrderRef,
+    pendingTurnRef,
+    progressSequenceByTurnRef,
+  });
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -761,6 +605,12 @@ export function useThreadChatController() {
     reserveAssistantMessageOrder,
     updateTaskState,
   ]);
+
+  useEffect(() => {
+    if (serviceRunning) {
+      void bridgeConnect();
+    }
+  }, [serviceRunning]);
 
   useEffect(() => {
     const stopBridge = onBridgeEvent((event) => {
