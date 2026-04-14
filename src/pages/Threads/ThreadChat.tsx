@@ -97,6 +97,25 @@ export default function ThreadChat() {
     );
   }, [availableKnowledgeBases, knowledgeSearch]);
 
+  const orderedKnowledgeBases = useMemo(() => {
+    const selectedIds = new Set(selectedKnowledgeBaseIds);
+    return [...filteredKnowledgeBases].sort((a, b) => {
+      const aSelected = selectedIds.has(a.id);
+      const bSelected = selectedIds.has(b.id);
+      if (aSelected !== bSelected) {
+        return aSelected ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name, 'zh-CN');
+    });
+  }, [filteredKnowledgeBases, selectedKnowledgeBaseIds]);
+
+  const visibleSessionGroups = useMemo(() => {
+    if (!selectedProject) {
+      return filteredSessionGroups;
+    }
+    return filteredSessionGroups.filter((group) => group.project === selectedProject);
+  }, [filteredSessionGroups, selectedProject]);
+
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       if (!knowledgePickerRef.current?.contains(event.target as Node)) {
@@ -111,112 +130,141 @@ export default function ThreadChat() {
     };
   }, [knowledgePickerOpen]);
 
+  useEffect(() => {
+    if (!knowledgePickerOpen) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      const input = knowledgePickerRef.current?.querySelector('input');
+      if (input instanceof HTMLInputElement) {
+        input.focus();
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [knowledgePickerOpen]);
+
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-gray-400 animate-pulse">Loading...</div>;
   }
 
   return (
     <>
-      <div className="grid grid-cols-[360px_minmax(0,1fr)] gap-6 h-[calc(100vh-8rem)] animate-fade-in">
-        <Card className="overflow-hidden p-0 flex flex-col">
-          <div className="p-5 border-b border-gray-200/80 dark:border-white/[0.08] space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{branding.chatHeading}</h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {branding.chatDescription}
-                </p>
+      <div className="h-[calc(100vh-8rem)] rounded-[28px] border border-slate-200/80 bg-[linear-gradient(180deg,#f8fbfa_0%,#eef3f6_100%)] p-4 shadow-[0_24px_60px_rgba(15,23,42,0.08)] animate-fade-in dark:border-white/[0.06] dark:bg-[linear-gradient(180deg,#111318_0%,#0a0d12_100%)] dark:shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+        <div className="grid h-full grid-cols-[288px_minmax(0,1fr)] gap-4">
+          <Card className="flex min-h-0 flex-col overflow-hidden border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(246,248,251,0.96))] p-0 text-slate-900 shadow-[0_18px_40px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:bg-[linear-gradient(180deg,rgba(17,24,39,0.9),rgba(9,12,17,0.92))] dark:text-white dark:shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
+            <div className="space-y-4 border-b border-slate-200/80 px-5 py-5 dark:border-white/[0.08]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-[1.75rem] font-semibold leading-none text-slate-900 dark:text-white">{branding.chatHeading}</h2>
+                  <p className="mt-3 max-w-[18rem] text-sm leading-6 text-slate-500 dark:text-slate-400">
+                    搜索会话、切换项目，并保持桌面对话井然有序。
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void refreshRuntime()}
+                  className="rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-white/[0.08] dark:bg-white/[0.06] dark:text-slate-200 dark:hover:bg-white/[0.1]"
+                >
+                  <RotateCw size={14} />
+                </Button>
               </div>
-              <Button size="sm" variant="secondary" onClick={() => void refreshRuntime()}>
-                <RotateCw size={14} />
-              </Button>
-            </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{branding.scopeLabel}</label>
-              <select
-                value={selectedProject}
-                onChange={(event) => setSelectedProject(event.target.value)}
-                data-testid="desktop-chat-project-select"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300/90 dark:border-white/[0.1] bg-white/90 dark:bg-[rgba(0,0,0,0.45)] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/45 focus:border-accent"
-              >
-                <option value="">{branding.scopeSelectPlaceholder}</option>
-                {projects.map((project) => (
-                  <option key={project} value={project}>
-                    {project}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] dark:border-white/[0.06] dark:bg-white/[0.03] dark:shadow-none">
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-medium uppercase tracking-[0.22em] text-slate-500 dark:text-slate-500">{branding.scopeLabel}</label>
+                  <select
+                    value={selectedProject}
+                    onChange={(event) => setSelectedProject(event.target.value)}
+                    data-testid="desktop-chat-project-select"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-400/60 focus:outline-none focus:ring-2 focus:ring-emerald-400/20 dark:border-white/[0.08] dark:bg-[#0b0f15] dark:text-white"
+                  >
+                    <option value="">{branding.scopeSelectPlaceholder}</option>
+                    {projects.map((project) => (
+                      <option key={project} value={project}>
+                        {project}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <Input
-                value={sessionSearch}
-                onChange={(event) => setSessionSearch(event.target.value)}
-                placeholder={branding.searchPlaceholder}
-                data-testid="desktop-chat-session-search"
-                className="pl-9"
-              />
-            </div>
+                <div className="mt-3 relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                  <Input
+                    value={sessionSearch}
+                    onChange={(event) => setSessionSearch(event.target.value)}
+                    placeholder={branding.searchPlaceholder}
+                    data-testid="desktop-chat-session-search"
+                    className="rounded-xl border-slate-200 bg-white pl-9 text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-[#0b0f15] dark:text-white dark:placeholder:text-slate-500"
+                  />
+                </div>
 
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={() => void startDesktopService().then(refreshRuntime)}
-                disabled={runtime?.phase === 'starting' || serviceRunning}
-                data-testid="desktop-chat-start-service"
-              >
-                {serviceRunning ? formatRuntimePhase(runtime?.phase) : runtime?.phase === 'starting' ? branding.startingRuntimeLabel : branding.startRuntimeLabel}
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => void handleCreateNew()} data-testid="desktop-chat-new-chat">
-                <MessageSquarePlus size={14} /> {branding.newThreadLabel}
-              </Button>
-            </div>
-
-            {runtime?.service.lastError && (
-              <div className="text-xs rounded-lg border border-red-200 bg-red-50 text-red-600 px-3 py-2 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
-                {runtime.service.lastError}
+                <div className="mt-4 flex items-center gap-2">
+                  <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/12 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                    <Circle size={7} className="fill-current" />
+                    {serviceRunning ? '运行中' : '未启动'}
+                  </span>
+                  <Button
+                    size="sm"
+                    onClick={() => void startDesktopService().then(refreshRuntime)}
+                    disabled={runtime?.phase === 'starting' || serviceRunning}
+                    data-testid="desktop-chat-start-service"
+                    className="rounded-full px-3.5"
+                  >
+                    {serviceRunning ? '已就绪' : runtime?.phase === 'starting' ? '启动中' : '启动服务'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void handleCreateNew()}
+                    data-testid="desktop-chat-new-chat"
+                    className="rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-white/[0.08] dark:bg-white/[0.06] dark:text-slate-200 dark:hover:bg-white/[0.1]"
+                  >
+                    <MessageSquarePlus size={14} /> 新会话
+                  </Button>
+                </div>
               </div>
-            )}
-            {runtime?.pendingRestart && (
-              <div className="text-xs rounded-lg border border-amber-200 bg-amber-50 text-amber-700 px-3 py-2 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
-                {branding.pendingRestartLabel}
-              </div>
-            )}
-          </div>
 
-          <div className="flex-1 overflow-y-auto p-3 space-y-4">
-            {!selectedProject && filteredSessionGroups.length === 0 ? (
+              {runtime?.service.lastError && (
+                <div className="rounded-xl border border-red-500/20 bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-200">
+                  {runtime.service.lastError}
+                </div>
+              )}
+              {runtime?.pendingRestart && (
+                <div className="rounded-xl border border-amber-500/20 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
+                  {branding.pendingRestartLabel}
+                </div>
+              )}
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-scroll px-4 py-4 pr-3 [scrollbar-gutter:stable]">
+            {!selectedProject && visibleSessionGroups.length === 0 ? (
               <EmptyState message={branding.emptySelectionLabel} />
-            ) : filteredSessionGroups.length === 0 ? (
+            ) : visibleSessionGroups.length === 0 ? (
               <EmptyState message={branding.emptySearchLabel} />
             ) : (
-              filteredSessionGroups.map((group) => (
-                <section key={group.project} className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedProject(group.project)}
-                    data-testid="desktop-chat-session-group"
-                    data-project={group.project}
-                    className={cn(
-                      'w-full flex items-center justify-between rounded-xl px-3 py-2 text-left transition-colors',
-                      group.project === selectedProject
-                        ? 'bg-accent/10 text-gray-900 dark:text-white'
-                        : 'bg-gray-100/60 dark:bg-white/[0.04] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.08]',
-                    )}
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{group.project}</p>
-                      <p className="text-[10px] uppercase tracking-wide opacity-70">{group.sessions.length} {branding.collectionLabel}</p>
+              visibleSessionGroups.map((group) => (
+                <section key={group.project} className="space-y-2.5">
+                  {!selectedProject && group.sessions.length > 0 ? (
+                    <div
+                      data-testid="desktop-chat-session-group"
+                      data-project={group.project}
+                      className="px-1 pb-0.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="h-px flex-1 bg-slate-200/80 dark:bg-white/[0.06]" />
+                        <div className="shrink-0 text-right">
+                          <p className="text-[11px] font-medium tracking-[0.08em] text-slate-500 dark:text-slate-400">{group.project}</p>
+                          <p className="mt-0.5 text-[10px] uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500">
+                            {group.sessions.length} {branding.collectionLabel}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    {group.project === selectedProject && (
-                      <span className="text-[10px] uppercase tracking-wide text-accent">{branding.activeScopeLabel}</span>
-                    )}
-                  </button>
+                  ) : null}
 
                   {group.sessions.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-gray-200/80 dark:border-white/[0.08] px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                    <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-500 dark:border-white/[0.08]">
                       {branding.emptyThreadsLabel}
                     </div>
                   ) : (
@@ -227,10 +275,10 @@ export default function ThreadChat() {
                         data-session-id={session.id}
                         data-project={group.project}
                         className={cn(
-                          'group rounded-xl border px-4 py-3 transition-colors',
+                          'group rounded-2xl border px-4 py-3.5 transition-all',
                           session.id === activeSessionId
-                            ? 'border-accent/40 bg-accent/10'
-                            : 'border-transparent bg-gray-100/70 dark:bg-white/[0.04] hover:bg-gray-100 dark:hover:bg-white/[0.08]',
+                            ? 'border-emerald-300/70 bg-emerald-50 shadow-[0_16px_30px_rgba(16,185,129,0.10)] dark:border-emerald-400/35 dark:bg-emerald-500/10 dark:shadow-[0_16px_35px_rgba(16,185,129,0.12)]'
+                            : 'border-slate-200/80 bg-white/75 hover:border-slate-300 hover:bg-white dark:border-white/[0.05] dark:bg-white/[0.03] dark:hover:border-white/[0.1] dark:hover:bg-white/[0.05]',
                         )}
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -244,28 +292,28 @@ export default function ThreadChat() {
                           >
                             <div className="flex items-center justify-between gap-3">
                               <div className="min-w-0">
-                                <span className="font-medium text-sm text-gray-900 dark:text-white truncate block">
+                                <span className="block truncate text-sm font-medium text-slate-900 dark:text-white">
                                   {session.name}
                                 </span>
-                                <p className="text-[10px] text-gray-400 mt-1">
+                                <p className="mt-1 text-[11px] text-slate-500">
                                   {timeAgo(session.updatedAt || session.createdAt)}
                                 </p>
                               </div>
                               {session.live ? (
-                                <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 shrink-0">
-                                  <Circle size={6} className="fill-current" /> live
+                                <span className="shrink-0 rounded-full bg-emerald-500/12 px-2 py-1 text-[10px] text-emerald-700 dark:text-emerald-300">
+                                  live
                                 </span>
                               ) : (
-                                <span className="text-[10px] text-gray-400 shrink-0">offline</span>
+                                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[10px] text-slate-500 dark:bg-white/[0.05]">offline</span>
                               )}
                             </div>
                             {session.excerpt && (
-                              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-2 line-clamp-2">
+                              <p className="mt-3 line-clamp-2 text-[11px] leading-5 text-slate-400">
                                 {session.excerpt.replace(/\n/g, ' ')}
                               </p>
                             )}
                             {showSessionKey && session.bridgeSessionKey && (
-                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">
+                              <p className="mt-2 truncate text-[11px] text-slate-500">
                                 {session.bridgeSessionKey}
                               </p>
                             )}
@@ -279,13 +327,14 @@ export default function ThreadChat() {
                               data-testid="desktop-chat-session-rename"
                               data-session-id={session.id}
                               data-project={group.project}
+                              className="text-slate-400 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-white/[0.08] dark:hover:text-white"
                             >
                               <Pencil size={14} />
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="text-red-500 hover:text-red-600"
+                              className="text-red-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-200"
                               data-testid="desktop-chat-session-delete"
                               data-session-id={session.id}
                               data-project={group.project}
@@ -308,172 +357,75 @@ export default function ThreadChat() {
               ))
             )}
           </div>
-        </Card>
+          </Card>
 
-        <Card className="flex flex-col min-h-0">
-          <div className="pb-4 border-b border-gray-200/80 dark:border-white/[0.08]">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2
-                  className="text-lg font-semibold text-gray-900 dark:text-white"
-                  data-testid="desktop-chat-active-title"
-                >
-                  {activeSessionName || branding.activeConversationFallback}
-                </h2>
-                <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
-                  {selectedProject ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-white/[0.06] px-2 py-0.5">
-                      {selectedProject}
-                    </span>
-                  ) : (
-                    <span>{branding.startConversationLabel}</span>
-                  )}
-                  {showSessionKey && activeSessionKey ? <span>{activeSessionKey}</span> : null}
-                  <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-white/[0.06] px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-300">
-                    {formatRuntimePhase(runtime?.phase)}
-                  </span>
-                  {transportReady ? (
-                    <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                      <Circle size={6} className="fill-current" /> {branding.runtimeOnlineLabel}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1">
-                      <WifiOff size={12} /> {branding.runtimeOfflineLabel}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="mt-4" ref={knowledgePickerRef}>
-              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-gray-200/80 bg-gradient-to-r from-emerald-50 to-white px-3 py-2.5 dark:border-white/[0.08] dark:from-emerald-500/10 dark:to-white/[0.03]">
-                <span className="inline-flex items-center gap-2 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-medium text-gray-700 shadow-sm dark:bg-white/[0.06] dark:text-gray-200">
-                  <Database size={13} className="text-emerald-500" />
-                  Knowledge
-                </span>
-                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                  {selectedKnowledgeBases.length === 0 ? (
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {selectedProject ? 'No knowledge bases selected' : 'Choose a project first'}
-                    </span>
-                  ) : (
-                    selectedKnowledgeBases.map((base) => (
-                      <span
-                        key={base.id}
-                        className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs text-gray-700 shadow-sm dark:border-emerald-400/20 dark:bg-white/[0.06] dark:text-gray-200"
-                      >
-                        <span className="truncate">{base.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => void setSelectedKnowledgeBaseIds(selectedKnowledgeBaseIds.filter((id) => id !== base.id))}
-                          className="text-gray-400 transition-colors hover:text-gray-900 dark:hover:text-white"
-                          data-testid="desktop-chat-knowledge-base-remove"
-                        >
-                          <X size={12} />
-                        </button>
-                      </span>
-                    ))
-                  )}
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!selectedProject}
-                  onClick={() => setKnowledgePickerOpen((current) => !current)}
-                  data-testid="desktop-chat-knowledge-base-toggle"
-                  className="shrink-0 rounded-full"
-                >
-                  {selectedKnowledgeBaseIds.length > 0 ? `${selectedKnowledgeBaseIds.length} selected` : 'Select'}
-                </Button>
-              </div>
-              {knowledgePickerOpen ? (
-                <div className="mt-3 rounded-2xl border border-gray-200/80 bg-white/95 p-3 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur dark:border-white/[0.08] dark:bg-[rgba(12,18,24,0.96)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">Choose knowledge bases</p>
-                      <p className="text-[11px] text-gray-500 dark:text-gray-400">Selections are saved per thread.</p>
-                    </div>
-                    {selectedKnowledgeBaseIds.length > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => void setSelectedKnowledgeBaseIds([])}
-                        className="text-xs text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-                      >
-                        Clear
-                      </button>
+          <Card className="flex min-h-0 flex-col border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-0 text-slate-900 shadow-[0_18px_40px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:bg-[linear-gradient(180deg,rgba(15,19,26,0.92),rgba(9,12,17,0.97))] dark:text-white dark:shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
+            <div className="border-b border-slate-200/80 px-5 py-2.5 dark:border-white/[0.08]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2
+                    className="text-[1.8rem] font-semibold leading-none text-slate-900 dark:text-white"
+                    data-testid="desktop-chat-active-title"
+                  >
+                    {activeSessionName || branding.activeConversationFallback}
+                  </h2>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                    {!selectedProject ? (
+                      <span className="text-slate-500 dark:text-slate-400">{branding.startConversationLabel}</span>
                     ) : null}
-                  </div>
-                  <Input
-                    value={knowledgeSearch}
-                    onChange={(event) => setKnowledgeSearch(event.target.value)}
-                    placeholder="Search knowledge bases"
-                    className="mt-3"
-                  />
-                  <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
-                    {filteredKnowledgeBases.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-500 dark:border-white/[0.08] dark:text-gray-400">
-                        No matching knowledge bases
-                      </div>
+                    {showSessionKey && activeSessionKey ? <span className="text-slate-500 dark:text-slate-400">{activeSessionKey}</span> : null}
+                    <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[10px] uppercase tracking-[0.22em] text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.05] dark:text-slate-400">
+                      {formatRuntimePhase(runtime?.phase)}
+                    </span>
+                    {transportReady ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-700 dark:text-emerald-300">
+                        <Circle size={6} className="fill-current" /> {branding.runtimeOnlineLabel}
+                      </span>
                     ) : (
-                      filteredKnowledgeBases.map((base) => {
-                        const checked = selectedKnowledgeBaseIds.includes(base.id);
-                        return (
-                          <button
-                            key={base.id}
-                            type="button"
-                            onClick={() =>
-                              void setSelectedKnowledgeBaseIds(
-                                checked
-                                  ? selectedKnowledgeBaseIds.filter((id) => id !== base.id)
-                                  : [...selectedKnowledgeBaseIds, base.id],
-                              )
-                            }
-                            data-testid="desktop-chat-knowledge-base-select"
-                            className={cn(
-                              'flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition-all',
-                              checked
-                                ? 'border-emerald-300 bg-emerald-50/80 shadow-sm dark:border-emerald-400/30 dark:bg-emerald-500/10'
-                                : 'border-gray-200/80 bg-gray-50/70 hover:border-gray-300 hover:bg-gray-50 dark:border-white/[0.08] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]',
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                'mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px]',
-                                checked
-                                  ? 'border-emerald-500 bg-emerald-500 text-white'
-                                  : 'border-gray-300 text-transparent dark:border-white/[0.18]',
-                              )}
-                            >
-                              <Check size={12} />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium text-gray-900 dark:text-white">{base.name}</span>
-                              <span className="mt-1 block text-[11px] text-gray-500 dark:text-gray-400">
-                                {base.fileCount} docs
-                                {base.description ? ` · ${base.description}` : ''}
-                              </span>
-                            </span>
-                          </button>
-                        );
-                      })
+                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-slate-500 dark:bg-white/[0.05]">
+                        <WifiOff size={12} /> {branding.runtimeOfflineLabel}
+                      </span>
                     )}
                   </div>
                 </div>
-              ) : null}
+              </div>
             </div>
-          </div>
 
-          <div className="flex-1 overflow-y-auto py-6 space-y-5">
+            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-2.5 pr-4 [scrollbar-gutter:stable]">
             {renderedMessages.length === 0 ? (
-              <p className="text-center text-sm text-gray-400 py-12">
-                {branding.emptyConversationLabel}
-              </p>
+                <div className="flex h-full min-h-[23rem] items-center justify-center">
+                  <div className="w-full max-w-2xl rounded-[28px] border border-slate-200/80 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-8 py-10 text-center shadow-[0_20px_40px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:bg-[linear-gradient(180deg,rgba(17,24,39,0.6),rgba(10,12,16,0.7))] dark:shadow-[0_20px_50px_rgba(0,0,0,0.28)]">
+                    <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/12 text-emerald-300">
+                      <MessageSquarePlus size={24} />
+                    </div>
+                    <h3 className="text-xl font-semibold text-slate-900 dark:text-white">开始一段新的桌面对话</h3>
+                    <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+                      {selectedProject
+                        ? `当前项目：${selectedProject}。直接提问即可创建会话并开始对话。`
+                        : '先在左侧选择项目，然后直接输入你的问题。'}
+                    </p>
+                    <div className="mt-5 flex flex-wrap justify-center gap-2">
+                      {selectedKnowledgeBases.length > 0 ? (
+                        selectedKnowledgeBases.map((base) => (
+                          <span key={base.id} className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 dark:border-emerald-400/15 dark:bg-emerald-500/10 dark:text-emerald-200">
+                            {base.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-slate-400">
+                          当前未选择知识库
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
             ) : (
               renderedMessages.map((message) => {
                 const isUser = message.role === 'user';
                 return (
                   <div key={message.id} className={cn('flex gap-3', isUser ? 'justify-end' : 'justify-start')}>
                     {!isUser && (
-                      <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0 mt-1">
+                      <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300">
                         <Bot size={16} className="text-accent" />
                       </div>
                     )}
@@ -484,17 +436,17 @@ export default function ThreadChat() {
                       data-order={String(message.order)}
                       data-timestamp={message.timestamp || ''}
                       className={cn(
-                        'rounded-2xl px-5 py-3.5 text-sm',
+                        'rounded-[24px] px-5 py-4 text-sm shadow-[0_12px_24px_rgba(15,23,42,0.08)] dark:shadow-[0_12px_30px_rgba(0,0,0,0.18)]',
                         isUser
-                          ? 'max-w-[70%] bg-accent text-black rounded-br-md'
+                          ? 'max-w-[78%] rounded-br-lg bg-emerald-400 text-black'
                           : message.kind === 'progress'
-                            ? 'max-w-[85%] bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-100 rounded-bl-md shadow-sm'
-                            : 'max-w-[85%] bg-white dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700/60 text-gray-900 dark:text-gray-100 rounded-bl-md shadow-sm',
+                            ? 'max-w-[90%] rounded-bl-lg border border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100'
+                            : 'max-w-[90%] rounded-bl-lg border border-slate-200 bg-white text-slate-800 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-slate-100',
                       )}
                     >
-                      <div className={cn('mb-2 flex items-center gap-2 text-[10px]', isUser ? 'justify-end text-black/70' : 'text-gray-400 dark:text-gray-500')}>
+                      <div className={cn('mb-2 flex items-center gap-2 text-[10px]', isUser ? 'justify-end text-black/70' : 'text-slate-500')}>
                         {!isUser && message.kind === 'progress' && (
-                          <span className="uppercase tracking-wide text-amber-600 dark:text-amber-300">
+                          <span className="uppercase tracking-wide text-amber-300">
                             process
                           </span>
                         )}
@@ -529,7 +481,7 @@ export default function ThreadChat() {
                           className={cn(
                             'mt-3 text-xs',
                             message.actionInteractive
-                              ? 'text-gray-500 dark:text-gray-400'
+                              ? 'text-slate-500 dark:text-gray-400'
                               : 'text-amber-700 dark:text-amber-200',
                           )}
                           data-testid="desktop-chat-action-status"
@@ -542,8 +494,8 @@ export default function ThreadChat() {
                       )}
                     </div>
                     {isUser && (
-                      <div className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center shrink-0 mt-1">
-                        <User size={16} className="text-gray-500" />
+                      <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-slate-100 dark:bg-white/[0.08]">
+                        <User size={16} className="text-slate-500 dark:text-slate-300" />
                       </div>
                     )}
                   </div>
@@ -552,13 +504,13 @@ export default function ThreadChat() {
             )}
 
             {taskHint && (
-              <div className="flex items-center gap-2 text-sm text-gray-400" data-testid="desktop-chat-task-hint">
+              <div className="flex items-center gap-2 text-sm text-slate-400" data-testid="desktop-chat-task-hint">
                 <Circle size={8} className="fill-current animate-pulse" /> {taskHint}
               </div>
             )}
             {bridgeError && (
               <div
-                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200"
+                className="rounded-xl border border-amber-400/20 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-100"
                 data-testid="desktop-chat-bridge-error"
               >
                 {bridgeError}
@@ -567,54 +519,187 @@ export default function ThreadChat() {
             <div ref={endRef} />
           </div>
 
-          <div className="border-t border-gray-200/80 dark:border-white/[0.08] pt-4">
-            <div className="flex gap-3">
-              <Textarea
-                data-testid="desktop-chat-input"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey && !taskRunning) {
-                    event.preventDefault();
-                    void handleSend();
-                  }
-                }}
-                rows={4}
-                placeholder={!serviceRunning ? branding.startFirstPlaceholder : !transportReady ? branding.waitingRuntimePlaceholder : taskRunning ? 'Task is running. Click stop to interrupt.' : branding.sendPlaceholder}
-                disabled={!serviceRunning || !transportReady || sending || !selectedProject || taskRunning}
-                className="min-h-[112px] resize-none"
-              />
-              {taskRunning ? (
-                <Button
-                  variant="danger"
-                  onClick={() => void handleStopTask()}
-                  disabled={(!activeSessionKey && !activeRunId) || taskState === 'stopping'}
-                  data-testid="desktop-chat-stop-task"
-                  className="min-w-[112px]"
-                >
-                  {taskState === 'stopping' ? (
-                    <>
-                      <LoaderCircle size={16} className="animate-spin" /> Stopping…
-                    </>
+            <div className="border-t border-slate-200/80 px-5 py-2 dark:border-white/[0.08]">
+              <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-2.5 shadow-[0_14px_28px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] dark:shadow-[0_14px_35px_rgba(0,0,0,0.22)]">
+                <div className="relative mb-2" ref={knowledgePickerRef}>
+                  <div className="mb-1 flex items-center justify-between px-1">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-slate-500">知识库范围</p>
+                    <p className="text-[11px] text-slate-400">
+                      {selectedProject
+                        ? selectedKnowledgeBaseIds.length > 0
+                          ? `已选 ${selectedKnowledgeBaseIds.length} 个`
+                          : '未限制知识库范围'
+                        : '请先选择项目'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-[linear-gradient(90deg,rgba(16,185,129,0.08),rgba(255,255,255,0.9))] px-3 py-2 dark:border-emerald-400/12 dark:bg-[linear-gradient(90deg,rgba(16,185,129,0.10),rgba(255,255,255,0.02))]">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={!selectedProject}
+                      onClick={() => setKnowledgePickerOpen((current) => !current)}
+                      data-testid="desktop-chat-knowledge-base-toggle"
+                      className="shrink-0 rounded-full border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400/12 dark:bg-white/[0.06] dark:text-emerald-200 dark:hover:bg-white/[0.1]"
+                    >
+                      <Database size={13} />
+                      {selectedKnowledgeBaseIds.length > 0 ? '调整知识库' : '选择知识库'}
+                    </Button>
+                    <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap pr-1 [scrollbar-gutter:stable]">
+                      {selectedKnowledgeBases.length === 0 ? (
+                        <span className="text-xs text-slate-400">
+                          {selectedProject ? '当前未选择知识库' : '选择项目后可设置知识库范围'}
+                        </span>
+                      ) : (
+                        selectedKnowledgeBases.map((base) => (
+                          <span
+                            key={base.id}
+                            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm dark:border-emerald-400/12 dark:bg-white/[0.06] dark:text-slate-100"
+                          >
+                            <span className="max-w-[10rem] truncate">{base.name}</span>
+                            {base.fileCount > 0 ? <span className="text-[10px] text-slate-500">{base.fileCount} 文档</span> : null}
+                            <button
+                              type="button"
+                              onClick={() => void setSelectedKnowledgeBaseIds(selectedKnowledgeBaseIds.filter((id) => id !== base.id))}
+                              className="text-slate-500 transition-colors hover:text-slate-900 dark:hover:text-white"
+                              data-testid="desktop-chat-knowledge-base-remove"
+                            >
+                              <X size={12} />
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  {knowledgePickerOpen ? (
+                    <div className="absolute bottom-full left-0 right-0 z-20 mb-3 rounded-3xl border border-slate-200 bg-white/95 p-3 shadow-[0_24px_60px_rgba(15,23,42,0.16)] backdrop-blur-xl dark:border-white/[0.08] dark:bg-[rgba(10,14,19,0.98)] dark:shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">选择知识库</p>
+                          <p className="text-[11px] text-slate-400">已选项会固定排在前面。</p>
+                        </div>
+                        {selectedKnowledgeBaseIds.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => void setSelectedKnowledgeBaseIds([])}
+                            className="text-xs text-slate-400 transition-colors hover:text-slate-900 dark:hover:text-white"
+                          >
+                            清空
+                          </button>
+                        ) : null}
+                      </div>
+                      <Input
+                        value={knowledgeSearch}
+                        onChange={(event) => setKnowledgeSearch(event.target.value)}
+                        placeholder="搜索知识库"
+                        className="mt-3 rounded-2xl border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white dark:placeholder:text-slate-500"
+                      />
+                      <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
+                        {orderedKnowledgeBases.length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-white/[0.08] px-3 py-4 text-center text-xs text-slate-500">
+                            没有匹配的知识库
+                          </div>
+                        ) : (
+                          orderedKnowledgeBases.map((base) => {
+                            const checked = selectedKnowledgeBaseIds.includes(base.id);
+                            return (
+                              <button
+                                key={base.id}
+                                type="button"
+                                onClick={() =>
+                                  void setSelectedKnowledgeBaseIds(
+                                    checked
+                                      ? selectedKnowledgeBaseIds.filter((id) => id !== base.id)
+                                      : [...selectedKnowledgeBaseIds, base.id],
+                                  )
+                                }
+                                data-testid="desktop-chat-knowledge-base-select"
+                                className={cn(
+                                  'flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition-all',
+                                  checked
+                                    ? 'border-emerald-300 bg-emerald-50 shadow-[0_10px_24px_rgba(16,185,129,0.10)] dark:border-emerald-400/30 dark:bg-emerald-500/12 dark:shadow-[0_10px_25px_rgba(16,185,129,0.12)]'
+                                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:border-white/[0.12] dark:hover:bg-white/[0.05]',
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    'mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px]',
+                                    checked
+                                      ? 'border-emerald-500 bg-emerald-500 text-white'
+                                      : 'border-slate-300 text-transparent dark:border-white/[0.12]',
+                                  )}
+                                >
+                                  <Check size={12} />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-medium text-slate-900 dark:text-white">{base.name}</span>
+                                  <span className="mt-1 block text-[11px] text-slate-400">
+                                    {base.fileCount} 文档
+                                    {base.description ? ` · ${base.description}` : ''}
+                                  </span>
+                                </span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex items-end gap-3">
+                  <div className="flex-1">
+                    <Textarea
+                      data-testid="desktop-chat-input"
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && !event.shiftKey && !taskRunning) {
+                          event.preventDefault();
+                          void handleSend();
+                        }
+                      }}
+                      rows={2}
+                      placeholder={!serviceRunning ? branding.startFirstPlaceholder : !transportReady ? branding.waitingRuntimePlaceholder : taskRunning ? '任务正在运行，点击停止可中断当前执行。' : branding.sendPlaceholder}
+                      disabled={!serviceRunning || !transportReady || sending || !selectedProject || taskRunning}
+                      className="min-h-[78px] rounded-[22px] border-slate-200 bg-white px-4 py-3 text-[15px] leading-6 text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-[#090d12] dark:text-white dark:placeholder:text-slate-500"
+                    />
+                    <div className="mt-1.5 flex items-center justify-between px-1 text-[11px] text-slate-500">
+                      <span>Enter 发送，Shift + Enter 换行</span>
+                      <span>{selectedProject ? '知识库范围会随当前线程保存' : '请先选择项目'}</span>
+                    </div>
+                  </div>
+                  {taskRunning ? (
+                    <Button
+                      variant="danger"
+                      onClick={() => void handleStopTask()}
+                      disabled={(!activeSessionKey && !activeRunId) || taskState === 'stopping'}
+                      data-testid="desktop-chat-stop-task"
+                      className="h-12 min-w-[128px] rounded-[18px] bg-red-50 px-5 text-red-600 hover:bg-red-100 dark:bg-red-500/12 dark:text-red-200 dark:hover:bg-red-500/18"
+                    >
+                      {taskState === 'stopping' ? (
+                        <>
+                          <LoaderCircle size={16} className="animate-spin" /> 停止中
+                        </>
+                      ) : (
+                        <>
+                          <LoaderCircle size={16} className="animate-spin" /> 停止任务
+                        </>
+                      )}
+                    </Button>
                   ) : (
-                    <>
-                      <LoaderCircle size={16} className="animate-spin" /> Stop task
-                    </>
+                    <Button
+                      onClick={() => void handleSend()}
+                      disabled={!draft.trim() || !serviceRunning || !transportReady || sending || !selectedProject}
+                      data-testid="desktop-chat-send"
+                      className="h-12 w-12 rounded-[18px] px-0"
+                    >
+                      <Send size={18} />
+                    </Button>
                   )}
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => void handleSend()}
-                  disabled={!draft.trim() || !serviceRunning || !transportReady || sending || !selectedProject}
-                  data-testid="desktop-chat-send"
-                  className="min-w-[48px]"
-                >
-                  <Send size={16} />
-                </Button>
-              )}
+                </div>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
       </div>
 
       <Modal open={Boolean(renameTarget)} onClose={() => setRenameTarget(null)} title="Rename session">

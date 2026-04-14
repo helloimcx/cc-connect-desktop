@@ -70,6 +70,17 @@ export function isInternalProgressMessage(content?: string) {
   );
 }
 
+export function extractVisibleMessageContent(content?: string) {
+  if (!content) {
+    return '';
+  }
+  const match = content.match(/\[User Message\]\s*([\s\S]*?)\s*\[\/User Message\]/);
+  if (!match) {
+    return content;
+  }
+  return match[1] || '';
+}
+
 export function sessionMatchesDesktop(session: Session) {
   return session.platform === 'desktop' || session.session_key.startsWith('desktop:');
 }
@@ -78,7 +89,7 @@ export function toMessages(history: { role: string; content: string; kind?: stri
   return history.map((message, index) => ({
     id: `${index}-${message.timestamp || message.role}`,
     role: message.role === 'user' ? 'user' : 'assistant',
-    content: message.content,
+    content: message.role === 'user' ? extractVisibleMessageContent(message.content) : message.content,
     kind: message.kind === 'progress' ? 'progress' : 'final',
     order: index,
     timestamp: message.timestamp,
@@ -89,7 +100,7 @@ export function toMessagesFromThread(history: ThreadDetail['messages']): ChatMes
   return history.map((message, index) => ({
     id: message.id || `${index}-${message.timestamp || message.role}`,
     role: message.role === 'user' ? 'user' : 'assistant',
-    content: message.content,
+    content: message.role === 'user' ? extractVisibleMessageContent(message.content) : message.content,
     kind:
       message.kind === 'progress'
         ? 'progress'
@@ -109,7 +120,7 @@ export function toChatThreadSummary(project: string, session: Session): ChatThre
     live: session.live,
     createdAt: session.created_at,
     updatedAt: session.updated_at,
-    excerpt: session.last_message?.content || '',
+    excerpt: extractVisibleMessageContent(session.last_message?.content || ''),
     agentType: session.agent_type,
     bridgeSessionKey: session.session_key,
   };
@@ -123,7 +134,7 @@ export function toCoreChatThreadSummary(thread: ThreadSummary): ChatThreadSummar
     live: thread.live,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
-    excerpt: thread.excerpt,
+    excerpt: extractVisibleMessageContent(thread.excerpt),
     agentType: thread.agentType,
     bridgeSessionKey: thread.bridgeSessionKey,
   };
