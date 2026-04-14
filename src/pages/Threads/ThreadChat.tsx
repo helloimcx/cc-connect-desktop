@@ -1,6 +1,9 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bot,
+  Check,
   Circle,
+  Database,
   LoaderCircle,
   MessageSquarePlus,
   Pencil,
@@ -10,6 +13,7 @@ import {
   Trash2,
   User,
   WifiOff,
+  X,
 } from 'lucide-react';
 import { Button, Card, EmptyState, Input, Modal, Textarea } from '@/components/ui';
 import { ChatMarkdown } from '@/components/chat/ChatMarkdown';
@@ -20,6 +24,9 @@ import { formatMessageTimestamp, formatRuntimePhase } from './thread-chat-model'
 import { useThreadChatController } from './useThreadChatController';
 
 export default function ThreadChat() {
+  const [knowledgePickerOpen, setKnowledgePickerOpen] = useState(false);
+  const knowledgePickerRef = useRef<HTMLDivElement>(null);
+  const [knowledgeSearch, setKnowledgeSearch] = useState('');
   const {
     activeRunId,
     activeSessionId,
@@ -68,13 +75,45 @@ export default function ThreadChat() {
     transportReady,
   } = useThreadChatController();
 
+  const selectedKnowledgeBases = useMemo(
+    () => selectedKnowledgeBaseIds.map((knowledgeBaseId) => {
+      const matched = availableKnowledgeBases.find((base) => base.id === knowledgeBaseId);
+      return {
+        id: knowledgeBaseId,
+        name: matched?.name || knowledgeBaseId,
+        fileCount: matched?.fileCount || 0,
+      };
+    }),
+    [availableKnowledgeBases, selectedKnowledgeBaseIds],
+  );
+
+  const filteredKnowledgeBases = useMemo(() => {
+    const query = knowledgeSearch.trim().toLowerCase();
+    if (!query) {
+      return availableKnowledgeBases;
+    }
+    return availableKnowledgeBases.filter((base) =>
+      [base.name, base.description, base.id].join(' ').toLowerCase().includes(query),
+    );
+  }, [availableKnowledgeBases, knowledgeSearch]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!knowledgePickerRef.current?.contains(event.target as Node)) {
+        setKnowledgePickerOpen(false);
+      }
+    };
+    if (knowledgePickerOpen) {
+      document.addEventListener('mousedown', handlePointerDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [knowledgePickerOpen]);
+
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-gray-400 animate-pulse">Loading...</div>;
   }
-
-  const selectedKnowledgeBases = selectedKnowledgeBaseIds
-    .map((knowledgeBaseId) => availableKnowledgeBases.find((base) => base.id === knowledgeBaseId))
-    .filter((base): base is NonNullable<typeof availableKnowledgeBases[number]> => Boolean(base));
 
   return (
     <>
@@ -305,60 +344,119 @@ export default function ThreadChat() {
                 </div>
               </div>
             </div>
-            <div className="mt-4 rounded-xl border border-gray-200/80 dark:border-white/[0.08] bg-gray-50/70 dark:bg-white/[0.03] px-3 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">Knowledge bases</p>
-                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                    {selectedProject
-                      ? 'Select one or more knowledge bases for this thread.'
-                      : 'Choose a project first to enable knowledge-base selection.'}
-                  </p>
-                </div>
-                <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                  {selectedKnowledgeBaseIds.length} selected
+            <div className="mt-4" ref={knowledgePickerRef}>
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-gray-200/80 bg-gradient-to-r from-emerald-50 to-white px-3 py-2.5 dark:border-white/[0.08] dark:from-emerald-500/10 dark:to-white/[0.03]">
+                <span className="inline-flex items-center gap-2 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-medium text-gray-700 shadow-sm dark:bg-white/[0.06] dark:text-gray-200">
+                  <Database size={13} className="text-emerald-500" />
+                  Knowledge
                 </span>
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                  {selectedKnowledgeBases.length === 0 ? (
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {selectedProject ? 'No knowledge bases selected' : 'Choose a project first'}
+                    </span>
+                  ) : (
+                    selectedKnowledgeBases.map((base) => (
+                      <span
+                        key={base.id}
+                        className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs text-gray-700 shadow-sm dark:border-emerald-400/20 dark:bg-white/[0.06] dark:text-gray-200"
+                      >
+                        <span className="truncate">{base.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => void setSelectedKnowledgeBaseIds(selectedKnowledgeBaseIds.filter((id) => id !== base.id))}
+                          className="text-gray-400 transition-colors hover:text-gray-900 dark:hover:text-white"
+                          data-testid="desktop-chat-knowledge-base-remove"
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!selectedProject}
+                  onClick={() => setKnowledgePickerOpen((current) => !current)}
+                  data-testid="desktop-chat-knowledge-base-toggle"
+                  className="shrink-0 rounded-full"
+                >
+                  {selectedKnowledgeBaseIds.length > 0 ? `${selectedKnowledgeBaseIds.length} selected` : 'Select'}
+                </Button>
               </div>
-              <select
-                multiple
-                value={selectedKnowledgeBaseIds}
-                disabled={!selectedProject || availableKnowledgeBases.length === 0}
-                onChange={(event) =>
-                  void setSelectedKnowledgeBaseIds(Array.from(event.target.selectedOptions, (option) => option.value))
-                }
-                data-testid="desktop-chat-knowledge-base-select"
-                className="mt-3 min-h-28 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-accent dark:border-white/[0.08] dark:bg-[rgba(0,0,0,0.35)] dark:text-white"
-              >
-                {availableKnowledgeBases.length === 0 ? (
-                  <option value="" disabled>
-                    No knowledge bases available
-                  </option>
-                ) : (
-                  availableKnowledgeBases.map((base) => (
-                    <option key={base.id} value={base.id}>
-                      {base.name}
-                    </option>
-                  ))
-                )}
-              </select>
-              {selectedKnowledgeBases.length > 0 ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {selectedKnowledgeBases.map((base) => (
-                    <span
-                      key={base.id}
-                      className="inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1 text-xs text-gray-700 dark:text-gray-200"
-                    >
-                      {base.name}
+              {knowledgePickerOpen ? (
+                <div className="mt-3 rounded-2xl border border-gray-200/80 bg-white/95 p-3 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur dark:border-white/[0.08] dark:bg-[rgba(12,18,24,0.96)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">Choose knowledge bases</p>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">Selections are saved per thread.</p>
+                    </div>
+                    {selectedKnowledgeBaseIds.length > 0 ? (
                       <button
                         type="button"
-                        onClick={() => void setSelectedKnowledgeBaseIds(selectedKnowledgeBaseIds.filter((id) => id !== base.id))}
-                        className="text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-                        data-testid="desktop-chat-knowledge-base-remove"
+                        onClick={() => void setSelectedKnowledgeBaseIds([])}
+                        className="text-xs text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
                       >
-                        x
+                        Clear
                       </button>
-                    </span>
-                  ))}
+                    ) : null}
+                  </div>
+                  <Input
+                    value={knowledgeSearch}
+                    onChange={(event) => setKnowledgeSearch(event.target.value)}
+                    placeholder="Search knowledge bases"
+                    className="mt-3"
+                  />
+                  <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+                    {filteredKnowledgeBases.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-500 dark:border-white/[0.08] dark:text-gray-400">
+                        No matching knowledge bases
+                      </div>
+                    ) : (
+                      filteredKnowledgeBases.map((base) => {
+                        const checked = selectedKnowledgeBaseIds.includes(base.id);
+                        return (
+                          <button
+                            key={base.id}
+                            type="button"
+                            onClick={() =>
+                              void setSelectedKnowledgeBaseIds(
+                                checked
+                                  ? selectedKnowledgeBaseIds.filter((id) => id !== base.id)
+                                  : [...selectedKnowledgeBaseIds, base.id],
+                              )
+                            }
+                            data-testid="desktop-chat-knowledge-base-select"
+                            className={cn(
+                              'flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition-all',
+                              checked
+                                ? 'border-emerald-300 bg-emerald-50/80 shadow-sm dark:border-emerald-400/30 dark:bg-emerald-500/10'
+                                : 'border-gray-200/80 bg-gray-50/70 hover:border-gray-300 hover:bg-gray-50 dark:border-white/[0.08] dark:bg-white/[0.03] dark:hover:bg-white/[0.05]',
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                'mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px]',
+                                checked
+                                  ? 'border-emerald-500 bg-emerald-500 text-white'
+                                  : 'border-gray-300 text-transparent dark:border-white/[0.18]',
+                              )}
+                            >
+                              <Check size={12} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium text-gray-900 dark:text-white">{base.name}</span>
+                              <span className="mt-1 block text-[11px] text-gray-500 dark:text-gray-400">
+                                {base.fileCount} docs
+                                {base.description ? ` · ${base.description}` : ''}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               ) : null}
             </div>

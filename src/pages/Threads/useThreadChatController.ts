@@ -42,6 +42,7 @@ export function useThreadChatController() {
   const [pendingBridgeActionId, setPendingBridgeActionId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [bridgeError, setBridgeError] = useState('');
+  const knowledgeBaseSelectionRequestRef = useRef(0);
   const endRef = useRef<HTMLDivElement>(null);
   const requestedWorkspaceId = searchParams.get('project') || '';
   const requestedThreadId = searchParams.get('session') || '';
@@ -170,16 +171,12 @@ export function useThreadChatController() {
     void refreshKnowledgeBases();
   }, [refreshKnowledgeBases]);
 
-  useEffect(() => {
-    setSelectedKnowledgeBaseIds((current) =>
-      current.filter((knowledgeBaseId) => availableKnowledgeBases.some((base) => base.id === knowledgeBaseId)),
-    );
-  }, [availableKnowledgeBases]);
-
   const handleKnowledgeBaseSelectionChange = useCallback(async (nextIds: string[]) => {
     const normalizedIds = Array.from(new Set(
       nextIds.map((id) => String(id || '').trim()).filter(Boolean),
     ));
+    const requestId = knowledgeBaseSelectionRequestRef.current + 1;
+    knowledgeBaseSelectionRequestRef.current = requestId;
     setSelectedKnowledgeBaseIds(normalizedIds);
     if (!selectedWorkspaceId || !activeThreadId || runtimeProvider === 'web_remote') {
       return;
@@ -188,9 +185,13 @@ export function useThreadChatController() {
       const persistedIds = runtimeProvider === 'local_core'
         ? (await updateCoreThreadKnowledgeBases(activeThreadId, normalizedIds)).knowledgeBaseIds
         : await updateDesktopThreadKnowledgeBases(selectedWorkspaceId, activeThreadId, normalizedIds);
-      setSelectedKnowledgeBaseIds(persistedIds);
+      if (knowledgeBaseSelectionRequestRef.current === requestId) {
+        setSelectedKnowledgeBaseIds(persistedIds);
+      }
     } catch (error) {
-      setBridgeError(error instanceof Error ? error.message : 'Failed to save selected knowledge bases.');
+      if (knowledgeBaseSelectionRequestRef.current === requestId) {
+        setBridgeError(error instanceof Error ? error.message : 'Failed to save selected knowledge bases.');
+      }
     }
   }, [activeThreadId, runtimeProvider, selectedWorkspaceId, setBridgeError]);
 
