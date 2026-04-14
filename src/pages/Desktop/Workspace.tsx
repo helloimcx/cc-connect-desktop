@@ -620,12 +620,15 @@ export default function DesktopWorkspace() {
       setRawDraft(saved.raw);
       setConfigDraft(saved.parsed ? clone(saved.parsed) : normalized);
       await loadAll();
+      const warningDetail = saved.warnings?.join(' ') || '';
       setNotice({
-        tone: runtimeReady ? 'warning' : 'success',
-        title: 'Workspace config saved',
-        detail: runtimeReady
-          ? 'The updated config is on disk. Restart the service to apply these changes to the running desktop runtime.'
-          : 'The workspace config is saved and will be used the next time the service starts.',
+        tone: saved.warnings?.length ? 'warning' : runtimeReady ? 'warning' : 'success',
+        title: saved.warnings?.length ? 'Workspace config saved with warnings' : 'Workspace config saved',
+        detail: saved.warnings?.length
+          ? warningDetail
+          : runtimeReady
+            ? 'The updated config is on disk. Restart the service to apply these changes to the running desktop runtime.'
+            : 'The workspace config is saved and will be used the next time the service starts.',
       });
       setRestartPending(Boolean(runtimeReady));
     } catch (error) {
@@ -700,10 +703,13 @@ export default function DesktopWorkspace() {
       setConfigDraft(saved.parsed ? clone(saved.parsed) : normalized);
       await restartDesktopService();
       await loadAll();
+      const warningDetail = saved.warnings?.join(' ') || '';
       setNotice({
-        tone: 'success',
-        title: 'Workspace config applied',
-        detail: 'The config was written to disk and the desktop service restarted with the new settings.',
+        tone: saved.warnings?.length ? 'warning' : 'success',
+        title: saved.warnings?.length ? 'Workspace config applied with warnings' : 'Workspace config applied',
+        detail: saved.warnings?.length
+          ? warningDetail
+          : 'The config was written to disk and the desktop service restarted with the new settings.',
       });
       setRestartPending(false);
     } catch (error) {

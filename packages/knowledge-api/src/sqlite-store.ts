@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { KnowledgeBase, KnowledgeFile, KnowledgeFolder } from '../../contracts/src/index.js';
 
-const SCHEMA_VERSION = '1';
+const SCHEMA_VERSION = '2';
 
 interface LegacyKnowledgeStore {
   folders?: KnowledgeFolder[];
@@ -46,6 +46,12 @@ type KnowledgeFileRow = {
   abstract: string | null;
   full_content: string | null;
   updated_at: string;
+};
+
+type ThreadKnowledgeBaseRow = {
+  thread_id: string;
+  knowledge_base_id: string;
+  created_at: string;
 };
 
 function clone<T>(value: T): T {
@@ -268,6 +274,7 @@ export class KnowledgeSqliteStore {
 
   deleteKnowledgeBase(id: string) {
     this.transaction(() => {
+      this.db.prepare('DELETE FROM thread_knowledge_bases WHERE knowledge_base_id = ?').run(id);
       this.db.prepare('DELETE FROM knowledge_files WHERE knowledgebase_id = ?').run(id);
       this.db.prepare('DELETE FROM knowledge_bases WHERE id = ?').run(id);
     });
@@ -352,6 +359,48 @@ export class KnowledgeSqliteStore {
     this.db.prepare('DELETE FROM knowledge_files WHERE file_id = ?').run(fileId);
   }
 
+  listThreadKnowledgeBaseIds(threadId: string): string[] {
+    const rows = this.db.prepare(`
+      SELECT thread_id, knowledge_base_id, created_at
+      FROM thread_knowledge_bases
+      WHERE thread_id = ?
+      ORDER BY created_at ASC, knowledge_base_id ASC
+    `).all(threadId) as ThreadKnowledgeBaseRow[];
+    return rows.map((row) => row.knowledge_base_id);
+  }
+
+  replaceThreadKnowledgeBaseIds(threadId: string, knowledgeBaseIds: string[]) {
+    const uniqueIds = Array.from(new Set(
+      knowledgeBaseIds.map((id) => String(id || '').trim()).filter(Boolean),
+    ));
+    const missingId = uniqueIds.find((knowledgeBaseId) => !this.getKnowledgeBase(knowledgeBaseId));
+    if (missingId) {
+      throw new Error(`Knowledge base does not exist: ${missingId}`);
+    }
+
+    this.transaction(() => {
+      this.db.prepare('DELETE FROM thread_knowledge_bases WHERE thread_id = ?').run(threadId);
+      if (uniqueIds.length === 0) {
+        return;
+      }
+      const insertStatement = this.db.prepare(`
+        INSERT INTO thread_knowledge_bases (
+          thread_id,
+          knowledge_base_id,
+          created_at
+        ) VALUES (?, ?, ?)
+      `);
+      uniqueIds.forEach((knowledgeBaseId) => {
+        insertStatement.run(threadId, knowledgeBaseId, new Date().toISOString());
+      });
+    });
+    return uniqueIds;
+  }
+
+  deleteThreadKnowledgeBaseLinks(threadId: string) {
+    this.db.prepare('DELETE FROM thread_knowledge_bases WHERE thread_id = ?').run(threadId);
+  }
+
   hasFolderChildren(id: string) {
     const row = this.db.prepare(`
       SELECT 1 AS value
@@ -420,6 +469,13 @@ export class KnowledgeSqliteStore {
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS thread_knowledge_bases (
+        thread_id TEXT NOT NULL,
+        knowledge_base_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (thread_id, knowledge_base_id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_knowledge_folders_parent_id
         ON knowledge_folders (parent_id);
       CREATE INDEX IF NOT EXISTS idx_knowledge_bases_folder_id
@@ -428,6 +484,8 @@ export class KnowledgeSqliteStore {
         ON knowledge_files (knowledgebase_id);
       CREATE INDEX IF NOT EXISTS idx_knowledge_files_create_time
         ON knowledge_files (create_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_thread_knowledge_bases_thread_id
+        ON thread_knowledge_bases (thread_id);
     `);
 
     this.db.prepare(`

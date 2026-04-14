@@ -1,12 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   bridgeConnect,
+  updateThreadKnowledgeBases as updateDesktopThreadKnowledgeBases,
 } from '@/api/desktop';
+import { listKnowledgeBases } from '@/api/knowledge';
 import { getRuntimeBranding } from '@/lib/runtime-branding';
 import {
   sendAction,
+  updateThreadKnowledgeBases as updateCoreThreadKnowledgeBases,
 } from '../../../packages/core-sdk/src';
+import type { KnowledgeBase } from '../../../packages/contracts/src';
 import {
   type ThreadActionTarget,
   type ThreadGroup,
@@ -29,6 +33,8 @@ export function useThreadChatController() {
   const [activeRunId, setActiveRunId] = useState('');
   const [draft, setDraft] = useState('');
   const [threadSearch, setThreadSearch] = useState('');
+  const [availableKnowledgeBases, setAvailableKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [selectedKnowledgeBaseIds, setSelectedKnowledgeBaseIds] = useState<string[]>([]);
   const [renameTarget, setRenameTarget] = useState<ThreadActionTarget | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<ThreadActionTarget | null>(null);
@@ -69,6 +75,7 @@ export function useThreadChatController() {
   } = useThreadChatConversationState({
     activeThreadId,
     brandingReplyTimeoutLabel: branding.replyTimeoutLabel,
+    setSelectedKnowledgeBaseIds,
     setActiveRunId,
     setActiveSessionAgentType: setActiveAgentType,
     setActiveSessionId: setActiveThreadId,
@@ -112,6 +119,7 @@ export function useThreadChatController() {
     workspaceIds,
     threadGroups,
     threadSearch,
+    setSelectedKnowledgeBaseIds,
     setActiveRunId,
     setActiveSessionAgentType: setActiveAgentType,
     setActiveSessionId: setActiveThreadId,
@@ -144,6 +152,47 @@ export function useThreadChatController() {
       void bridgeConnect();
     }
   }, [serviceRunning]);
+
+  const refreshKnowledgeBases = useCallback(async () => {
+    if (runtimeProvider === 'web_remote') {
+      setAvailableKnowledgeBases([]);
+      return;
+    }
+    try {
+      const payload = await listKnowledgeBases();
+      setAvailableKnowledgeBases(payload.bases || []);
+    } catch {
+      setAvailableKnowledgeBases([]);
+    }
+  }, [runtimeProvider]);
+
+  useEffect(() => {
+    void refreshKnowledgeBases();
+  }, [refreshKnowledgeBases]);
+
+  useEffect(() => {
+    setSelectedKnowledgeBaseIds((current) =>
+      current.filter((knowledgeBaseId) => availableKnowledgeBases.some((base) => base.id === knowledgeBaseId)),
+    );
+  }, [availableKnowledgeBases]);
+
+  const handleKnowledgeBaseSelectionChange = useCallback(async (nextIds: string[]) => {
+    const normalizedIds = Array.from(new Set(
+      nextIds.map((id) => String(id || '').trim()).filter(Boolean),
+    ));
+    setSelectedKnowledgeBaseIds(normalizedIds);
+    if (!selectedWorkspaceId || !activeThreadId || runtimeProvider === 'web_remote') {
+      return;
+    }
+    try {
+      const persistedIds = runtimeProvider === 'local_core'
+        ? (await updateCoreThreadKnowledgeBases(activeThreadId, normalizedIds)).knowledgeBaseIds
+        : await updateDesktopThreadKnowledgeBases(selectedWorkspaceId, activeThreadId, normalizedIds);
+      setSelectedKnowledgeBaseIds(persistedIds);
+    } catch (error) {
+      setBridgeError(error instanceof Error ? error.message : 'Failed to save selected knowledge bases.');
+    }
+  }, [activeThreadId, runtimeProvider, selectedWorkspaceId, setBridgeError]);
 
   const { handleBridgeAction } = useThreadChatBridge({
     activeAgentType,
@@ -186,6 +235,7 @@ export function useThreadChatController() {
     activeRunId,
     activeThreadId,
     activeBridgeSessionKey,
+    availableKnowledgeBases,
     brandingNewThreadLabel: branding.newThreadLabel,
     deleteTarget,
     draft,
@@ -195,6 +245,7 @@ export function useThreadChatController() {
     renameTarget,
     runtimeProvider,
     searchParams,
+    selectedKnowledgeBaseIds,
     selectedWorkspaceId,
     taskState,
     updateTaskState,
@@ -245,6 +296,7 @@ export function useThreadChatController() {
     handleRenameSession,
     handleSend,
     handleStopTask,
+    availableKnowledgeBases,
     loadActiveSession: loadActiveThread,
     loading,
     openRenameModal,
@@ -257,11 +309,13 @@ export function useThreadChatController() {
     renderedMessages,
     runtime,
     sending,
+    selectedKnowledgeBaseIds,
     serviceRunning,
     sessionSearch: threadSearch,
     selectedProject: selectedWorkspaceId,
     setDeleteTarget,
     setDraft,
+    setSelectedKnowledgeBaseIds: handleKnowledgeBaseSelectionChange,
     setRenameDraft,
     setRenameTarget,
     setSelectedProject: setSelectedWorkspaceId,

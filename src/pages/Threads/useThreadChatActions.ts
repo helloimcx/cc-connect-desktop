@@ -1,5 +1,5 @@
 import type { Dispatch, type MutableRefObject, type SetStateAction } from 'react';
-import type { ThreadDetail } from '../../../packages/contracts/src';
+import type { KnowledgeBase, ThreadDetail } from '../../../packages/contracts/src';
 import type { RuntimeProvider } from '@/app/runtime';
 import type { ChatMessage, ChatTaskState, ThreadActionTarget } from './thread-chat-model';
 import type {
@@ -16,6 +16,7 @@ type UseThreadChatActionsInput = {
   activeRunId: string;
   activeThreadId: string;
   activeBridgeSessionKey: string;
+  availableKnowledgeBases: KnowledgeBase[];
   brandingNewThreadLabel: string;
   deleteTarget: ThreadActionTarget | null;
   draft: string;
@@ -25,6 +26,7 @@ type UseThreadChatActionsInput = {
   renameTarget: ThreadActionTarget | null;
   runtimeProvider: RuntimeProvider;
   searchParams: URLSearchParams;
+  selectedKnowledgeBaseIds: string[];
   selectedWorkspaceId: string;
   taskState: ChatTaskState;
   updateTaskState: (next: ChatTaskState) => void;
@@ -62,6 +64,7 @@ export function useThreadChatActions({
   activeRunId,
   activeThreadId,
   activeBridgeSessionKey,
+  availableKnowledgeBases,
   brandingNewThreadLabel,
   deleteTarget,
   draft,
@@ -71,6 +74,7 @@ export function useThreadChatActions({
   renameTarget,
   runtimeProvider,
   searchParams,
+  selectedKnowledgeBaseIds,
   selectedWorkspaceId,
   taskState,
   updateTaskState,
@@ -154,10 +158,12 @@ export function useThreadChatActions({
     activeRunId,
     activeThreadId,
     activeBridgeSessionKey,
+    availableKnowledgeBases,
     brandingNewThreadLabel,
     draft,
     loadActiveThread,
     messages,
+    selectedKnowledgeBaseIds,
     taskState,
     armReplyTimeout,
     reserveNextMessageOrder,
@@ -182,6 +188,7 @@ export function useThreadChatActions({
     renameDraft,
     renameTarget,
     searchParams,
+    selectedKnowledgeBaseIds,
     setSearchParams,
     ...sharedContext,
     ...identitySetters,

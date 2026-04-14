@@ -1,8 +1,9 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
 import { createSession } from '@/api/sessions';
-import { bridgeSendMessage } from '@/api/desktop';
+import { bridgeSendMessage, updateThreadKnowledgeBases as updateDesktopThreadKnowledgeBases } from '@/api/desktop';
 import { sessionLabel } from '@/lib/session-utils';
-import { createThread, interruptRun, sendMessage as sendThreadMessage } from '../../../packages/core-sdk/src';
+import { createThread, interruptRun, sendMessage as sendThreadMessage, updateThreadKnowledgeBases as updateCoreThreadKnowledgeBases } from '../../../packages/core-sdk/src';
+import type { KnowledgeBase } from '../../../packages/contracts/src';
 import type { ChatMessage, ChatTaskState } from './thread-chat-model';
 import type {
   ThreadChatIdentitySetters,
@@ -14,10 +15,12 @@ type UseThreadChatSendingActionsInput = {
   activeRunId: string;
   activeThreadId: string;
   activeBridgeSessionKey: string;
+  availableKnowledgeBases: KnowledgeBase[];
   brandingNewThreadLabel: string;
   draft: string;
   loadActiveThread: (workspaceId: string, threadId: string) => Promise<void>;
   messages: ChatMessage[];
+  selectedKnowledgeBaseIds: string[];
   taskState: ChatTaskState;
   armReplyTimeout: (mode?: 'reply' | 'permission_continue') => void;
   reserveNextMessageOrder: () => number;
@@ -34,10 +37,12 @@ export function useThreadChatSendingActions({
   activeRunId,
   activeThreadId,
   activeBridgeSessionKey,
+  availableKnowledgeBases,
   brandingNewThreadLabel,
   draft,
   loadActiveThread,
   messages,
+  selectedKnowledgeBaseIds,
   runtimeProvider,
   selectedProject,
   taskState,
@@ -65,6 +70,27 @@ export function useThreadChatSendingActions({
   progressSequenceByTurnRef,
   taskStateRef,
 }: UseThreadChatSendingActionsInput) {
+  const buildMessageContent = useCallback((content: string) => {
+    if (selectedKnowledgeBaseIds.length === 0) {
+      return content;
+    }
+    const selectedBases = selectedKnowledgeBaseIds
+      .map((knowledgeBaseId) => availableKnowledgeBases.find((base) => base.id === knowledgeBaseId))
+      .filter((base): base is KnowledgeBase => Boolean(base));
+    if (selectedBases.length === 0) {
+      return content;
+    }
+    return [
+      '[Selected Knowledge Bases]',
+      ...selectedBases.map((base) => `- id: ${base.id} | name: ${base.name}`),
+      '[/Selected Knowledge Bases]',
+      '',
+      '[User Message]',
+      content,
+      '[/User Message]',
+    ].join('\n');
+  }, [availableKnowledgeBases, selectedKnowledgeBaseIds]);
+
   const ensureSession = useCallback(async () => {
     if (!selectedProject) {
       throw new Error('Choose a project first');
@@ -130,6 +156,7 @@ export function useThreadChatSendingActions({
       return;
     }
     const content = draft.trim();
+    const payloadContent = buildMessageContent(content);
     const userOrder = reserveNextMessageOrder();
     setDraft('');
     setSending(true);
@@ -145,8 +172,13 @@ export function useThreadChatSendingActions({
       setTyping(runtimeProvider !== 'local_core');
       setBridgeError('');
       if (runtimeProvider === 'local_core') {
+        await updateCoreThreadKnowledgeBases(ensured.id, selectedKnowledgeBaseIds);
+      } else if (ensured.id) {
+        await updateDesktopThreadKnowledgeBases(selectedProject, ensured.id, selectedKnowledgeBaseIds);
+      }
+      if (runtimeProvider === 'local_core') {
         clearReplyTimeout();
-        const result = await sendThreadMessage(ensured.id, content);
+        const result = await sendThreadMessage(ensured.id, payloadContent);
         setActiveRunId(result.runId);
         startLocalCoreThreadPolling(
           ensured.id,
@@ -157,7 +189,7 @@ export function useThreadChatSendingActions({
         await bridgeSendMessage({
           project: selectedProject,
           chatId: ensured.sessionKey.split(':')[2] || 'main',
-          content,
+          content: payloadContent,
         });
       }
     } catch (error) {
@@ -172,6 +204,7 @@ export function useThreadChatSendingActions({
     }
   }, [
     armReplyTimeout,
+    buildMessageContent,
     clearLocalCorePolling,
     clearReplyTimeout,
     draft,
@@ -180,6 +213,7 @@ export function useThreadChatSendingActions({
     pendingTurnRef,
     reserveNextMessageOrder,
     runtimeProvider,
+    selectedKnowledgeBaseIds,
     selectedProject,
     setActiveRunId,
     setBridgeError,

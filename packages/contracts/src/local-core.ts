@@ -34,6 +34,7 @@ export interface ThreadMessage {
 
 export interface ThreadDetail extends ThreadSummary {
   messages: ThreadMessage[];
+  selectedKnowledgeBaseIds: string[];
 }
 
 export interface RunSummary {

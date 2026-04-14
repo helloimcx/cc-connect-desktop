@@ -257,6 +257,34 @@ test('supports raw ai_vector search responses without envelope', async () => {
   }
 });
 
+test('stores selected knowledge-base bindings per thread in sqlite', async () => {
+  const temp = withTempDir();
+  const provider = new AiVectorKnowledgeProvider({
+    userDataPath: temp.dir,
+    getConfig: () => defaultKnowledgeConfig(),
+    setConfig: (input) => ({ ...defaultKnowledgeConfig(), ...input }),
+  });
+
+  try {
+    const firstBase = await provider.createKnowledgeBase({ name: '知识库 A' });
+    const secondBase = await provider.createKnowledgeBase({ name: '知识库 B' });
+
+    const storedIds = await provider.updateThreadKnowledgeBaseIds('thread-1', [
+      firstBase.id,
+      secondBase.id,
+      firstBase.id,
+    ]);
+
+    assert.deepEqual(storedIds, [firstBase.id, secondBase.id]);
+    assert.deepEqual(await provider.listThreadKnowledgeBaseIds('thread-1'), [firstBase.id, secondBase.id]);
+
+    await provider.deleteThreadKnowledgeBaseLinks('thread-1');
+    assert.deepEqual(await provider.listThreadKnowledgeBaseIds('thread-1'), []);
+  } finally {
+    temp.cleanup();
+  }
+});
+
 test('deletes remote vector data for cached-miss knowledge bases before removing local base', async () => {
   const temp = withTempDir();
   const config: KnowledgeConfig = {

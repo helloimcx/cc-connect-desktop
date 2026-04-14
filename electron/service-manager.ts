@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
-import { accessSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -19,6 +19,8 @@ const DEFAULT_PROJECT_NAME = 'desktop-demo';
 const MANAGEMENT_READY_TIMEOUT_MS = 20000;
 const MANAGEMENT_READY_POLL_MS = 300;
 const STOP_TIMEOUT_MS = 5000;
+const KNOWLEDGE_SKILL_DIR = join('.agents', 'skills', 'knowledge-base');
+const KNOWLEDGE_SKILL_SCRIPT_PATH = join(KNOWLEDGE_SKILL_DIR, 'scripts', 'search-knowledge.sh');
 
 const DEFAULT_CONFIG_TEMPLATE = `# Managed by cc-connect-desktop
 [log]
@@ -51,6 +53,66 @@ function randomToken() {
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
+}
+
+function knowledgeSkillMarkdown() {
+  return `---
+name: knowledge-base
+---
+
+Use this skill when the user message includes a \`[Selected Knowledge Bases]\` block.
+
+- Only search the knowledge bases listed in that block.
+- Prefer the bundled script \`./scripts/search-knowledge.sh\` instead of writing inline \`curl\`.
+- Call the script with the user question first, followed by one or more knowledge-base IDs.
+- If the script reports no matches, tell the user the selected knowledge bases did not contain relevant content.
+- When you answer from retrieved content, cite the matching knowledge base ID or name.
+`;
+}
+
+function knowledgeSkillScript() {
+  return `#!/bin/sh
+set -u
+
+API_BASE="\${KNOWLEDGE_API_BASE_URL:-http://127.0.0.1:9831/api/local/v1}"
+LIMIT="\${KNOWLEDGE_SEARCH_LIMIT:-5}"
+
+escape_json() {
+  printf '%s' "$1" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g'
+}
+
+if [ "$#" -lt 2 ]; then
+  echo "Usage: search-knowledge.sh \\"<query>\\" \\"<kb_id_1>\\" [kb_id_2 ...]" >&2
+  exit 1
+fi
+
+QUERY="$1"
+shift
+ESCAPED_QUERY=$(escape_json "$QUERY")
+
+for KB_ID in "$@"; do
+  echo "=== Knowledge Base: $KB_ID ==="
+  RESPONSE=$(curl -fsS -X POST "$API_BASE/knowledge/bases/$KB_ID/search" \\
+    -H 'Content-Type: application/json' \\
+    --data "{\\"query\\":\\"$ESCAPED_QUERY\\",\\"limit\\":$LIMIT}" 2>&1)
+  STATUS=$?
+
+  if [ "$STATUS" -ne 0 ]; then
+    echo "Error: $RESPONSE"
+    echo
+    continue
+  fi
+
+  if printf '%s' "$RESPONSE" | grep -q '"results":[[:space:]]*\\[\\]'; then
+    echo "No results"
+    echo
+    continue
+  fi
+
+  printf '%s\\n' "$RESPONSE"
+  echo
+done
+`;
 }
 
 export class ServiceManager extends EventEmitter {
@@ -155,9 +217,12 @@ export class ServiceManager extends EventEmitter {
 
   async writeStructuredConfig(config: DesktopConnectConfig) {
     mkdirSync(dirname(this.settings.configPath), { recursive: true });
-    writeFileSync(this.settings.configPath, TOML.stringify(this.normalizeLogicalConfig(config) as any), 'utf8');
+    const normalized = this.normalizeLogicalConfig(config);
+    writeFileSync(this.settings.configPath, TOML.stringify(normalized as any), 'utf8');
+    const warnings = this.syncKnowledgeSkills(normalized);
     this.emit('state');
-    return this.readConfigState();
+    const nextState = await this.readConfigState();
+    return warnings.length > 0 ? { ...nextState, warnings } : nextState;
   }
 
   async ensureConfigFile() {
@@ -167,6 +232,31 @@ export class ServiceManager extends EventEmitter {
     mkdirSync(dirname(this.settings.configPath), { recursive: true });
     writeFileSync(this.settings.configPath, DEFAULT_CONFIG_TEMPLATE, 'utf8');
     return this.readConfigState();
+  }
+
+  private syncKnowledgeSkills(config: DesktopConnectConfig) {
+    const projects = Array.isArray(config.projects) ? config.projects : [];
+    const configDir = dirname(this.settings.configPath);
+    const warnings: string[] = [];
+
+    projects.forEach((project) => {
+      const projectName = String(project.name || '').trim() || 'unnamed-project';
+      const rawWorkDir = String(project.agent?.options?.work_dir || '.').trim() || '.';
+      const workDir = isAbsolute(rawWorkDir) ? rawWorkDir : resolve(configDir, rawWorkDir);
+      const skillDir = join(workDir, KNOWLEDGE_SKILL_DIR);
+      const scriptPath = join(workDir, KNOWLEDGE_SKILL_SCRIPT_PATH);
+      try {
+        mkdirSync(join(skillDir, 'scripts'), { recursive: true });
+        writeFileSync(join(skillDir, 'SKILL.md'), knowledgeSkillMarkdown(), 'utf8');
+        writeFileSync(scriptPath, knowledgeSkillScript(), 'utf8');
+        chmodSync(scriptPath, 0o755);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        warnings.push(`Knowledge skill was not written for project "${projectName}" at ${workDir}: ${detail}`);
+      }
+    });
+
+    return warnings;
   }
 
   async start() {

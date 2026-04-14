@@ -14,6 +14,12 @@ contextBridge.exposeInMainWorld('desktop', {
   readConfigFile: () => ipcRenderer.invoke('desktop:read-config'),
   saveRawConfigFile: (raw: string) => ipcRenderer.invoke('desktop:save-config-raw', raw),
   saveStructuredConfigFile: (config: unknown) => ipcRenderer.invoke('desktop:save-config-structured', config),
+  getThreadKnowledgeBases: (workspaceId: string, threadId: string) =>
+    ipcRenderer.invoke('desktop:get-thread-knowledge-bases', workspaceId, threadId),
+  updateThreadKnowledgeBases: (workspaceId: string, threadId: string, knowledgeBaseIds: string[]) =>
+    ipcRenderer.invoke('desktop:update-thread-knowledge-bases', workspaceId, threadId, knowledgeBaseIds),
+  deleteThreadKnowledgeBases: (workspaceId: string, threadId: string) =>
+    ipcRenderer.invoke('desktop:delete-thread-knowledge-bases', workspaceId, threadId),
   saveSettings: (input: DesktopSettingsInput) => ipcRenderer.invoke('desktop:save-settings', input),
   bridgeConnect: () => ipcRenderer.invoke('desktop:bridge-connect'),
   bridgeDisconnect: () => ipcRenderer.invoke('desktop:bridge-disconnect'),

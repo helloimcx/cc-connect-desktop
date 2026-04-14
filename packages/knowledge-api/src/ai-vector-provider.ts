@@ -392,6 +392,19 @@ export class AiVectorKnowledgeProvider {
     });
   }
 
+  async listThreadKnowledgeBaseIds(threadId: string): Promise<string[]> {
+    return this.store.listThreadKnowledgeBaseIds(threadId);
+  }
+
+  async updateThreadKnowledgeBaseIds(threadId: string, knowledgeBaseIds: string[]): Promise<string[]> {
+    return this.store.replaceThreadKnowledgeBaseIds(threadId, knowledgeBaseIds);
+  }
+
+  async deleteThreadKnowledgeBaseLinks(threadId: string): Promise<{ deleted: boolean }> {
+    this.store.deleteThreadKnowledgeBaseLinks(threadId);
+    return { deleted: true };
+  }
+
   private buildFolderPath(name: string, parent: KnowledgeFolder | null) {
     return parent ? `${parent.path}/${name}` : name;
   }

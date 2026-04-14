@@ -295,4 +295,5 @@ export interface ConfigFileState {
   raw: string;
   parsed: DesktopConnectConfig | null;
   error?: string;
+  warnings?: string[];
 }

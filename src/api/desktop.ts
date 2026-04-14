@@ -12,6 +12,7 @@ import {
   coreBridgeDisconnect,
   coreBridgeSendMessage,
   detectLocalAiCore,
+  getThread as getCoreThread,
   getCoreLogs,
   getCoreRuntime,
   onBridgeUpdated,
@@ -23,6 +24,7 @@ import {
   saveCoreStructuredConfigFile,
   startCoreService,
   stopCoreService,
+  updateThreadKnowledgeBases as updateCoreThreadKnowledgeBases,
 } from '../../packages/core-sdk/src';
 import { getRuntimeProvider, setRuntimeProvider, type RuntimeProvider } from '@/app/runtime';
 
@@ -35,6 +37,9 @@ type DesktopProvider = {
   readConfigFile: () => Promise<ConfigFileState>;
   saveRawConfigFile: (raw: string) => Promise<ConfigFileState>;
   saveStructuredConfigFile: (config: unknown) => Promise<ConfigFileState>;
+  getThreadKnowledgeBases: (workspaceId: string, threadId: string) => Promise<string[]>;
+  updateThreadKnowledgeBases: (workspaceId: string, threadId: string, knowledgeBaseIds: string[]) => Promise<string[]>;
+  deleteThreadKnowledgeBases: (workspaceId: string, threadId: string) => Promise<{ deleted: boolean }>;
   saveSettings: (input: DesktopSettingsInput) => Promise<DesktopSettings>;
   bridgeConnect: () => Promise<unknown>;
   bridgeDisconnect: () => Promise<unknown>;
@@ -59,6 +64,12 @@ const electronProvider: DesktopProvider = {
   readConfigFile: () => requireDesktopBridge().readConfigFile(),
   saveRawConfigFile: (raw: string) => requireDesktopBridge().saveRawConfigFile(raw),
   saveStructuredConfigFile: (config: unknown) => requireDesktopBridge().saveStructuredConfigFile(config),
+  getThreadKnowledgeBases: (workspaceId: string, threadId: string) =>
+    requireDesktopBridge().getThreadKnowledgeBases(workspaceId, threadId),
+  updateThreadKnowledgeBases: (workspaceId: string, threadId: string, knowledgeBaseIds: string[]) =>
+    requireDesktopBridge().updateThreadKnowledgeBases(workspaceId, threadId, knowledgeBaseIds),
+  deleteThreadKnowledgeBases: (workspaceId: string, threadId: string) =>
+    requireDesktopBridge().deleteThreadKnowledgeBases(workspaceId, threadId),
   saveSettings: (input: DesktopSettingsInput) => requireDesktopBridge().saveSettings(input),
   bridgeConnect: () => requireDesktopBridge().bridgeConnect(),
   bridgeDisconnect: () => requireDesktopBridge().bridgeDisconnect(),
@@ -76,6 +87,12 @@ const localCoreProvider: DesktopProvider = {
   readConfigFile: () => readCoreConfigFile(),
   saveRawConfigFile: (raw: string) => saveCoreRawConfigFile(raw),
   saveStructuredConfigFile: (config: unknown) => saveCoreStructuredConfigFile(config),
+  getThreadKnowledgeBases: (_workspaceId: string, threadId: string) =>
+    getCoreThread(threadId).then((thread) => thread.selectedKnowledgeBaseIds || []),
+  updateThreadKnowledgeBases: (_workspaceId: string, threadId: string, knowledgeBaseIds: string[]) =>
+    updateCoreThreadKnowledgeBases(threadId, knowledgeBaseIds).then((result) => result.knowledgeBaseIds),
+  deleteThreadKnowledgeBases: (_workspaceId: string, threadId: string) =>
+    updateCoreThreadKnowledgeBases(threadId, []).then(() => ({ deleted: true })),
   saveSettings: (input: DesktopSettingsInput) => saveCoreSettings(input),
   bridgeConnect: () => coreBridgeConnect(),
   bridgeDisconnect: () => coreBridgeDisconnect(),
@@ -133,6 +150,15 @@ export const getDesktopLogs = (limit?: number) => requireProvider().getLogs(limi
 export const readConfigFile = (): Promise<ConfigFileState> => requireProvider().readConfigFile();
 export const saveRawConfigFile = (raw: string): Promise<ConfigFileState> => requireProvider().saveRawConfigFile(raw);
 export const saveStructuredConfigFile = (config: unknown): Promise<ConfigFileState> => requireProvider().saveStructuredConfigFile(config);
+export const getThreadKnowledgeBases = (workspaceId: string, threadId: string): Promise<string[]> =>
+  requireProvider().getThreadKnowledgeBases(workspaceId, threadId);
+export const updateThreadKnowledgeBases = (
+  workspaceId: string,
+  threadId: string,
+  knowledgeBaseIds: string[],
+): Promise<string[]> => requireProvider().updateThreadKnowledgeBases(workspaceId, threadId, knowledgeBaseIds);
+export const deleteThreadKnowledgeBases = (workspaceId: string, threadId: string): Promise<{ deleted: boolean }> =>
+  requireProvider().deleteThreadKnowledgeBases(workspaceId, threadId);
 export const saveDesktopSettings = (input: DesktopSettingsInput): Promise<DesktopSettings> => requireProvider().saveSettings(input);
 export const bridgeConnect = () => requireProvider().bridgeConnect();
 export const bridgeDisconnect = () => requireProvider().bridgeDisconnect();

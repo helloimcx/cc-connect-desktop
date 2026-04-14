@@ -16,6 +16,7 @@ import {
 type UseThreadChatConversationStateInput = {
   activeThreadId: string;
   brandingReplyTimeoutLabel: string;
+  setSelectedKnowledgeBaseIds: Dispatch<SetStateAction<string[]>>;
   setActiveRunId: Dispatch<SetStateAction<string>>;
   setActiveSessionAgentType: Dispatch<SetStateAction<string>>;
   setActiveSessionId: Dispatch<SetStateAction<string>>;
@@ -29,6 +30,7 @@ type UseThreadChatConversationStateInput = {
 export function useThreadChatConversationState({
   activeThreadId,
   brandingReplyTimeoutLabel,
+  setSelectedKnowledgeBaseIds,
   setActiveRunId,
   setActiveSessionAgentType,
   setActiveSessionId,
@@ -155,6 +157,7 @@ export function useThreadChatConversationState({
     setActiveSessionName(detail.title);
     setActiveSessionAgentType(detail.agentType || '');
     setActiveRunId(detail.runId || '');
+    setSelectedKnowledgeBaseIds(detail.selectedKnowledgeBaseIds || []);
     setThreadGroups((current) => upsertThreadInGroup(current, detail.workspaceId, toCoreChatThreadSummary(detail)));
     holdBlankComposerRef.current = false;
     progressSequenceByTurnRef.current = {};
@@ -168,6 +171,7 @@ export function useThreadChatConversationState({
     setActiveSessionId,
     setActiveSessionKey,
     setActiveSessionName,
+    setSelectedKnowledgeBaseIds,
     setSelectedProject,
     setThreadGroups,
   ]);

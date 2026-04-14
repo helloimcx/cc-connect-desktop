@@ -111,10 +111,15 @@ function toThreadMessages(history: ManagementSessionDetail['history']): ThreadMe
   }));
 }
 
-function toThreadDetail(workspaceId: string, session: ManagementSessionDetail): ThreadDetail {
+function toThreadDetail(
+  workspaceId: string,
+  session: ManagementSessionDetail,
+  selectedKnowledgeBaseIds: string[] = [],
+): ThreadDetail {
   return {
     ...toThreadSummary(workspaceId, session),
     messages: toThreadMessages(session.history || []),
+    selectedKnowledgeBaseIds,
   };
 }
 
@@ -283,7 +288,8 @@ export class CcConnectController extends EventEmitter {
     const detail = await this.managementGet<ManagementSessionDetail>(
       `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}?history_limit=200`,
     );
-    return toThreadDetail(workspaceId, detail);
+    const selectedKnowledgeBaseIds = await this.knowledgeProvider.listThreadKnowledgeBaseIds(threadId);
+    return toThreadDetail(workspaceId, detail, selectedKnowledgeBaseIds);
   }
 
   async renameThread(threadId: string, title: string): Promise<ThreadDetail> {
@@ -297,7 +303,14 @@ export class CcConnectController extends EventEmitter {
   async deleteThread(threadId: string): Promise<{ deleted: boolean }> {
     const { workspaceId, sessionId } = decodeThreadId(threadId);
     await this.managementRequest('DELETE', `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}`);
+    await this.knowledgeProvider.deleteThreadKnowledgeBaseLinks(threadId);
     return { deleted: true };
+  }
+
+  async updateThreadKnowledgeBases(threadId: string, knowledgeBaseIds: string[]): Promise<{ knowledgeBaseIds: string[] }> {
+    return {
+      knowledgeBaseIds: await this.knowledgeProvider.updateThreadKnowledgeBaseIds(threadId, knowledgeBaseIds),
+    };
   }
 
   async sendThreadMessage(threadId: string, content: string): Promise<{ runId: string }> {

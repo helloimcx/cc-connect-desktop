@@ -37,6 +37,7 @@ export default function ThreadChat() {
     handleRenameSession,
     handleSend,
     handleStopTask,
+    availableKnowledgeBases,
     loadActiveSession,
     loading,
     openRenameModal,
@@ -49,11 +50,13 @@ export default function ThreadChat() {
     renderedMessages,
     runtime,
     sending,
+    selectedKnowledgeBaseIds,
     serviceRunning,
     sessionSearch,
     selectedProject,
     setDeleteTarget,
     setDraft,
+    setSelectedKnowledgeBaseIds,
     setRenameDraft,
     setRenameTarget,
     setSelectedProject,
@@ -68,6 +71,10 @@ export default function ThreadChat() {
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-gray-400 animate-pulse">Loading...</div>;
   }
+
+  const selectedKnowledgeBases = selectedKnowledgeBaseIds
+    .map((knowledgeBaseId) => availableKnowledgeBases.find((base) => base.id === knowledgeBaseId))
+    .filter((base): base is NonNullable<typeof availableKnowledgeBases[number]> => Boolean(base));
 
   return (
     <>
@@ -297,6 +304,63 @@ export default function ThreadChat() {
                   )}
                 </div>
               </div>
+            </div>
+            <div className="mt-4 rounded-xl border border-gray-200/80 dark:border-white/[0.08] bg-gray-50/70 dark:bg-white/[0.03] px-3 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">Knowledge bases</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                    {selectedProject
+                      ? 'Select one or more knowledge bases for this thread.'
+                      : 'Choose a project first to enable knowledge-base selection.'}
+                  </p>
+                </div>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                  {selectedKnowledgeBaseIds.length} selected
+                </span>
+              </div>
+              <select
+                multiple
+                value={selectedKnowledgeBaseIds}
+                disabled={!selectedProject || availableKnowledgeBases.length === 0}
+                onChange={(event) =>
+                  void setSelectedKnowledgeBaseIds(Array.from(event.target.selectedOptions, (option) => option.value))
+                }
+                data-testid="desktop-chat-knowledge-base-select"
+                className="mt-3 min-h-28 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-accent dark:border-white/[0.08] dark:bg-[rgba(0,0,0,0.35)] dark:text-white"
+              >
+                {availableKnowledgeBases.length === 0 ? (
+                  <option value="" disabled>
+                    No knowledge bases available
+                  </option>
+                ) : (
+                  availableKnowledgeBases.map((base) => (
+                    <option key={base.id} value={base.id}>
+                      {base.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              {selectedKnowledgeBases.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {selectedKnowledgeBases.map((base) => (
+                    <span
+                      key={base.id}
+                      className="inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1 text-xs text-gray-700 dark:text-gray-200"
+                    >
+                      {base.name}
+                      <button
+                        type="button"
+                        onClick={() => void setSelectedKnowledgeBaseIds(selectedKnowledgeBaseIds.filter((id) => id !== base.id))}
+                        className="text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                        data-testid="desktop-chat-knowledge-base-remove"
+                      >
+                        x
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
 

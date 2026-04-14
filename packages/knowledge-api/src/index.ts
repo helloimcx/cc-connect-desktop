@@ -34,6 +34,9 @@ export interface KnowledgeProvider {
   ): Promise<KnowledgeUploadResult[]>;
   deleteKnowledgeBaseFile(knowledgeBaseId: string, fileId: string): Promise<{ deleted: boolean }>;
   searchKnowledgeBase(knowledgeBaseId: string, input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]>;
+  listThreadKnowledgeBaseIds(threadId: string): Promise<string[]>;
+  updateThreadKnowledgeBaseIds(threadId: string, knowledgeBaseIds: string[]): Promise<string[]>;
+  deleteThreadKnowledgeBaseLinks(threadId: string): Promise<{ deleted: boolean }>;
 }
 
 export class NoopKnowledgeProvider implements KnowledgeProvider {
@@ -99,6 +102,18 @@ export class NoopKnowledgeProvider implements KnowledgeProvider {
 
   async searchKnowledgeBase(): Promise<KnowledgeSearchResult[]> {
     return [];
+  }
+
+  async listThreadKnowledgeBaseIds(): Promise<string[]> {
+    return [];
+  }
+
+  async updateThreadKnowledgeBaseIds(): Promise<string[]> {
+    throw new Error('Knowledge provider is unavailable.');
+  }
+
+  async deleteThreadKnowledgeBaseLinks(): Promise<{ deleted: boolean }> {
+    return { deleted: true };
   }
 }
 

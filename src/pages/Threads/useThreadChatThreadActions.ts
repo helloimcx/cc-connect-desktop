@@ -1,6 +1,12 @@
 import { useCallback } from 'react';
+import { deleteThreadKnowledgeBases } from '@/api/desktop';
 import { deleteSession, renameSession } from '@/api/sessions';
-import { createThread, deleteThread as deleteCoreThread, renameThread } from '../../../packages/core-sdk/src';
+import {
+  createThread,
+  deleteThread as deleteCoreThread,
+  renameThread,
+  updateThreadKnowledgeBases as updateCoreThreadKnowledgeBases,
+} from '../../../packages/core-sdk/src';
 import type { ChatThreadSummary, ThreadActionTarget } from './thread-chat-model';
 import type {
   ThreadChatConversationRefs,
@@ -17,6 +23,7 @@ type UseThreadChatThreadActionsInput = {
   renameDraft: string;
   renameTarget: ThreadActionTarget | null;
   searchParams: URLSearchParams;
+  selectedKnowledgeBaseIds: string[];
   setSearchParams: ThreadChatSearchParamsSetter;
 } & Pick<ThreadChatSharedActionContext, 'runtimeProvider' | 'selectedProject' | 'updateTaskState'> &
   Pick<ThreadChatSharedActionContext, 'applyLocalCoreThreadDetail' | 'clearLocalCorePolling' | 'clearReplyTimeout'> &
@@ -33,6 +40,7 @@ export function useThreadChatThreadActions({
   renameTarget,
   runtimeProvider,
   searchParams,
+  selectedKnowledgeBaseIds,
   selectedProject,
   updateTaskState,
   applyLocalCoreThreadDetail,
@@ -99,6 +107,12 @@ export function useThreadChatThreadActions({
       setPendingSessionAction('rename');
       try {
         const detail = await createThread(selectedProject, `${brandingNewThreadLabel} ${new Date().toLocaleTimeString()}`);
+        if (selectedKnowledgeBaseIds.length > 0) {
+          const persistedIds = (await updateCoreThreadKnowledgeBases(detail.id, selectedKnowledgeBaseIds)).knowledgeBaseIds;
+          detail.selectedKnowledgeBaseIds = persistedIds;
+        } else {
+          detail.selectedKnowledgeBaseIds = [];
+        }
         await refreshSessionsForProject(selectedProject);
         applyLocalCoreThreadDetail(detail);
         const next = new URLSearchParams(searchParams);
@@ -121,6 +135,7 @@ export function useThreadChatThreadActions({
     resetBlankConversation,
     runtimeProvider,
     searchParams,
+    selectedKnowledgeBaseIds,
     selectedProject,
     setPendingSessionAction,
     setSearchParams,
@@ -174,6 +189,7 @@ export function useThreadChatThreadActions({
         await deleteCoreThread(deleteTarget.id);
       } else {
         await deleteSession(deleteTarget.project, deleteTarget.id);
+        await deleteThreadKnowledgeBases(deleteTarget.project, deleteTarget.id).catch(() => ({ deleted: false }));
       }
       if (deleteTarget.id === activeThreadId) {
         resetBlankConversation();

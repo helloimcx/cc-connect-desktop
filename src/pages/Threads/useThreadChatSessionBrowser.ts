@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo } from 'react';
+import { getThreadKnowledgeBases } from '@/api/desktop';
 import { listProjects } from '@/api/projects';
 import { getSession, listSessions } from '@/api/sessions';
 import { getThread, listThreads, listWorkspaces } from '../../../packages/core-sdk/src';
@@ -32,6 +33,7 @@ type UseThreadChatSessionBrowserInput = {
   workspaceIds: string[];
   threadGroups: ThreadGroup[];
   threadSearch: string;
+  setSelectedKnowledgeBaseIds: (ids: string[]) => void;
 } & Pick<ThreadChatSharedHookContext, 'runtimeProvider' | 'updateTaskState'> &
   Pick<ThreadChatSharedHookContext, 'applyLocalCoreThreadDetail' | 'clearLocalCorePolling' | 'clearReplyTimeout'> &
   Pick<ThreadChatSharedHookContext, 'setBridgeError' | 'setMessages' | 'setTyping'> &
@@ -52,6 +54,7 @@ export function useThreadChatSessionBrowser({
   workspaceIds,
   threadGroups,
   threadSearch,
+  setSelectedKnowledgeBaseIds,
   setActiveRunId,
   setActiveSessionAgentType,
   setActiveSessionId,
@@ -114,6 +117,7 @@ export function useThreadChatSessionBrowser({
     if (!serviceRunning) {
       setProjects([]);
       setThreadGroups([]);
+      setSelectedKnowledgeBaseIds([]);
       return [];
     }
     const nextWorkspaceIds = runtimeProvider === 'local_core'
@@ -158,6 +162,7 @@ export function useThreadChatSessionBrowser({
       return;
     }
     const detail = await getSession(workspaceId, threadId, 200);
+    const selectedKnowledgeBaseIds = await getThreadKnowledgeBases(workspaceId, threadId).catch(() => []);
     if (holdBlankComposerRef.current) {
       return;
     }
@@ -167,6 +172,7 @@ export function useThreadChatSessionBrowser({
     setActiveSessionKey(detail.session_key);
     setActiveSessionName(toChatThreadSummary(workspaceId, detail).name);
     setActiveSessionAgentType(detail.agent_type || '');
+    setSelectedKnowledgeBaseIds(selectedKnowledgeBaseIds);
     setActiveRunId('');
     setThreadGroups((current) => upsertThreadInGroup(current, workspaceId, toChatThreadSummary(workspaceId, detail)));
     holdBlankComposerRef.current = false;
@@ -190,6 +196,7 @@ export function useThreadChatSessionBrowser({
     setActiveSessionId,
     setActiveSessionKey,
     setActiveSessionName,
+    setSelectedKnowledgeBaseIds,
     setMessages,
     setSelectedProject,
     setThreadGroups,
@@ -201,6 +208,7 @@ export function useThreadChatSessionBrowser({
     if (!serviceRunning) {
       setThreadGroups([]);
       setMessages([]);
+      setSelectedKnowledgeBaseIds([]);
       setActiveSessionAgentType('');
       setActiveRunId('');
       setBridgeError('');
@@ -226,6 +234,7 @@ export function useThreadChatSessionBrowser({
     setActiveSessionAgentType,
     setBridgeError,
     setMessages,
+    setSelectedKnowledgeBaseIds,
     setThreadGroups,
     setTyping,
     updateTaskState,

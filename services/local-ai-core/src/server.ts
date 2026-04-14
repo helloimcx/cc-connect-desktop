@@ -47,6 +47,7 @@ export interface LocalAiCoreBindings extends EventEmitter {
   createThread(workspaceId: string, title?: string): Promise<ThreadDetail>;
   getThread(threadId: string): Promise<ThreadDetail>;
   renameThread(threadId: string, title: string): Promise<ThreadDetail>;
+  updateThreadKnowledgeBases(threadId: string, knowledgeBaseIds: string[]): Promise<{ knowledgeBaseIds: string[] }>;
   deleteThread(threadId: string): Promise<{ deleted: boolean }>;
   sendThreadMessage(threadId: string, content: string): Promise<{ runId: string }>;
   sendThreadAction(threadId: string, content: string): Promise<{ runId: string }>;
@@ -263,6 +264,15 @@ export class LocalAiCoreServer {
       if (req.method === 'GET' && path.startsWith('/api/local/v1/threads/')) {
         const threadId = decodeURIComponent(path.slice('/api/local/v1/threads/'.length));
         json(res, 200, await this.bindings.getThread(threadId));
+        return;
+      }
+      if (req.method === 'PATCH' && path.startsWith('/api/local/v1/threads/') && path.endsWith('/knowledge-bases')) {
+        const threadId = decodeURIComponent(path.slice('/api/local/v1/threads/'.length, -'/knowledge-bases'.length));
+        const body = await readJsonBody(req);
+        const knowledgeBaseIds = Array.isArray(body.knowledgeBaseIds)
+          ? body.knowledgeBaseIds.map((value) => String(value || ''))
+          : [];
+        json(res, 200, await this.bindings.updateThreadKnowledgeBases(threadId, knowledgeBaseIds));
         return;
       }
       if (req.method === 'PATCH' && path.startsWith('/api/local/v1/threads/')) {

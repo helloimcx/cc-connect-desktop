@@ -20,6 +20,9 @@ declare global {
       readConfigFile: () => Promise<ConfigFileState>;
       saveRawConfigFile: (raw: string) => Promise<ConfigFileState>;
       saveStructuredConfigFile: (config: unknown) => Promise<ConfigFileState>;
+      getThreadKnowledgeBases: (workspaceId: string, threadId: string) => Promise<string[]>;
+      updateThreadKnowledgeBases: (workspaceId: string, threadId: string, knowledgeBaseIds: string[]) => Promise<string[]>;
+      deleteThreadKnowledgeBases: (workspaceId: string, threadId: string) => Promise<{ deleted: boolean }>;
       saveSettings: (input: DesktopSettingsInput) => Promise<DesktopSettings>;
       bridgeConnect: () => Promise<unknown>;
       bridgeDisconnect: () => Promise<unknown>;

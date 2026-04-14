@@ -184,6 +184,14 @@ export async function renameThread(threadId: string, title: string) {
   return coreRequest<ThreadDetail>('PATCH', `/threads/${encodeURIComponent(threadId)}`, { title });
 }
 
+export async function updateThreadKnowledgeBases(threadId: string, knowledgeBaseIds: string[]) {
+  return coreRequest<{ knowledgeBaseIds: string[] }>(
+    'PATCH',
+    `/threads/${encodeURIComponent(threadId)}/knowledge-bases`,
+    { knowledgeBaseIds },
+  );
+}
+
 export async function deleteThread(threadId: string) {
   return coreRequest<{ deleted: boolean }>('DELETE', `/threads/${encodeURIComponent(threadId)}`);
 }

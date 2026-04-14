@@ -33,6 +33,7 @@ import { AiVectorKnowledgeProvider } from '../packages/knowledge-api/src/index.j
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let serviceManager: ServiceManager;
 let bridgeAdapter: BridgeAdapter;
+let desktopKnowledgeProvider: AiVectorKnowledgeProvider;
 let localAiCoreServer: LocalAiCoreServer | null = null;
 let localAiCoreBindings: LocalAiCoreBindings | null = null;
 const smokeBridgeSendInputs: DesktopBridgeSendInput[] = [];
@@ -59,6 +60,13 @@ function getBridgeAdapter() {
     throw new Error('bridge adapter is not initialized');
   }
   return bridgeAdapter;
+}
+
+function getDesktopKnowledgeProvider() {
+  if (!desktopKnowledgeProvider) {
+    throw new Error('knowledge provider is not initialized');
+  }
+  return desktopKnowledgeProvider;
 }
 
 function encodeThreadId(project: string, sessionId: string) {
@@ -175,17 +183,7 @@ async function managementRequest<T>(method: string, path: string, body?: unknown
 
 function createLocalAiCoreBindings(): LocalAiCoreBindings {
   const bindings = new EventEmitter() as LocalAiCoreBindings;
-  const knowledgeProvider = new AiVectorKnowledgeProvider({
-    userDataPath: app.getPath('userData'),
-    getConfig: () => getServiceManager().getSettings().knowledge,
-    setConfig: async (input) => {
-      const settings = getServiceManager().updateSettings({
-        knowledge: input,
-      });
-      await broadcastRuntime();
-      return settings.knowledge;
-    },
-  });
+  const knowledgeProvider = getDesktopKnowledgeProvider();
 
   bindings.getRuntimeStatus = () => buildRuntimeStatus(getBridgeAdapter().getState());
   bindings.startService = async () => {
@@ -263,12 +261,29 @@ function createLocalAiCoreBindings(): LocalAiCoreBindings {
       runId: session.live ? `run:${encodeThreadId(workspaceId, session.id)}` : undefined,
     }));
   };
+  bindings.createThread = async (workspaceId: string, title?: string) => {
+    const chatId = `core-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const sessionKey = `desktop:${workspaceId}:${chatId}`;
+    const created = await managementRequest<{ id?: string }>('POST', `/projects/${encodeURIComponent(workspaceId)}/sessions`, {
+      session_key: sessionKey,
+      name: title || `New thread ${new Date().toLocaleTimeString()}`,
+    });
+    const sessions = await managementRequest<{ sessions: Array<any> }>('GET', `/projects/${encodeURIComponent(workspaceId)}/sessions`);
+    const matched =
+      (sessions.sessions || []).find((session) => session.id === created.id) ||
+      (sessions.sessions || []).find((session) => session.session_key === sessionKey);
+    if (!matched) {
+      throw new Error('Created thread could not be loaded');
+    }
+    return bindings.getThread(encodeThreadId(workspaceId, matched.id));
+  };
   bindings.getThread = async (threadId: string) => {
     const { workspaceId, sessionId } = decodeThreadId(threadId);
     const detail = await managementRequest<any>(
       'GET',
       `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}?history_limit=200`,
     );
+    const selectedKnowledgeBaseIds = await knowledgeProvider.listThreadKnowledgeBaseIds(threadId);
     return {
       id: threadId,
       workspaceId,
@@ -280,6 +295,7 @@ function createLocalAiCoreBindings(): LocalAiCoreBindings {
       excerpt: detail.last_message?.content?.replace(/\n/g, ' ') || '',
       participantName: detail.user_name || detail.chat_name,
       runId: detail.live ? `run:${threadId}` : undefined,
+      selectedKnowledgeBaseIds,
       messages: (detail.history || []).map((message: any, index: number) => ({
         id: `${message.timestamp || index}-${message.role}-${index}`,
         role: message.role === 'user' ? 'user' : message.role === 'assistant' ? 'assistant' : 'system',
@@ -288,6 +304,22 @@ function createLocalAiCoreBindings(): LocalAiCoreBindings {
         kind: message.kind === 'progress' ? 'progress' : message.role === 'system' ? 'system' : 'final',
       })),
     };
+  };
+  bindings.renameThread = async (threadId: string, title: string) => {
+    const { workspaceId, sessionId } = decodeThreadId(threadId);
+    await managementRequest('PATCH', `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}`, {
+      name: title,
+    });
+    return bindings.getThread(threadId);
+  };
+  bindings.updateThreadKnowledgeBases = async (threadId: string, knowledgeBaseIds: string[]) => ({
+    knowledgeBaseIds: await knowledgeProvider.updateThreadKnowledgeBaseIds(threadId, knowledgeBaseIds),
+  });
+  bindings.deleteThread = async (threadId: string) => {
+    const { workspaceId, sessionId } = decodeThreadId(threadId);
+    await managementRequest('DELETE', `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}`);
+    await knowledgeProvider.deleteThreadKnowledgeBaseLinks(threadId);
+    return { deleted: true };
   };
   bindings.sendThreadMessage = async (threadId: string, content: string) => {
     const { workspaceId, sessionId } = decodeThreadId(threadId);
@@ -1703,6 +1735,20 @@ function registerIPC() {
   ipcMain.handle('desktop:save-config-structured', (_event, config: DesktopConnectConfig) =>
     getServiceManager().writeStructuredConfig(config),
   );
+  ipcMain.handle('desktop:get-thread-knowledge-bases', async (_event, workspaceId: string, threadId: string) =>
+    getDesktopKnowledgeProvider().listThreadKnowledgeBaseIds(encodeThreadId(workspaceId, threadId)),
+  );
+  ipcMain.handle(
+    'desktop:update-thread-knowledge-bases',
+    async (_event, workspaceId: string, threadId: string, knowledgeBaseIds: string[]) =>
+      getDesktopKnowledgeProvider().updateThreadKnowledgeBaseIds(
+        encodeThreadId(workspaceId, threadId),
+        Array.isArray(knowledgeBaseIds) ? knowledgeBaseIds : [],
+      ),
+  );
+  ipcMain.handle('desktop:delete-thread-knowledge-bases', async (_event, workspaceId: string, threadId: string) =>
+    getDesktopKnowledgeProvider().deleteThreadKnowledgeBaseLinks(encodeThreadId(workspaceId, threadId)),
+  );
   ipcMain.handle('desktop:save-settings', async (_event, input: DesktopSettingsInput) => {
     const settings = getServiceManager().updateSettings(input);
     await broadcastRuntime();
@@ -1730,6 +1776,17 @@ app.whenReady().then(async () => {
     () => getServiceManager().getSettings(),
     () => getServiceManager().getServiceState().status === 'running',
   );
+  desktopKnowledgeProvider = new AiVectorKnowledgeProvider({
+    userDataPath: app.getPath('userData'),
+    getConfig: () => getServiceManager().getSettings().knowledge,
+    setConfig: async (input) => {
+      const settings = getServiceManager().updateSettings({
+        knowledge: input,
+      });
+      await broadcastRuntime();
+      return settings.knowledge;
+    },
+  });
   localAiCoreBindings = createLocalAiCoreBindings();
   localAiCoreServer = new LocalAiCoreServer(localAiCoreBindings);
 
