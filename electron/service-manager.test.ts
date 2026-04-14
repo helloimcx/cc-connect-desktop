@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtempSync } from 'node:fs';
@@ -42,11 +42,15 @@ test('writeStructuredConfig generates the bundled knowledge skill files', async 
     const workDir = join(temp.dir, 'runtime', 'project-alpha');
     const skillPath = join(workDir, '.agents', 'skills', 'knowledge-base', 'SKILL.md');
     const scriptPath = join(workDir, '.agents', 'skills', 'knowledge-base', 'scripts', 'search-knowledge.sh');
+    const claudeSkillPath = join(workDir, '.claude', 'skills', 'knowledge-base');
 
     assert.deepEqual(saved.warnings || [], []);
     assert.equal(existsSync(skillPath), true);
     assert.equal(existsSync(scriptPath), true);
+    assert.equal(existsSync(claudeSkillPath), true);
     accessSync(scriptPath, constants.X_OK);
+    assert.equal(lstatSync(claudeSkillPath).isSymbolicLink(), true);
+    assert.equal(readlinkSync(claudeSkillPath), join(workDir, '.agents', 'skills', 'knowledge-base'));
     assert.match(readFileSync(skillPath, 'utf8'), /Selected Knowledge Bases/);
     assert.match(readFileSync(scriptPath, 'utf8'), /knowledge\/bases\/\$KB_ID\/search/);
   } finally {

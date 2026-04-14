@@ -1,5 +1,15 @@
 import { EventEmitter } from 'node:events';
-import { accessSync, chmodSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  accessSync,
+  chmodSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -21,6 +31,7 @@ const MANAGEMENT_READY_POLL_MS = 300;
 const STOP_TIMEOUT_MS = 5000;
 const KNOWLEDGE_SKILL_DIR = join('.agents', 'skills', 'knowledge-base');
 const KNOWLEDGE_SKILL_SCRIPT_PATH = join(KNOWLEDGE_SKILL_DIR, 'scripts', 'search-knowledge.sh');
+const CLAUDE_KNOWLEDGE_SKILL_DIR = join('.claude', 'skills', 'knowledge-base');
 
 const DEFAULT_CONFIG_TEMPLATE = `# Managed by cc-connect-desktop
 [log]
@@ -245,11 +256,14 @@ export class ServiceManager extends EventEmitter {
       const workDir = isAbsolute(rawWorkDir) ? rawWorkDir : resolve(configDir, rawWorkDir);
       const skillDir = join(workDir, KNOWLEDGE_SKILL_DIR);
       const scriptPath = join(workDir, KNOWLEDGE_SKILL_SCRIPT_PATH);
+      const claudeSkillLinkPath = join(workDir, CLAUDE_KNOWLEDGE_SKILL_DIR);
       try {
         mkdirSync(join(skillDir, 'scripts'), { recursive: true });
         writeFileSync(join(skillDir, 'SKILL.md'), knowledgeSkillMarkdown(), 'utf8');
         writeFileSync(scriptPath, knowledgeSkillScript(), 'utf8');
         chmodSync(scriptPath, 0o755);
+        mkdirSync(dirname(claudeSkillLinkPath), { recursive: true });
+        this.replaceWithSymlink(claudeSkillLinkPath, resolve(skillDir));
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         warnings.push(`Knowledge skill was not written for project "${projectName}" at ${workDir}: ${detail}`);
@@ -257,6 +271,13 @@ export class ServiceManager extends EventEmitter {
     });
 
     return warnings;
+  }
+
+  private replaceWithSymlink(linkPath: string, targetPath: string) {
+    if (existsSync(linkPath)) {
+      rmSync(linkPath, { recursive: true, force: true });
+    }
+    symlinkSync(targetPath, linkPath, 'dir');
   }
 
   async start() {
