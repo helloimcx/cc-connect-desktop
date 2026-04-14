@@ -1,5 +1,3 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import {
   type KnowledgeBase,
   type KnowledgeBaseCreateInput,
@@ -14,16 +12,12 @@ import {
   type KnowledgeSource,
   type KnowledgeUploadResult,
 } from '../../contracts/src/index.js';
+import { KnowledgeSqliteStore } from './sqlite-store.js';
 
 interface AiVectorKnowledgeProviderOptions {
   userDataPath: string;
   getConfig: () => KnowledgeConfig;
   setConfig: (input: Partial<KnowledgeConfig>) => Promise<KnowledgeConfig> | KnowledgeConfig;
-}
-
-interface KnowledgeStore {
-  folders: KnowledgeFolder[];
-  knowledgeBases: KnowledgeBase[];
 }
 
 type AiVectorEnvelope<T> = {
@@ -55,6 +49,11 @@ type AiVectorSearchRecord = {
     document?: string;
     chunk_offset?: number;
   };
+};
+
+type AiVectorUploadRecord = AiVectorFileRecord & {
+  success?: boolean;
+  msg?: string | null;
 };
 
 const DEFAULT_CONFIG: KnowledgeConfig = {
@@ -107,12 +106,12 @@ function summarizeSnippet(text: string, limit = 220) {
 }
 
 export class AiVectorKnowledgeProvider {
-  private readonly storePath: string;
+  private readonly store: KnowledgeSqliteStore;
   private readonly getConfigValue: () => KnowledgeConfig;
   private readonly setConfigValue: (input: Partial<KnowledgeConfig>) => Promise<KnowledgeConfig> | KnowledgeConfig;
 
   constructor(options: AiVectorKnowledgeProviderOptions) {
-    this.storePath = join(options.userDataPath, 'runtime', 'knowledge-store.json');
+    this.store = new KnowledgeSqliteStore({ userDataPath: options.userDataPath });
     this.getConfigValue = options.getConfig;
     this.setConfigValue = options.setConfig;
   }
@@ -143,12 +142,7 @@ export class AiVectorKnowledgeProvider {
   }
 
   async listFolders(): Promise<KnowledgeFolder[]> {
-    return this.readStore().folders.sort((left, right) => {
-      if (left.path === right.path) {
-        return left.sortOrder - right.sortOrder;
-      }
-      return left.path.localeCompare(right.path);
-    });
+    return this.store.listFolders();
   }
 
   async createFolder(input: KnowledgeFolderCreateInput): Promise<KnowledgeFolder> {
@@ -157,13 +151,13 @@ export class AiVectorKnowledgeProvider {
       throw new Error('Folder name is required.');
     }
 
-    const store = this.readStore();
-    const parent = input.parentId ? store.folders.find((folder) => folder.id === input.parentId) : null;
+    const folders = this.store.listFolders();
+    const parent = input.parentId ? folders.find((folder) => folder.id === input.parentId) || null : null;
     if (input.parentId && !parent) {
       throw new Error('Parent folder does not exist.');
     }
 
-    const siblings = store.folders.filter((folder) => folder.parentId === (input.parentId || null));
+    const siblings = folders.filter((folder) => folder.parentId === (input.parentId || null));
     const timestamp = nowIso();
     const nextFolder: KnowledgeFolder = {
       id: randomId('folder'),
@@ -174,9 +168,7 @@ export class AiVectorKnowledgeProvider {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    store.folders.push(nextFolder);
-    this.writeStore(store);
-    return nextFolder;
+    return this.store.insertFolder(nextFolder);
   }
 
   async updateFolder(id: string, input: KnowledgeFolderUpdateInput): Promise<KnowledgeFolder> {
@@ -185,97 +177,44 @@ export class AiVectorKnowledgeProvider {
       throw new Error('Folder name is required.');
     }
 
-    const store = this.readStore();
-    const folderIndex = store.folders.findIndex((folder) => folder.id === id);
-    if (folderIndex < 0) {
+    const folder = this.store.getFolder(id);
+    if (!folder) {
       throw new Error('Folder does not exist.');
     }
 
-    const folder = store.folders[folderIndex];
-    const parent = folder.parentId ? store.folders.find((entry) => entry.id === folder.parentId) || null : null;
+    const parent = folder.parentId ? this.store.getFolder(folder.parentId) : null;
     const previousPath = folder.path;
     const nextPath = this.buildFolderPath(name, parent);
-    store.folders[folderIndex] = {
-      ...folder,
+    return this.store.renameFolder(id, {
       name,
-      path: nextPath,
+      previousPath,
+      nextPath,
       updatedAt: nowIso(),
-    };
-
-    // Keep descendant paths in sync after a rename.
-    store.folders = store.folders.map((entry) => {
-      if (entry.id === id || !entry.path.startsWith(`${previousPath}/`)) {
-        return entry;
-      }
-      return {
-        ...entry,
-        path: entry.path.replace(previousPath, nextPath),
-        updatedAt: nowIso(),
-      };
     });
-    this.writeStore(store);
-    return clone(store.folders[folderIndex]);
   }
 
   async deleteFolder(id: string): Promise<{ deleted: boolean }> {
-    const store = this.readStore();
-    const hasChildren = store.folders.some((folder) => folder.parentId === id);
+    const hasChildren = this.store.hasFolderChildren(id);
     if (hasChildren) {
       throw new Error('Delete or move child folders before removing this folder.');
     }
-    const hasBases = store.knowledgeBases.some((base) => base.folderId === id);
+    const hasBases = this.store.hasKnowledgeBasesInFolder(id);
     if (hasBases) {
       throw new Error('Delete or move knowledge bases before removing this folder.');
     }
-    const nextFolders = store.folders.filter((folder) => folder.id !== id);
-    if (nextFolders.length === store.folders.length) {
+    if (!this.store.getFolder(id)) {
       throw new Error('Folder does not exist.');
     }
-    store.folders = nextFolders;
-    this.writeStore(store);
+    this.store.deleteFolder(id);
     return { deleted: true };
   }
 
   async listKnowledgeBases(): Promise<KnowledgeBase[]> {
-    const store = this.readStore();
-    const config = normalizeConfig(this.getConfigValue());
-    if (!config.baseUrl) {
-      return clone(store.knowledgeBases).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-    }
-
-    const withStats = await Promise.all(
-      store.knowledgeBases.map(async (base) => {
-        try {
-          const files = await this.listKnowledgeBaseFiles(base.id);
-          return {
-            ...base,
-            fileCount: files.length,
-            wordCount: files.reduce((sum, file) => sum + Number(file.wordCount || 0), 0),
-          };
-        } catch {
-          return base;
-        }
-      }),
-    );
-    return withStats.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return this.store.listKnowledgeBases();
   }
 
   async getKnowledgeBase(id: string): Promise<KnowledgeBase> {
-    const localBase = this.findLocalKnowledgeBase(id);
-    const config = normalizeConfig(this.getConfigValue());
-    if (!config.baseUrl) {
-      return localBase;
-    }
-    try {
-      const files = await this.listKnowledgeBaseFiles(id);
-      return {
-        ...localBase,
-        fileCount: files.length,
-        wordCount: files.reduce((sum, file) => sum + Number(file.wordCount || 0), 0),
-      };
-    } catch {
-      return localBase;
-    }
+    return this.findLocalKnowledgeBase(id);
   }
 
   async createKnowledgeBase(input: KnowledgeBaseCreateInput): Promise<KnowledgeBase> {
@@ -284,8 +223,7 @@ export class AiVectorKnowledgeProvider {
       throw new Error('Knowledge base name is required.');
     }
 
-    const store = this.readStore();
-    if (input.folderId && !store.folders.some((folder) => folder.id === input.folderId)) {
+    if (input.folderId && !this.store.getFolder(input.folderId)) {
       throw new Error('Selected folder does not exist.');
     }
 
@@ -302,22 +240,14 @@ export class AiVectorKnowledgeProvider {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    store.knowledgeBases.push(nextBase);
-    this.writeStore(store);
-    return nextBase;
+    return this.store.insertKnowledgeBase(nextBase);
   }
 
   async updateKnowledgeBase(id: string, input: KnowledgeBaseUpdateInput): Promise<KnowledgeBase> {
-    const store = this.readStore();
-    const index = store.knowledgeBases.findIndex((base) => base.id === id);
-    if (index < 0) {
-      throw new Error('Knowledge base does not exist.');
-    }
-    if (input.folderId && !store.folders.some((folder) => folder.id === input.folderId)) {
+    const current = this.findLocalKnowledgeBase(id);
+    if (input.folderId && !this.store.getFolder(input.folderId)) {
       throw new Error('Selected folder does not exist.');
     }
-
-    const current = store.knowledgeBases[index];
     const next: KnowledgeBase = {
       ...current,
       name: input.name === undefined ? current.name : String(input.name || '').trim() || current.name,
@@ -327,27 +257,27 @@ export class AiVectorKnowledgeProvider {
       icon: input.icon === undefined ? current.icon : String(input.icon || '').trim() || current.icon,
       updatedAt: nowIso(),
     };
-    store.knowledgeBases[index] = next;
-    this.writeStore(store);
-    return next;
+    return this.store.updateKnowledgeBase(next);
   }
 
   async deleteKnowledgeBase(id: string): Promise<{ deleted: boolean }> {
-    const store = this.readStore();
-    const base = store.knowledgeBases.find((entry) => entry.id === id);
+    const base = this.store.getKnowledgeBase(id);
     if (!base) {
       throw new Error('Knowledge base does not exist.');
     }
 
     try {
       const files = await this.listKnowledgeBaseFiles(id);
-      if (files.length > 0) {
+      const remoteFileIds = files.length > 0
+        ? files.map((file) => file.fileId)
+        : await this.discoverKnowledgeBaseFileIds(id);
+      if (remoteFileIds.length > 0) {
         const config = this.requireConfigured();
         await this.aiVectorRequest('/qdrant/batchDelete', {
           method: 'POST',
           body: JSON.stringify({
             collection: config.defaultCollection,
-            file_ids: files.map((file) => file.fileId),
+            file_ids: remoteFileIds,
             knowledgebase_id: id,
           }),
           headers: {
@@ -359,30 +289,22 @@ export class AiVectorKnowledgeProvider {
       // Best effort remote cleanup. Local metadata is still the source of truth for this module.
     }
 
-    store.knowledgeBases = store.knowledgeBases.filter((entry) => entry.id !== id);
-    this.writeStore(store);
+    this.store.deleteKnowledgeBase(id);
     return { deleted: true };
   }
 
   async listKnowledgeBaseFiles(knowledgeBaseId: string): Promise<KnowledgeFile[]> {
     this.findLocalKnowledgeBase(knowledgeBaseId);
-    const config = this.requireConfigured();
-    const response = await this.aiVectorRequest<AiVectorFileRecord[]>(
-      `/qdrant/list?knowledgebase_id=${encodeURIComponent(knowledgeBaseId)}&collection=${encodeURIComponent(config.defaultCollection)}`,
-      {
-        method: 'GET',
-      },
-    );
-    return (response || []).map((file) => this.mapFile(file));
+    return this.store.listKnowledgeBaseFiles(knowledgeBaseId);
   }
 
   async uploadKnowledgeBaseFiles(
     knowledgeBaseId: string,
     request: { contentType: string; body: Uint8Array },
   ): Promise<KnowledgeUploadResult[]> {
-    await this.getKnowledgeBase(knowledgeBaseId);
+    this.findLocalKnowledgeBase(knowledgeBaseId);
     this.requireConfigured();
-    const response = await this.aiVectorRequest<any[]>(
+    const response = await this.aiVectorRequest<AiVectorUploadRecord[]>(
       '/qdrant/file',
       {
         method: 'POST',
@@ -392,6 +314,13 @@ export class AiVectorKnowledgeProvider {
         },
       },
     );
+    const cachedFiles = (response || [])
+      .filter((item) => Boolean(item.success))
+      .map((item) => this.mapFile(item));
+    if (cachedFiles.length > 0) {
+      this.store.upsertKnowledgeBaseFiles(cachedFiles);
+      this.store.touchKnowledgeBase(knowledgeBaseId, nowIso());
+    }
     return (response || []).map((item) => ({
       fileId: String(item.file_id || ''),
       fileName: String(item.file_name || ''),
@@ -403,7 +332,7 @@ export class AiVectorKnowledgeProvider {
   }
 
   async deleteKnowledgeBaseFile(knowledgeBaseId: string, fileId: string): Promise<{ deleted: boolean }> {
-    await this.getKnowledgeBase(knowledgeBaseId);
+    this.findLocalKnowledgeBase(knowledgeBaseId);
     const config = this.requireConfigured();
     const response = await this.aiVectorRequest<{ success?: boolean }>(
       '/qdrant/delete',
@@ -419,7 +348,12 @@ export class AiVectorKnowledgeProvider {
         },
       },
     );
-    return { deleted: Boolean(response?.success) };
+    const deleted = Boolean(response?.success);
+    if (deleted) {
+      this.store.deleteKnowledgeBaseFile(fileId);
+      this.store.touchKnowledgeBase(knowledgeBaseId, nowIso());
+    }
+    return { deleted };
   }
 
   async searchKnowledgeBase(knowledgeBaseId: string, input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]> {
@@ -458,38 +392,12 @@ export class AiVectorKnowledgeProvider {
     });
   }
 
-  private readStore(): KnowledgeStore {
-    const defaults: KnowledgeStore = {
-      folders: [],
-      knowledgeBases: [],
-    };
-    if (!existsSync(this.storePath)) {
-      this.writeStore(defaults);
-      return defaults;
-    }
-    try {
-      const raw = JSON.parse(readFileSync(this.storePath, 'utf8')) as Partial<KnowledgeStore>;
-      return {
-        folders: Array.isArray(raw.folders) ? raw.folders : [],
-        knowledgeBases: Array.isArray(raw.knowledgeBases) ? raw.knowledgeBases : [],
-      };
-    } catch {
-      this.writeStore(defaults);
-      return defaults;
-    }
-  }
-
-  private writeStore(store: KnowledgeStore) {
-    mkdirSync(dirname(this.storePath), { recursive: true });
-    writeFileSync(this.storePath, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
-  }
-
   private buildFolderPath(name: string, parent: KnowledgeFolder | null) {
     return parent ? `${parent.path}/${name}` : name;
   }
 
   private findLocalKnowledgeBase(id: string) {
-    const base = this.readStore().knowledgeBases.find((entry) => entry.id === id);
+    const base = this.store.getKnowledgeBase(id);
     if (!base) {
       throw new Error('Knowledge base does not exist.');
     }
@@ -520,6 +428,31 @@ export class AiVectorKnowledgeProvider {
     };
   }
 
+  private async discoverKnowledgeBaseFileIds(knowledgeBaseId: string): Promise<string[]> {
+    const config = this.requireConfigured();
+    const response = await this.aiVectorRequest<{ documents?: AiVectorSearchRecord[] }>(
+      '/qdrant/query',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          collection: config.defaultCollection,
+          query: '*',
+          knowledgebase_id: knowledgeBaseId,
+          limit: 200,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    return Array.from(new Set(
+      (response?.documents || [])
+        .map((item) => String(item.metadata?.file_id || '').trim())
+        .filter(Boolean),
+    ));
+  }
+
   private async aiVectorRequest<T>(
     path: string,
     init: {
@@ -540,11 +473,21 @@ export class AiVectorKnowledgeProvider {
       body: init.body,
     });
     const text = await response.text();
-    const payload = text ? JSON.parse(text) as AiVectorEnvelope<T> : {};
-    if (!response.ok || Number(payload.resultCode || 0) !== 0) {
-      throw new Error(String(payload.resultMsg || `ai_vector request failed: ${response.status}`));
+    const payload = text ? JSON.parse(text) as T | AiVectorEnvelope<T> : null;
+    if (!response.ok) {
+      if (payload && typeof payload === 'object' && 'resultMsg' in payload) {
+        throw new Error(String((payload as AiVectorEnvelope<T>).resultMsg || `ai_vector request failed: ${response.status}`));
+      }
+      throw new Error(`ai_vector request failed: ${response.status}`);
     }
-    return payload.data as T;
+    if (payload && typeof payload === 'object' && ('resultCode' in payload || 'resultMsg' in payload || 'data' in payload)) {
+      const envelope = payload as AiVectorEnvelope<T>;
+      if (Number(envelope.resultCode || 0) !== 0) {
+        throw new Error(String(envelope.resultMsg || `ai_vector request failed: ${response.status}`));
+      }
+      return envelope.data as T;
+    }
+    return payload as T;
   }
 
   private buildAuthHeaders(config: KnowledgeConfig) {
