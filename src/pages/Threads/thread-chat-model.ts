@@ -191,15 +191,15 @@ export function formatMessageTimestamp(timestamp?: string) {
 export function formatRuntimePhase(phase?: DesktopRuntimeStatus['phase']) {
   switch (phase) {
     case 'starting':
-      return 'starting runtime';
+      return '启动中';
     case 'api_ready':
-      return 'service ready';
+      return '服务就绪';
     case 'bridge_ready':
-      return 'ready';
+      return '桥接就绪';
     case 'error':
-      return 'runtime error';
+      return '运行异常';
     default:
-      return 'stopped';
+      return '未启动';
   }
 }
 
