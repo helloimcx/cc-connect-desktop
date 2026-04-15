@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { accessSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { accessSync, chmodSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtempSync } from 'node:fs';
@@ -51,9 +51,41 @@ function buildConfig(workDir: string): DesktopConnectConfig {
   };
 }
 
-test('writeStructuredConfig generates the bundled knowledge skill files', async () => {
+function withPathCommand(name: string, script = '#!/bin/sh\necho "0.0.0"\n') {
+  const previousPath = process.env.PATH || '';
+  const temp = withTempDir();
+  const binDir = join(temp.dir, 'bin');
+  mkdirSync(binDir, { recursive: true });
+  const commandPath = join(binDir, name);
+  writeFileSync(commandPath, script, 'utf8');
+  chmodSync(commandPath, 0o755);
+  process.env.PATH = `${binDir}${previousPath ? `:${previousPath}` : ''}`;
+  return {
+    cleanup() {
+      process.env.PATH = previousPath;
+      temp.cleanup();
+    },
+  };
+}
+
+function withIsolatedPath() {
+  const previousPath = process.env.PATH || '';
+  const temp = withTempDir();
+  const binDir = join(temp.dir, 'bin');
+  mkdirSync(binDir, { recursive: true });
+  process.env.PATH = binDir;
+  return {
+    cleanup() {
+      process.env.PATH = previousPath;
+      temp.cleanup();
+    },
+  };
+}
+
+test('writeStructuredConfig generates the bundled knowledge skill files', { concurrency: false }, async () => {
   const temp = withTempDir();
   const home = withTempHome();
+  const command = withPathCommand('agent-browser');
   try {
     const manager = new ServiceManager(temp.dir);
     const workDir = join(temp.dir, 'runtime', 'project-alpha');
@@ -101,17 +133,21 @@ test('writeStructuredConfig generates the bundled knowledge skill files', async 
     assert.match(readFileSync(browserSkillPath, 'utf8'), /You must run `agent-browser skills get <name>`/);
     assert.match(readFileSync(browserReferencePath, 'utf8'), /Command Reference/);
     assert.match(readFileSync(browserTemplatePath, 'utf8'), /Capture Workflow/);
-    assert.match(readFileSync(managedStatePath, 'utf8'), /"agent-browser"/);
+    const managedState = readFileSync(managedStatePath, 'utf8');
+    assert.match(managedState, /"agent-browser"/);
+    assert.match(managedState, /"status": "ready"/);
     assert.equal(readFileSync(customSkillPath, 'utf8'), 'custom skill');
   } finally {
+    command.cleanup();
     home.cleanup();
     temp.cleanup();
   }
 });
 
-test('writeStructuredConfig backs up old workspace skill directories before linking shared skills', async () => {
+test('writeStructuredConfig backs up old workspace skill directories before linking shared skills', { concurrency: false }, async () => {
   const temp = withTempDir();
   const home = withTempHome();
+  const command = withPathCommand('agent-browser');
   try {
     const manager = new ServiceManager(temp.dir);
     const workDir = join(temp.dir, 'runtime', 'project-alpha');
@@ -135,12 +171,13 @@ test('writeStructuredConfig backs up old workspace skill directories before link
     assert.equal(readlinkSync(oldAgentSkillDir), sharedSkillDir);
     assert.equal(readlinkSync(oldClaudeSkillDir), sharedSkillDir);
   } finally {
+    command.cleanup();
     home.cleanup();
     temp.cleanup();
   }
 });
 
-test('writeStructuredConfig returns warnings when the shared skill directory cannot be created', async () => {
+test('writeStructuredConfig returns warnings when the shared skill directory cannot be created', { concurrency: false }, async () => {
   const temp = withTempDir();
   const home = withTempHome();
   try {
@@ -160,7 +197,7 @@ test('writeStructuredConfig returns warnings when the shared skill directory can
   }
 });
 
-test('writeStructuredConfig returns warnings when a workspace skill link cannot be created', async () => {
+test('writeStructuredConfig returns warnings when a workspace skill link cannot be created', { concurrency: false }, async () => {
   const temp = withTempDir();
   const home = withTempHome();
   try {
@@ -177,6 +214,27 @@ test('writeStructuredConfig returns warnings when a workspace skill link cannot 
     assert.match(saved.warnings?.[1] || '', /Managed bundled skill "agent-browser" was not linked for project/);
     assert.equal(existsSync(saved.path), true);
   } finally {
+    home.cleanup();
+    temp.cleanup();
+  }
+});
+
+test('writeStructuredConfig reports managed skill environment warnings when agent-browser is unavailable', { concurrency: false }, async () => {
+  const temp = withTempDir();
+  const home = withTempHome();
+  const isolatedPath = withIsolatedPath();
+  try {
+    const manager = new ServiceManager(temp.dir);
+
+    const saved = await manager.writeStructuredConfig(buildConfig('project-alpha'));
+    const managedStatePath = join(home.dir, '.ai-workstation', 'state', 'managed-skills.json');
+
+    assert.equal(Array.isArray(saved.warnings), true);
+    assert.ok((saved.warnings || []).some((warning) => /requires command "agent-browser"/.test(warning)));
+    assert.match(readFileSync(managedStatePath, 'utf8'), /"status": "warning"/);
+    assert.match(readFileSync(managedStatePath, 'utf8'), /"commandName": "agent-browser"/);
+  } finally {
+    isolatedPath.cleanup();
     home.cleanup();
     temp.cleanup();
   }

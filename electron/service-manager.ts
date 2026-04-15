@@ -52,6 +52,8 @@ interface ManagedSkillManifestEntry {
   sourceType: 'bundled';
   bundlePath: string;
   mountTargets: ManagedSkillMountTarget[];
+  requiredPaths: string[];
+  requiredCommand?: string;
   executablePaths: string[];
 }
 
@@ -59,6 +61,10 @@ interface ManagedSkillStateRecord {
   version: string;
   installedAt?: string;
   activePath?: string;
+  checkedAt?: string;
+  status?: 'ready' | 'warning';
+  lastError?: string;
+  commandName?: string;
 }
 
 interface ManagedSkillsState {
@@ -72,6 +78,7 @@ const MANAGED_SKILLS: ManagedSkillManifestEntry[] = [
     sourceType: 'bundled',
     bundlePath: resolve(process.cwd(), 'electron', 'managed-skills', 'knowledge-base'),
     mountTargets: ['agents', 'claude'],
+    requiredPaths: ['SKILL.md', join('scripts', 'search-knowledge.sh')],
     executablePaths: [join('scripts', 'search-knowledge.sh')],
   },
   {
@@ -80,6 +87,12 @@ const MANAGED_SKILLS: ManagedSkillManifestEntry[] = [
     sourceType: 'bundled',
     bundlePath: resolve(process.cwd(), 'electron', 'managed-skills', 'agent-browser'),
     mountTargets: ['agents', 'claude'],
+    requiredPaths: [
+      'SKILL.md',
+      join('references', 'commands.md'),
+      join('templates', 'capture-workflow.sh'),
+    ],
+    requiredCommand: 'agent-browser',
     executablePaths: [
       join('templates', 'authenticated-session.sh'),
       join('templates', 'capture-workflow.sh'),
@@ -258,6 +271,10 @@ export class ServiceManager extends EventEmitter {
           version: skill.version,
           installedAt: state.skills[skill.id]?.installedAt,
           activePath: state.skills[skill.id]?.activePath,
+          checkedAt: new Date().toISOString(),
+          status: 'warning',
+          lastError: detail,
+          commandName: skill.requiredCommand,
         };
       }
     }
@@ -298,13 +315,18 @@ export class ServiceManager extends EventEmitter {
     const activePath = this.getManagedSkillActivePath(skill.id);
     mkdirSync(dirname(activePath), { recursive: true });
     this.replaceWithSymlink(activePath, packagePath);
+    const validationError = this.validateManagedSkill(skill, packagePath, activePath);
 
     state.skills[skill.id] = {
       version: skill.version,
       installedAt: new Date().toISOString(),
       activePath,
+      checkedAt: new Date().toISOString(),
+      status: validationError ? 'warning' : 'ready',
+      lastError: validationError,
+      commandName: skill.requiredCommand,
     };
-    return [];
+    return validationError ? [validationError] : [];
   }
 
   private ensureBundledSkillPackage(skill: ManagedSkillManifestEntry) {
@@ -327,6 +349,33 @@ export class ServiceManager extends EventEmitter {
     const linkPath = join(workDir, skillRoot, skillName);
     mkdirSync(dirname(linkPath), { recursive: true });
     this.replaceWithSymlink(linkPath, targetPath, true);
+  }
+
+  private validateManagedSkill(skill: ManagedSkillManifestEntry, packagePath: string, activePath: string) {
+    for (const relativePath of skill.requiredPaths) {
+      const requiredPath = join(packagePath, relativePath);
+      if (!this.pathExists(requiredPath)) {
+        const message = `Managed bundled skill "${skill.id}" is missing required file ${requiredPath}.`;
+        this.pushLog(message);
+        return message;
+      }
+    }
+    if (!this.isSymlinkTo(activePath, packagePath)) {
+      const message = `Managed bundled skill "${skill.id}" active link is invalid: ${activePath}.`;
+      this.pushLog(message);
+      return message;
+    }
+    if (skill.requiredCommand) {
+      const probe = spawnSync(skill.requiredCommand, ['--version'], { encoding: 'utf8' });
+      if (probe.status !== 0) {
+        const detail = String(probe.stderr || probe.stdout || 'command not available').trim();
+        const message = `Managed bundled skill "${skill.id}" requires command "${skill.requiredCommand}", but it is not available: ${detail}.`;
+        this.pushLog(message);
+        return message;
+      }
+    }
+    this.pushLog(`Managed bundled skill "${skill.id}" is ready at ${packagePath}`);
+    return '';
   }
 
   private resolveSkillMountRoot(target: ManagedSkillMountTarget) {

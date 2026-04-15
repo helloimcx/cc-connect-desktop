@@ -250,6 +250,7 @@ test('supports raw ai_vector search responses without envelope', async () => {
     assert.equal(results.length, 1);
     assert.equal(results[0]?.fileId, 'file-1');
     assert.equal(results[0]?.chunkOffset, 2);
+    assert.equal(results[0]?.title, '运营知识库 · doc.md');
     assert.match(results[0]?.snippet || '', /hello knowledge/);
   } finally {
     globalThis.fetch = originalFetch;

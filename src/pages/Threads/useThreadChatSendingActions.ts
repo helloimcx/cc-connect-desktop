@@ -163,12 +163,19 @@ export function useThreadChatSendingActions({
 
     try {
       const ensured = await ensureSession();
+      console.info('[desktop-chat] send', {
+        runtimeProvider,
+        selectedProject,
+        threadId: ensured.id,
+        sessionKey: ensured.sessionKey,
+        selectedKnowledgeBaseIds,
+      });
       pendingTurnRef.current = { sessionKey: ensured.sessionKey, userOrder };
       setMessages((current) => [
         ...current,
         { id: `${crypto.randomUUID()}-user`, role: 'user', content, order: userOrder, timestamp: new Date().toISOString() },
       ]);
-      updateTaskState('running');
+      updateTaskState('running', 'send-started');
       setTyping(runtimeProvider !== 'local_core');
       setBridgeError('');
       if (runtimeProvider === 'local_core') {
@@ -197,7 +204,7 @@ export function useThreadChatSendingActions({
       clearLocalCorePolling();
       pendingTurnRef.current = null;
       setTyping(false);
-      updateTaskState('idle');
+      updateTaskState('error', 'send-failed');
       setBridgeError(error instanceof Error ? error.message : 'Failed to send the message.');
     } finally {
       setSending(false);
@@ -233,7 +240,7 @@ export function useThreadChatSendingActions({
     clearReplyTimeout();
     clearLocalCorePolling();
     setTyping(false);
-    updateTaskState('stopping');
+    updateTaskState('stopping', 'stop-requested');
     try {
       if (runtimeProvider === 'local_core' && activeRunId) {
         await interruptRun(activeRunId);
@@ -249,11 +256,11 @@ export function useThreadChatSendingActions({
       }
       window.setTimeout(() => {
         if (taskStateRef.current === 'stopping') {
-          updateTaskState('idle');
+          updateTaskState('idle', 'stop-timeout-complete');
         }
       }, 1500);
     } catch (error) {
-      updateTaskState('idle');
+      updateTaskState('error', 'stop-failed');
       setBridgeError(error instanceof Error ? error.message : 'Failed to stop the current task.');
     }
   }, [

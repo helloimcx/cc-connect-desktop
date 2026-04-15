@@ -54,7 +54,7 @@ export type ThreadChatModalSetters = {
 export type ThreadChatSharedActionContext = {
   runtimeProvider: RuntimeProvider;
   selectedProject: string;
-  updateTaskState: (next: ChatTaskState) => void;
+  updateTaskState: (next: ChatTaskState, reason?: string) => void;
   applyLocalCoreThreadDetail: (detail: ThreadDetail) => void;
   clearLocalCorePolling: () => void;
   clearReplyTimeout: () => void;
@@ -65,7 +65,7 @@ export type ThreadChatSharedActionContext = {
 export type ThreadChatSharedHookContext = {
   runtimeProvider: RuntimeProvider;
   selectedWorkspaceId: string;
-  updateTaskState: (next: ChatTaskState) => void;
+  updateTaskState: (next: ChatTaskState, reason?: string) => void;
   applyLocalCoreThreadDetail: (detail: ThreadDetail) => void;
   clearLocalCorePolling: () => void;
   clearReplyTimeout: () => void;

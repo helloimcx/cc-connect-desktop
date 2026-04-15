@@ -35,6 +35,7 @@ export type ChatTaskState =
   | 'awaiting_input'
   | 'awaiting_permission'
   | 'permission_submitted'
+  | 'error'
   | 'stopping';
 
 export interface ThreadGroup {
@@ -273,6 +274,9 @@ export function formatTaskHint(taskState: ChatTaskState, typing: boolean) {
   if (taskState === 'stopping') {
     return 'Stopping current task…';
   }
+  if (taskState === 'error') {
+    return '';
+  }
   if (taskState === 'awaiting_input') {
     return 'Agent is waiting for your reply.';
   }
@@ -289,4 +293,24 @@ export function formatTaskHint(taskState: ChatTaskState, typing: boolean) {
     return 'Task is running…';
   }
   return '';
+}
+
+export function isTaskRunningState(taskState: ChatTaskState) {
+  return (
+    taskState === 'running' ||
+    taskState === 'awaiting_permission' ||
+    taskState === 'permission_submitted' ||
+    taskState === 'stopping'
+  );
+}
+
+export function isTaskInputLocked(taskState: ChatTaskState) {
+  return taskState !== 'idle' && taskState !== 'awaiting_input' && taskState !== 'error';
+}
+
+export function canStreamingPromoteTaskState(taskState: ChatTaskState) {
+  return taskState !== 'awaiting_input' &&
+    taskState !== 'awaiting_permission' &&
+    taskState !== 'permission_submitted' &&
+    taskState !== 'stopping';
 }

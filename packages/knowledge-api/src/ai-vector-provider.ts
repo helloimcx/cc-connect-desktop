@@ -357,7 +357,7 @@ export class AiVectorKnowledgeProvider {
   }
 
   async searchKnowledgeBase(knowledgeBaseId: string, input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]> {
-    this.findLocalKnowledgeBase(knowledgeBaseId);
+    const base = this.findLocalKnowledgeBase(knowledgeBaseId);
     const config = this.requireConfigured();
     const response = await this.aiVectorRequest<{ documents?: AiVectorSearchRecord[] }>(
       '/qdrant/query',
@@ -383,7 +383,7 @@ export class AiVectorKnowledgeProvider {
         knowledgeBaseId,
         fileId: String(metadata.file_id || ''),
         fileName: String(metadata.file_name || '未命名文件'),
-        title: String(metadata.file_name || '搜索结果'),
+        title: `${base.name} · ${String(metadata.file_name || '搜索结果')}`,
         snippet: summarizeSnippet(content),
         score: Number(item.score || 0),
         chunkOffset: Number(metadata.chunk_offset || 0),

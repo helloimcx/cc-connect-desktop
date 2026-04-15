@@ -88,7 +88,7 @@ export function useThreadChatBridgeActions({
       clearReplyTimeout();
       clearActionStatuses();
       if (message.actionMode === 'permission' && message.actionInteractive) {
-        updateTaskState('permission_submitted');
+        updateTaskState('permission_submitted', 'bridge-permission-submitted');
         if (runtimeProvider !== 'local_core') {
           armReplyTimeout('permission_continue');
         }
@@ -105,7 +105,7 @@ export function useThreadChatBridgeActions({
           ),
         );
       } else {
-        updateTaskState('running');
+        updateTaskState('running', 'bridge-action-submitted');
         if (runtimeProvider !== 'local_core') {
           armReplyTimeout();
         }
@@ -113,7 +113,12 @@ export function useThreadChatBridgeActions({
     } catch (error) {
       setBridgeError(error instanceof Error ? error.message : 'Failed to send permission response.');
       setMessages((current) => current.filter((item) => item.id !== actionMessageId));
-      updateTaskState(message.actionMode === 'permission' && message.actionInteractive ? 'awaiting_permission' : 'idle');
+      updateTaskState(
+        message.actionMode === 'permission' && message.actionInteractive ? 'awaiting_permission' : 'error',
+        message.actionMode === 'permission' && message.actionInteractive
+          ? 'bridge-permission-submit-failed'
+          : 'bridge-action-submit-failed',
+      );
       setTyping(false);
     } finally {
       setPendingBridgeActionId(null);

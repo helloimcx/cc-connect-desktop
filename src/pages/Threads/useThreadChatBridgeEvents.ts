@@ -6,6 +6,7 @@ import {
   type DesktopBridgeEvent,
 } from '../../../shared/desktop';
 import {
+  canStreamingPromoteTaskState,
   isAwaitingInputMessage,
   isInternalProgressMessage,
   isPermissionActionRow,
@@ -59,7 +60,19 @@ export function useThreadChatBridgeEvents({
   taskStateRef,
   updateTaskState,
 }: UseThreadChatBridgeEventsInput) {
+  const promoteStreamingState = useCallback((reason: string) => {
+    if (canStreamingPromoteTaskState(taskStateRef.current)) {
+      updateTaskState('running', reason);
+    }
+  }, [taskStateRef, updateTaskState]);
+
   const handleBridgeEvent = useCallback((event: DesktopBridgeEvent) => {
+    console.info('[desktop-chat] bridge_event', {
+      type: event.type,
+      sessionKey: event.sessionKey,
+      replyCtx: event.replyCtx,
+      taskState: taskStateRef.current,
+    });
     const eventWorkspaceId = sessionProjectFromKey(event.sessionKey);
     if (eventWorkspaceId) {
       void refreshThreadsForWorkspace(eventWorkspaceId);
@@ -76,7 +89,7 @@ export function useThreadChatBridgeEvents({
           setTyping(false);
           pendingTurnRef.current = null;
           clearActionStatuses();
-          updateTaskState('awaiting_input');
+          updateTaskState('awaiting_input', 'bridge-preview-awaiting-input');
           setBridgeError('');
           setMessages((current) => {
             const previewId = event.previewHandle || crypto.randomUUID();
@@ -98,9 +111,7 @@ export function useThreadChatBridgeEvents({
         }
         clearActionStatuses();
         setTyping(true);
-        if (taskStateRef.current !== 'awaiting_input') {
-          updateTaskState('running');
-        }
+        promoteStreamingState('bridge-preview-start');
         armReplyTimeout();
         setBridgeError('');
         setMessages((current) => {
@@ -126,7 +137,7 @@ export function useThreadChatBridgeEvents({
           setTyping(false);
           pendingTurnRef.current = null;
           clearActionStatuses();
-          updateTaskState('awaiting_input');
+          updateTaskState('awaiting_input', 'bridge-update-awaiting-input');
           setBridgeError('');
           setMessages((current) =>
             current.some((message) => message.id === event.previewHandle)
@@ -151,9 +162,7 @@ export function useThreadChatBridgeEvents({
         }
         clearActionStatuses();
         setTyping(true);
-        if (taskStateRef.current !== 'awaiting_input') {
-          updateTaskState('running');
-        }
+        promoteStreamingState('bridge-update-message');
         armReplyTimeout();
         setBridgeError('');
         setMessages((current) =>
@@ -182,9 +191,7 @@ export function useThreadChatBridgeEvents({
       case 'typing_start':
         clearActionStatuses();
         setTyping(true);
-        if (taskStateRef.current !== 'awaiting_input') {
-          updateTaskState('running');
-        }
+        promoteStreamingState('bridge-typing-start');
         setBridgeError('');
         armReplyTimeout();
         break;
@@ -193,7 +200,7 @@ export function useThreadChatBridgeEvents({
         clearReplyTimeout();
         pendingTurnRef.current = null;
         clearActionStatuses();
-        updateTaskState('idle');
+        updateTaskState('idle', 'bridge-typing-stop');
         finalizeTurnMessages(event.replyCtx);
         break;
       case 'reply': {
@@ -203,9 +210,9 @@ export function useThreadChatBridgeEvents({
         if (awaitingInput) {
           clearReplyTimeout();
           pendingTurnRef.current = null;
-          updateTaskState('awaiting_input');
-        } else if (taskStateRef.current !== 'awaiting_input') {
-          updateTaskState('running');
+          updateTaskState('awaiting_input', 'bridge-reply-awaiting-input');
+        } else {
+          promoteStreamingState('bridge-reply');
           armReplyTimeout();
         }
         setBridgeError('');
@@ -286,6 +293,12 @@ export function useThreadChatBridgeEvents({
             : normalizeBridgeActionRows(event.buttonRows || event.buttons).length > 0
               ? 'awaiting_input'
               : 'idle',
+          isPermissionActionRow(normalizeBridgeActionRows(event.buttonRows || event.buttons)) &&
+            supportsInteractivePermission(activeAgentType)
+            ? 'bridge-buttons-awaiting-permission'
+            : normalizeBridgeActionRows(event.buttonRows || event.buttons).length > 0
+              ? 'bridge-buttons-awaiting-input'
+              : 'bridge-buttons-idle',
         );
         break;
       case 'card':
@@ -293,7 +306,7 @@ export function useThreadChatBridgeEvents({
         setTyping(false);
         pendingTurnRef.current = null;
         clearActionStatuses();
-        updateTaskState('idle');
+        updateTaskState('idle', 'bridge-card');
         finalizeTurnMessages(event.replyCtx);
         setBridgeError('');
         setMessages((current) => [
@@ -325,6 +338,7 @@ export function useThreadChatBridgeEvents({
     setBridgeError,
     setMessages,
     setTyping,
+    promoteStreamingState,
     updateTaskState,
   ]);
 

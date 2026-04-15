@@ -4,6 +4,8 @@ import type { ThreadDetail } from '../../../packages/contracts/src';
 import {
   ASSISTANT_REPLY_TIMEOUT_MS,
   formatTaskHint,
+  isTaskInputLocked,
+  isTaskRunningState,
   sortChatMessages,
   toCoreChatThreadSummary,
   toMessagesFromThread,
@@ -55,21 +57,26 @@ export function useThreadChatConversationState({
   const localCorePollGenerationRef = useRef(0);
 
   const renderedMessages = useMemo(() => sortChatMessages(messages), [messages]);
-  const taskRunning =
-    taskState === 'running' ||
-    taskState === 'awaiting_permission' ||
-    taskState === 'permission_submitted' ||
-    taskState === 'stopping';
-  const taskInputLocked = taskState !== 'idle' && taskState !== 'awaiting_input';
+  const taskRunning = isTaskRunningState(taskState);
+  const taskInputLocked = isTaskInputLocked(taskState);
   const taskHint = formatTaskHint(taskState, typing);
 
   useEffect(() => {
     activeThreadIdRef.current = activeThreadId;
   }, [activeThreadId]);
 
-  const updateTaskState = useCallback((next: ChatTaskState) => {
+  const updateTaskState = useCallback((next: ChatTaskState, reason = 'unspecified') => {
+    const previous = taskStateRef.current;
     taskStateRef.current = next;
     setTaskState(next);
+    if (previous !== next) {
+      console.info('[desktop-chat] task_state', {
+        from: previous,
+        to: next,
+        reason,
+        threadId: activeThreadIdRef.current,
+      });
+    }
   }, []);
 
   const clearReplyTimeout = useCallback(() => {
@@ -85,7 +92,7 @@ export function useThreadChatConversationState({
     replyTimeoutRef.current = window.setTimeout(() => {
       setTyping(false);
       pendingTurnRef.current = null;
-      updateTaskState('idle');
+      updateTaskState('idle', 'reply-timeout');
       setBridgeError(
         mode === 'permission_continue'
           ? brandingReplyTimeoutLabel
@@ -205,7 +212,7 @@ export function useThreadChatConversationState({
         lastSignature = signature;
         if ((assistantCount > baselineAssistantCount && unchangedPolls >= 2) || Date.now() - startedAt >= ASSISTANT_REPLY_TIMEOUT_MS) {
           setTyping(false);
-          updateTaskState('idle');
+          updateTaskState('idle', 'local-core-poll-complete');
           if (Date.now() - startedAt >= ASSISTANT_REPLY_TIMEOUT_MS && assistantCount <= baselineAssistantCount) {
             setBridgeError('Agent did not respond in time. Check Local AI Core logs or adapter status.');
           }
@@ -219,7 +226,7 @@ export function useThreadChatConversationState({
           return;
         }
         setTyping(false);
-        updateTaskState('idle');
+        updateTaskState('error', 'local-core-poll-error');
         setBridgeError(error instanceof Error ? error.message : 'Failed to refresh the current thread.');
       }
     };
