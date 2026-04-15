@@ -20,6 +20,7 @@ import { ChatMarkdown } from '@/components/chat/ChatMarkdown';
 import { startDesktopService } from '@/api/desktop';
 import { cn } from '@/lib/utils';
 import { timeAgo } from '@/lib/session-utils';
+import type { DesktopBridgeButtonOption } from '../../../shared/desktop';
 import { formatMessageTimestamp, formatRuntimePhase } from './thread-chat-model';
 import { useThreadChatController } from './useThreadChatController';
 
@@ -70,6 +71,7 @@ export default function ThreadChat() {
     setSessionSearch,
     showSessionKey,
     taskHint,
+    taskInputLocked,
     taskRunning,
     taskState,
     transportReady,
@@ -124,6 +126,25 @@ export default function ThreadChat() {
 
   const isRuntimeStarting = runtime?.phase === 'starting';
   const selectedKnowledgeCount = selectedKnowledgeBaseIds.length;
+  const permissionPromptMessage = useMemo(
+    () =>
+      [...renderedMessages]
+        .reverse()
+        .find((message) => message.role === 'assistant' && message.actionMode === 'permission' && message.actionInteractive),
+    [renderedMessages],
+  );
+  const fallbackPermissionActions = useMemo<DesktopBridgeButtonOption[][]>(
+    () => [[
+      { text: '允许', data: 'allow' },
+      { text: '拒绝', data: 'deny' },
+      { text: '始终允许', data: 'allow all' },
+    ]],
+    [],
+  );
+  const visiblePermissionActions =
+    permissionPromptMessage?.actions && permissionPromptMessage.actions.length > 0
+      ? permissionPromptMessage.actions
+      : fallbackPermissionActions;
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -711,7 +732,7 @@ export default function ThreadChat() {
                       value={draft}
                       onChange={(event) => setDraft(event.target.value)}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !event.shiftKey && !taskRunning) {
+                        if (event.key === 'Enter' && !event.shiftKey && !taskInputLocked) {
                           event.preventDefault();
                           void handleSend();
                         }
@@ -722,11 +743,13 @@ export default function ThreadChat() {
                           ? branding.startFirstPlaceholder
                           : !transportReady
                             ? branding.waitingRuntimePlaceholder
-                            : taskRunning
+                            : taskState === 'awaiting_input'
+                              ? 'Agent 正在等待你的回复，可直接继续输入。'
+                              : taskInputLocked
                               ? '任务正在运行，点击停止可中断当前执行。'
                               : branding.sendPlaceholder
                       }
-                      disabled={!serviceRunning || !transportReady || sending || !selectedProject || taskRunning}
+                      disabled={!serviceRunning || !transportReady || sending || !selectedProject || taskInputLocked}
                       className="min-h-[68px] rounded-[22px] border-slate-200 bg-white px-4 py-3 text-[15px] leading-6 text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-[#090d12] dark:text-white dark:placeholder:text-slate-500"
                     />
                     <div className="mt-1.5 flex items-center justify-between px-1 text-[11px] text-slate-500 dark:text-slate-400">
@@ -734,7 +757,28 @@ export default function ThreadChat() {
                       <span>{selectedProject ? '范围会随当前线程保存' : '请先选择项目'}</span>
                     </div>
                   </div>
-                  {taskRunning ? (
+                  {taskState === 'awaiting_permission' && permissionPromptMessage ? (
+                    <div className="flex min-w-[220px] flex-col gap-2 rounded-[20px] border border-amber-200 bg-amber-50/80 p-3 dark:border-amber-400/20 dark:bg-amber-500/10">
+                      <p className="text-xs font-medium text-amber-800 dark:text-amber-100">请选择权限响应</p>
+                      {visiblePermissionActions.map((row, rowIndex) => (
+                        <div key={`${permissionPromptMessage.id}-permission-row-${rowIndex}`} className="flex flex-wrap gap-2">
+                          {row.map((action) => (
+                            <Button
+                              key={`${permissionPromptMessage.id}-${rowIndex}-${action.data}`}
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => void handleBridgeAction(permissionPromptMessage, action)}
+                              disabled={Boolean(permissionPromptMessage.actionPending || pendingBridgeActionId)}
+                              loading={pendingBridgeActionId === permissionPromptMessage.id}
+                              className="rounded-full border border-amber-300 bg-white text-amber-900 hover:bg-amber-100 dark:border-amber-400/30 dark:bg-white/[0.08] dark:text-amber-50 dark:hover:bg-white/[0.12]"
+                            >
+                              {action.text || action.data}
+                            </Button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  ) : taskRunning ? (
                     <Button
                       variant="danger"
                       onClick={() => void handleStopTask()}

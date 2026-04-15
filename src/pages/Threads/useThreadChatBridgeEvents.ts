@@ -6,6 +6,7 @@ import {
   type DesktopBridgeEvent,
 } from '../../../shared/desktop';
 import {
+  isAwaitingInputMessage,
   isInternalProgressMessage,
   isPermissionActionRow,
   normalizeBridgeActionRows,
@@ -37,7 +38,7 @@ type UseThreadChatBridgeEventsInput = {
 } & Pick<ThreadChatSharedHookContext, 'clearLocalCorePolling' | 'clearReplyTimeout' | 'updateTaskState'> &
   Pick<ThreadChatSharedHookContext, 'refreshThreadsForWorkspace' | 'setBridgeError' | 'setMessages' | 'setTyping'> &
   Pick<ThreadChatActiveThreadIdentity, 'activeBridgeSessionKey' | 'activeAgentType'> &
-  Pick<ThreadChatConversationRefs, 'pendingTurnRef' | 'progressSequenceByTurnRef'>;
+  Pick<ThreadChatConversationRefs, 'pendingTurnRef' | 'progressSequenceByTurnRef' | 'taskStateRef'>;
 
 export function useThreadChatBridgeEvents({
   activeAgentType,
@@ -55,6 +56,7 @@ export function useThreadChatBridgeEvents({
   setBridgeError,
   setMessages,
   setTyping,
+  taskStateRef,
   updateTaskState,
 }: UseThreadChatBridgeEventsInput) {
   const handleBridgeEvent = useCallback((event: DesktopBridgeEvent) => {
@@ -69,9 +71,36 @@ export function useThreadChatBridgeEvents({
 
     switch (event.type) {
       case 'preview_start':
+        if (isAwaitingInputMessage(event.content)) {
+          clearReplyTimeout();
+          setTyping(false);
+          pendingTurnRef.current = null;
+          clearActionStatuses();
+          updateTaskState('awaiting_input');
+          setBridgeError('');
+          setMessages((current) => {
+            const previewId = event.previewHandle || crypto.randomUUID();
+            const existing = current.find((message) => message.id === previewId);
+            const next = current.filter((message) => !(message.preview && message.id === previewId));
+            next.push({
+              id: previewId,
+              role: 'assistant',
+              content: event.content || '',
+              kind: 'progress',
+              order: existing?.order ?? reserveAssistantMessageOrder(event.sessionKey),
+              timestamp: existing?.timestamp || new Date().toISOString(),
+              turnKey: event.replyCtx,
+              preview: true,
+            });
+            return next;
+          });
+          break;
+        }
         clearActionStatuses();
         setTyping(true);
-        updateTaskState('running');
+        if (taskStateRef.current !== 'awaiting_input') {
+          updateTaskState('running');
+        }
         armReplyTimeout();
         setBridgeError('');
         setMessages((current) => {
@@ -92,9 +121,39 @@ export function useThreadChatBridgeEvents({
         });
         break;
       case 'update_message':
+        if (isAwaitingInputMessage(event.content)) {
+          clearReplyTimeout();
+          setTyping(false);
+          pendingTurnRef.current = null;
+          clearActionStatuses();
+          updateTaskState('awaiting_input');
+          setBridgeError('');
+          setMessages((current) =>
+            current.some((message) => message.id === event.previewHandle)
+              ? current.map((message) =>
+                  message.id === event.previewHandle ? { ...message, content: event.content || '' } : message,
+                )
+              : [
+                  ...current,
+                  {
+                    id: event.previewHandle || crypto.randomUUID(),
+                    role: 'assistant',
+                    content: event.content || '',
+                    kind: 'progress',
+                    order: reserveAssistantMessageOrder(event.sessionKey),
+                    timestamp: new Date().toISOString(),
+                    turnKey: event.replyCtx,
+                    preview: true,
+                  },
+                ],
+          );
+          break;
+        }
         clearActionStatuses();
         setTyping(true);
-        updateTaskState('running');
+        if (taskStateRef.current !== 'awaiting_input') {
+          updateTaskState('running');
+        }
         armReplyTimeout();
         setBridgeError('');
         setMessages((current) =>
@@ -123,7 +182,9 @@ export function useThreadChatBridgeEvents({
       case 'typing_start':
         clearActionStatuses();
         setTyping(true);
-        updateTaskState('running');
+        if (taskStateRef.current !== 'awaiting_input') {
+          updateTaskState('running');
+        }
         setBridgeError('');
         armReplyTimeout();
         break;
@@ -136,11 +197,18 @@ export function useThreadChatBridgeEvents({
         finalizeTurnMessages(event.replyCtx);
         break;
       case 'reply': {
+        const awaitingInput = isAwaitingInputMessage(event.content);
         clearActionStatuses();
-        setTyping(true);
-        updateTaskState('running');
+        setTyping(awaitingInput ? false : true);
+        if (awaitingInput) {
+          clearReplyTimeout();
+          pendingTurnRef.current = null;
+          updateTaskState('awaiting_input');
+        } else if (taskStateRef.current !== 'awaiting_input') {
+          updateTaskState('running');
+          armReplyTimeout();
+        }
         setBridgeError('');
-        armReplyTimeout();
         const replyMessageId = nextProgressMessageId(event.replyCtx);
         if (!isInternalProgressMessage(event.content) && event.replyCtx) {
           delete progressSequenceByTurnRef.current[event.replyCtx];
@@ -215,7 +283,9 @@ export function useThreadChatBridgeEvents({
           isPermissionActionRow(normalizeBridgeActionRows(event.buttonRows || event.buttons)) &&
             supportsInteractivePermission(activeAgentType)
             ? 'awaiting_permission'
-            : 'idle',
+            : normalizeBridgeActionRows(event.buttonRows || event.buttons).length > 0
+              ? 'awaiting_input'
+              : 'idle',
         );
         break;
       case 'card':

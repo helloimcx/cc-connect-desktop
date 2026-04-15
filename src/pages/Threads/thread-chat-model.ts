@@ -29,7 +29,13 @@ export interface ChatMessage {
   preview?: boolean;
 }
 
-export type ChatTaskState = 'idle' | 'running' | 'awaiting_permission' | 'permission_submitted' | 'stopping';
+export type ChatTaskState =
+  | 'idle'
+  | 'running'
+  | 'awaiting_input'
+  | 'awaiting_permission'
+  | 'permission_submitted'
+  | 'stopping';
 
 export interface ThreadGroup {
   project: string;
@@ -67,6 +73,21 @@ export function isInternalProgressMessage(content?: string) {
     content.startsWith('🔧 ') ||
     content.startsWith('📤 ') ||
     content.startsWith('⏳ ')
+  );
+}
+
+export function isAwaitingInputMessage(content?: string) {
+  if (!content) {
+    return false;
+  }
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  return (
+    /^Agent 提问(?:\s*\(\d+\/\d+\))?/i.test(normalized) ||
+    normalized.includes('请回复选项编号') ||
+    normalized.includes('直接输入你的回答') ||
+    normalized.includes('等待你的回复') ||
+    normalized.includes('请直接回复') ||
+    normalized.includes('请输入你的回答')
   );
 }
 
@@ -251,6 +272,9 @@ export function isPermissionActionRow(rows: DesktopBridgeButtonOption[][]) {
 export function formatTaskHint(taskState: ChatTaskState, typing: boolean) {
   if (taskState === 'stopping') {
     return 'Stopping current task…';
+  }
+  if (taskState === 'awaiting_input') {
+    return 'Agent is waiting for your reply.';
   }
   if (taskState === 'permission_submitted') {
     return 'Permission sent. Waiting for the agent to continue…';

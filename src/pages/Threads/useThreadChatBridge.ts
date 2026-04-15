@@ -52,6 +52,7 @@ export function useThreadChatBridge(input: UseThreadChatBridgeInput) {
     setBridgeError: input.setBridgeError,
     setMessages: input.setMessages,
     setTyping: input.setTyping,
+    taskStateRef: input.taskStateRef,
     updateTaskState: input.updateTaskState,
   });
 

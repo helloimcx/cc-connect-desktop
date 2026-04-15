@@ -55,7 +55,12 @@ export function useThreadChatConversationState({
   const localCorePollGenerationRef = useRef(0);
 
   const renderedMessages = useMemo(() => sortChatMessages(messages), [messages]);
-  const taskRunning = taskState !== 'idle';
+  const taskRunning =
+    taskState === 'running' ||
+    taskState === 'awaiting_permission' ||
+    taskState === 'permission_submitted' ||
+    taskState === 'stopping';
+  const taskInputLocked = taskState !== 'idle' && taskState !== 'awaiting_input';
   const taskHint = formatTaskHint(taskState, typing);
 
   useEffect(() => {
@@ -245,6 +250,7 @@ export function useThreadChatConversationState({
     setTyping,
     startLocalCoreThreadPolling,
     taskHint,
+    taskInputLocked,
     taskRunning,
     taskState,
     taskStateRef,
