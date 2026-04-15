@@ -15,7 +15,7 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
-import { Button, Card, Input, Modal, Textarea } from '@/components/ui';
+import { Button, Input, Modal, Textarea } from '@/components/ui';
 import { ChatMarkdown } from '@/components/chat/ChatMarkdown';
 import { startDesktopService } from '@/api/desktop';
 import { cn } from '@/lib/utils';
@@ -179,133 +179,131 @@ export default function ThreadChat() {
 
   return (
     <>
-      <div className="h-[calc(100vh-8rem)] rounded-[30px] border border-slate-200/70 bg-[radial-gradient(circle_at_top,#ffffff_0%,#f3f7fb_52%,#edf2f7_100%)] p-4 shadow-[0_24px_60px_rgba(15,23,42,0.08)] animate-fade-in dark:border-white/[0.06] dark:bg-[radial-gradient(circle_at_top,#161b24_0%,#10141c_44%,#090c12_100%)] dark:shadow-[0_28px_90px_rgba(0,0,0,0.36)]">
-        <div className="grid h-full grid-cols-[280px_minmax(0,1fr)] gap-4">
-          <Card className="flex min-h-0 flex-col overflow-hidden rounded-[26px] border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,247,251,0.96))] p-0 text-slate-900 shadow-[0_16px_40px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:bg-[linear-gradient(180deg,rgba(17,22,31,0.92),rgba(11,15,22,0.96))] dark:text-white dark:shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
-            <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/[0.06]">
+      <div className="h-[calc(100vh-8rem)] overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)] animate-fade-in dark:border-white/[0.06] dark:bg-[#0b0f14] dark:shadow-[0_20px_70px_rgba(0,0,0,0.28)]">
+        <div className="grid h-full grid-cols-[288px_minmax(0,1fr)]">
+          <aside className="flex min-h-0 flex-col border-r border-slate-200/80 bg-[linear-gradient(180deg,#fbfcfe_0%,#f5f7fb_100%)] dark:border-white/[0.06] dark:bg-[linear-gradient(180deg,#10151c_0%,#0c1016_100%)]">
+            <div className="border-b border-slate-200/80 px-4 py-4 dark:border-white/[0.06]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[11px] font-medium tracking-[0.18em] text-slate-400 dark:text-slate-500">会话导航</p>
-                  <h2 className="mt-2 text-[1.55rem] font-semibold leading-tight text-slate-900 dark:text-white">
+                  <h2 className="mt-2 text-[1.7rem] font-semibold leading-tight text-slate-900 dark:text-white">
                     {branding.chatHeading}
                   </h2>
                 </div>
                 <Button
                   size="sm"
-                  variant="secondary"
+                  variant="ghost"
                   onClick={() => void refreshRuntime()}
-                  className="rounded-full border border-slate-200 bg-white/90 text-slate-600 hover:bg-slate-100 dark:border-white/[0.08] dark:bg-white/[0.06] dark:text-slate-200 dark:hover:bg-white/[0.1]"
+                  className="rounded-full border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-slate-300 dark:hover:bg-white/[0.08]"
                 >
                   <RotateCw size={14} />
                 </Button>
               </div>
 
-              <div className="mt-4 rounded-[22px] border border-slate-200/80 bg-white/90 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] dark:border-white/[0.06] dark:bg-white/[0.03]">
-                <label className="block text-[11px] font-medium uppercase tracking-[0.24em] text-slate-500 dark:text-slate-500">
-                  {branding.scopeLabel}
-                </label>
-                <select
-                  value={selectedProject}
-                  onChange={(event) => setSelectedProject(event.target.value)}
-                  data-testid="desktop-chat-project-select"
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15 dark:border-white/[0.08] dark:bg-[#0b0f15] dark:text-white"
-                >
-                  <option value="">{branding.scopeSelectPlaceholder}</option>
-                  {projects.map((project) => (
-                    <option key={project} value={project}>
-                      {project}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="mt-3 relative">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
-                  <Input
-                    value={sessionSearch}
-                    onChange={(event) => setSessionSearch(event.target.value)}
-                    placeholder={branding.searchPlaceholder}
-                    data-testid="desktop-chat-session-search"
-                    className="rounded-xl border-slate-200 bg-white pl-9 text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-[#0b0f15] dark:text-white dark:placeholder:text-slate-500"
-                  />
+              <div className="mt-4 space-y-3">
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-medium tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                    {branding.scopeLabel}
+                  </label>
+                  <select
+                    value={selectedProject}
+                    onChange={(event) => setSelectedProject(event.target.value)}
+                    data-testid="desktop-chat-project-select"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-400/50 focus:ring-2 focus:ring-emerald-400/15 dark:border-white/[0.08] dark:bg-[#0b1016] dark:text-white"
+                  >
+                    <option value="">{branding.scopeSelectPlaceholder}</option>
+                    {projects.map((project) => (
+                      <option key={project} value={project}>
+                        {project}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                <div className="mt-4 flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                    <Circle size={7} className="fill-current" />
-                    {serviceRunning ? '服务在线' : isRuntimeStarting ? '服务启动中' : '服务未启动'}
-                  </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="md"
+                    variant="secondary"
+                    onClick={() => void handleCreateNew()}
+                    data-testid="desktop-chat-new-chat"
+                    className="h-11 flex-1 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-slate-100 dark:hover:bg-white/[0.09]"
+                  >
+                    <MessageSquarePlus size={15} />
+                    {branding.newThreadLabel}
+                  </Button>
                   {!serviceRunning || isRuntimeStarting ? (
                     <Button
-                      size="sm"
+                      size="md"
                       onClick={() => void startDesktopService().then(refreshRuntime)}
                       disabled={isRuntimeStarting || serviceRunning}
                       data-testid="desktop-chat-start-service"
-                      className="rounded-full px-3.5"
+                      className="h-11 shrink-0 rounded-2xl px-3.5"
                     >
                       {isRuntimeStarting ? branding.startingRuntimeLabel : branding.startRuntimeLabel}
                     </Button>
                   ) : null}
                 </div>
 
-                <Button
-                  size="md"
-                  variant="secondary"
-                  onClick={() => void handleCreateNew()}
-                  data-testid="desktop-chat-new-chat"
-                  className="mt-3 w-full rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-white/[0.08] dark:bg-white/[0.06] dark:text-slate-100 dark:hover:bg-white/[0.1]"
-                >
-                  <MessageSquarePlus size={15} />
-                  {branding.newThreadLabel}
-                </Button>
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                  <Input
+                    value={sessionSearch}
+                    onChange={(event) => setSessionSearch(event.target.value)}
+                    placeholder={branding.searchPlaceholder}
+                    data-testid="desktop-chat-session-search"
+                    className="h-11 rounded-2xl border-slate-200 bg-white pl-9 text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-[#0b1016] dark:text-white dark:placeholder:text-slate-500"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/85 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                  <span className="inline-flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+                    <Circle size={7} className={cn('fill-current', serviceRunning ? 'text-emerald-500' : 'text-slate-300 dark:text-slate-500')} />
+                    {serviceRunning ? '服务在线' : isRuntimeStarting ? '服务启动中' : '服务未启动'}
+                  </span>
+                </div>
               </div>
 
               {runtime?.service.lastError ? (
-                <div className="mt-3 rounded-xl border border-red-500/20 bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-200">
+                <div className="mt-3 rounded-2xl border border-red-500/20 bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-200">
                   {runtime.service.lastError}
                 </div>
               ) : null}
               {runtime?.pendingRestart ? (
-                <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
+                <div className="mt-3 rounded-2xl border border-amber-500/20 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-200">
                   {branding.pendingRestartLabel}
                 </div>
               ) : null}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-scroll px-4 py-4 pr-3 [scrollbar-gutter:stable]">
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 [scrollbar-gutter:stable]">
               {!selectedProject && !hasVisibleSessions ? (
-                <div className="flex h-full min-h-[18rem] flex-col items-center justify-center rounded-[22px] border border-dashed border-slate-200/80 bg-white/50 px-5 text-center dark:border-white/[0.07] dark:bg-white/[0.02]">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 dark:bg-white/[0.05] dark:text-slate-400">
-                    <MessageSquarePlus size={20} />
-                  </div>
-                  <p className="mt-4 text-sm font-medium text-slate-700 dark:text-slate-200">先选择一个项目</p>
+                <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white/70 px-4 py-6 text-center dark:border-white/[0.07] dark:bg-white/[0.02]">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200">先选择一个项目</p>
                   <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                    选择项目后，这里会展示对应的桌面会话列表。
+                    选择项目后展示对应会话列表。
                   </p>
                 </div>
               ) : !hasVisibleSessions ? (
-                <div className="flex h-full min-h-[18rem] flex-col items-center justify-center rounded-[22px] border border-dashed border-slate-200/80 bg-white/50 px-5 text-center dark:border-white/[0.07] dark:bg-white/[0.02]">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 dark:bg-white/[0.05] dark:text-slate-400">
-                    <Search size={18} />
-                  </div>
-                  <p className="mt-4 text-sm font-medium text-slate-700 dark:text-slate-200">
+                <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white/70 px-4 py-6 text-center dark:border-white/[0.07] dark:bg-white/[0.02]">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
                     {sessionSearch.trim() ? '没有匹配的会话' : '当前还没有桌面会话'}
                   </p>
                   <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                    {sessionSearch.trim() ? '换个关键词试试，或者创建一个新会话。' : '发送第一条消息后，这里会自动出现新的会话记录。'}
+                    {sessionSearch.trim() ? '换个关键词试试。' : '发送第一条消息后，这里会出现新的会话记录。'}
                   </p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {visibleSessionGroups.map((group) => (
-                    <section key={group.project} className="space-y-2.5">
+                    <section key={group.project} className="space-y-2">
                       {!selectedProject && group.sessions.length > 0 ? (
                         <div
                           data-testid="desktop-chat-session-group"
                           data-project={group.project}
-                          className="flex items-center justify-between px-1 pb-0.5"
+                          className="flex items-center justify-between px-2 pt-1"
                         >
-                          <p className="text-[11px] font-medium tracking-[0.08em] text-slate-500 dark:text-slate-400">{group.project}</p>
-                          <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
+                          <p className="text-[11px] font-medium tracking-[0.08em] text-slate-400 dark:text-slate-500">{group.project}</p>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500">
                             {group.sessions.length} {branding.collectionLabel}
                           </p>
                         </div>
@@ -327,10 +325,10 @@ export default function ThreadChat() {
                             }
                           }}
                           className={cn(
-                            'group cursor-pointer rounded-[22px] border px-4 py-3 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-400/20',
+                            'group relative overflow-hidden rounded-2xl border px-4 py-3 text-left transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-400/20',
                             session.id === activeSessionId
-                              ? 'border-emerald-300/60 bg-white shadow-[0_16px_28px_rgba(16,185,129,0.08)] dark:border-emerald-400/30 dark:bg-white/[0.05] dark:shadow-[0_16px_35px_rgba(16,185,129,0.10)]'
-                              : 'border-slate-200/80 bg-white/70 hover:-translate-y-[1px] hover:border-slate-300 hover:bg-white dark:border-white/[0.05] dark:bg-white/[0.03] dark:hover:border-white/[0.12] dark:hover:bg-white/[0.05]',
+                              ? 'border-emerald-200 bg-emerald-50/80 shadow-[inset_3px_0_0_0_rgba(16,185,129,0.9)] dark:border-emerald-400/20 dark:bg-emerald-500/10'
+                              : 'border-transparent bg-white/70 hover:border-slate-200 hover:bg-white dark:bg-white/[0.03] dark:hover:border-white/[0.08] dark:hover:bg-white/[0.05]',
                           )}
                         >
                           <div className="flex items-start justify-between gap-3">
@@ -338,20 +336,13 @@ export default function ThreadChat() {
                               data-testid="desktop-chat-session-open"
                               data-session-id={session.id}
                               data-project={group.project}
-                              className="min-w-0 flex-1 text-left"
+                              className="min-w-0 flex-1"
                             >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="min-w-0">
-                                  <span className="block truncate text-sm font-medium text-slate-900 dark:text-white">
-                                    {session.name}
-                                  </span>
-                                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                                    {timeAgo(session.updatedAt || session.createdAt)}
-                                  </p>
-                                </div>
+                              <div className="flex items-center gap-2">
+                                <span className="truncate text-sm font-medium text-slate-900 dark:text-white">{session.name}</span>
                                 <span
                                   className={cn(
-                                    'shrink-0 rounded-full px-2 py-1 text-[10px]',
+                                    'shrink-0 rounded-full px-2 py-0.5 text-[10px]',
                                     session.live
                                       ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
                                       : 'bg-slate-100 text-slate-500 dark:bg-white/[0.05] dark:text-slate-400',
@@ -360,8 +351,11 @@ export default function ThreadChat() {
                                   {session.live ? '在线' : '离线'}
                                 </span>
                               </div>
+                              <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                                {timeAgo(session.updatedAt || session.createdAt)}
+                              </p>
                               {session.excerpt ? (
-                                <p className="mt-3 line-clamp-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                                <p className="mt-2 line-clamp-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
                                   {session.excerpt.replace(/\n/g, ' ')}
                                 </p>
                               ) : null}
@@ -372,7 +366,7 @@ export default function ThreadChat() {
                               ) : null}
                             </div>
 
-                            <div className="flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                            <div className="flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100 focus-within:opacity-100">
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -414,50 +408,46 @@ export default function ThreadChat() {
                 </div>
               )}
             </div>
-          </Card>
+          </aside>
 
-          <Card className="flex min-h-0 flex-col rounded-[26px] border-slate-200/70 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-0 text-slate-900 shadow-[0_18px_40px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:bg-[linear-gradient(180deg,rgba(15,19,26,0.94),rgba(9,12,17,0.98))] dark:text-white dark:shadow-[0_22px_70px_rgba(0,0,0,0.30)]">
-            <div className="border-b border-slate-200/70 px-5 py-3 dark:border-white/[0.06]">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-medium tracking-[0.18em] text-slate-400 dark:text-slate-500">当前会话</p>
-                  <h2
-                    className="mt-2 text-[1.9rem] font-semibold leading-none text-slate-900 dark:text-white"
-                    data-testid="desktop-chat-active-title"
-                  >
-                    {activeSessionName || branding.activeConversationFallback}
-                  </h2>
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                    {selectedProject ? (
-                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] text-slate-600 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-slate-300">
-                        {selectedProject}
-                      </span>
-                    ) : null}
-                    <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[10px] uppercase tracking-[0.22em] text-slate-500 dark:border-white/[0.06] dark:bg-white/[0.05] dark:text-slate-400">
-                      {formatRuntimePhase(runtime?.phase)}
-                    </span>
-                    {transportReady ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-700 dark:text-emerald-300">
-                        <Circle size={6} className="fill-current" /> {branding.runtimeOnlineLabel}
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-slate-500 dark:bg-white/[0.05] dark:text-slate-400">
-                        <WifiOff size={12} /> {branding.runtimeOfflineLabel}
-                      </span>
-                    )}
-                    {showSessionKey && activeSessionKey ? (
-                      <span className="truncate text-[11px] text-slate-400 dark:text-slate-500">{activeSessionKey}</span>
-                    ) : null}
-                  </div>
-                </div>
+          <section className="flex min-h-0 flex-col bg-[linear-gradient(180deg,#ffffff_0%,#fbfcfe_100%)] dark:bg-[linear-gradient(180deg,#0d1218_0%,#0a0f15_100%)]">
+            <div className="border-b border-slate-200/80 px-6 py-4 dark:border-white/[0.06]">
+              <p className="text-[11px] font-medium tracking-[0.16em] text-slate-400 dark:text-slate-500">当前会话</p>
+              <h2
+                className="mt-2 text-[2rem] font-semibold leading-none text-slate-900 dark:text-white"
+                data-testid="desktop-chat-active-title"
+              >
+                {activeSessionName || branding.activeConversationFallback}
+              </h2>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                {selectedProject ? (
+                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-600 dark:bg-white/[0.05] dark:text-slate-300">
+                    {selectedProject}
+                  </span>
+                ) : null}
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:bg-white/[0.05] dark:text-slate-400">
+                  {formatRuntimePhase(runtime?.phase)}
+                </span>
+                {transportReady ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-700 dark:text-emerald-300">
+                    <Circle size={6} className="fill-current" /> {branding.runtimeOnlineLabel}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-slate-500 dark:bg-white/[0.05] dark:text-slate-400">
+                    <WifiOff size={12} /> {branding.runtimeOfflineLabel}
+                  </span>
+                )}
+                {showSessionKey && activeSessionKey ? (
+                  <span className="truncate text-[11px] text-slate-400 dark:text-slate-500">{activeSessionKey}</span>
+                ) : null}
               </div>
             </div>
 
-            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-3 pr-4 [scrollbar-gutter:stable]">
+            <div className="flex-1 overflow-y-auto px-6 py-5 [scrollbar-gutter:stable]">
               {renderedMessages.length === 0 ? (
-                <div className="flex h-full min-h-[20rem] items-center justify-center">
-                  <div className="w-full max-w-2xl rounded-[26px] border border-slate-200/70 bg-white/75 px-8 py-9 text-center shadow-[0_18px_40px_rgba(15,23,42,0.05)] dark:border-white/[0.07] dark:bg-white/[0.025] dark:shadow-none">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400">
+                <div className="flex h-full min-h-[18rem] items-center justify-center">
+                  <div className="w-full max-w-2xl rounded-[28px] border border-slate-200/80 bg-white px-8 py-10 text-center shadow-[0_10px_30px_rgba(15,23,42,0.04)] dark:border-white/[0.06] dark:bg-white/[0.03] dark:shadow-none">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-500">
                       <MessageSquarePlus size={22} />
                     </div>
                     <h3 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">开始一段新的桌面对话</h3>
@@ -471,13 +461,13 @@ export default function ThreadChat() {
                         selectedKnowledgeBases.map((base) => (
                           <span
                             key={base.id}
-                            className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 dark:border-emerald-400/15 dark:bg-emerald-500/10 dark:text-emerald-200"
+                            className="rounded-full bg-emerald-50 px-3 py-1 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200"
                           >
                             {base.name}
                           </span>
                         ))
                       ) : (
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-slate-400">
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500 dark:bg-white/[0.05] dark:text-slate-400">
                           当前未限制知识库范围
                         </span>
                       )}
@@ -485,105 +475,115 @@ export default function ThreadChat() {
                   </div>
                 </div>
               ) : (
-                renderedMessages.map((message) => {
-                  const isUser = message.role === 'user';
-                  const isProgress = !isUser && message.kind === 'progress';
-                  return (
-                    <div key={message.id} className={cn('flex gap-3', isUser ? 'justify-end' : 'justify-start')}>
-                      {!isUser ? (
-                        <div
-                          className={cn(
-                            'mt-1 flex shrink-0 items-center justify-center rounded-2xl text-slate-500 dark:text-slate-300',
-                            isProgress
-                              ? 'h-7 w-7 bg-slate-100/80 dark:bg-white/[0.04]'
-                              : 'h-8 w-8 bg-slate-100 dark:bg-white/[0.06]',
-                          )}
-                        >
-                          {isProgress ? <Circle size={8} className="fill-current" /> : <Bot size={15} />}
-                        </div>
-                      ) : null}
-                      <div
-                        data-testid="desktop-chat-message"
-                        data-role={message.role}
-                        data-kind={message.kind || 'final'}
-                        data-order={String(message.order)}
-                        data-timestamp={message.timestamp || ''}
-                        className={cn(
-                          'rounded-[24px] px-5 py-4 text-sm transition-all',
-                          isUser
-                            ? 'max-w-[80%] rounded-br-md bg-emerald-400 text-black shadow-[0_10px_24px_rgba(16,185,129,0.18)]'
-                            : isProgress
-                              ? 'max-w-[78%] rounded-bl-xl border border-slate-200/70 bg-slate-50/85 px-4 py-3 text-[13px] leading-6 text-slate-600 shadow-none dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-slate-300'
-                              : 'max-w-[88%] rounded-bl-md border border-slate-200/80 bg-white text-slate-800 shadow-[0_10px_24px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-slate-100 dark:shadow-[0_10px_28px_rgba(0,0,0,0.16)]',
-                        )}
-                      >
-                        <div className={cn('mb-2 flex items-center gap-2 text-[10px]', isUser ? 'justify-end text-black/60' : 'text-slate-400 dark:text-slate-500')}>
-                          {isProgress ? (
-                            <span className="tracking-[0.18em] text-amber-500 dark:text-amber-300">
-                              过程
-                            </span>
-                          ) : null}
-                          {formatMessageTimestamp(message.timestamp) ? (
-                            <span data-testid="desktop-chat-message-timestamp">{formatMessageTimestamp(message.timestamp)}</span>
-                          ) : null}
-                        </div>
-                        <ChatMarkdown content={message.content} isUser={isUser} />
-                        {!isUser && message.actions && message.actions.length > 0 ? (
-                          <div className="mt-4 space-y-2">
-                            {message.actions.map((row, rowIndex) => (
-                              <div key={`${message.id}-actions-${rowIndex}`} className="flex flex-wrap gap-2">
-                                {row.map((action) => (
-                                  <Button
-                                    key={`${message.id}-${action.data || action.text}`}
-                                    size="sm"
-                                    variant={String(action.data || '').includes('deny') ? 'danger' : 'secondary'}
-                                    onClick={() => void handleBridgeAction(message, action)}
-                                    disabled={Boolean(message.actionPending || pendingBridgeActionId)}
-                                    loading={pendingBridgeActionId === message.id}
-                                    data-testid="desktop-chat-action-button"
-                                  >
-                                    {action.text || action.data}
-                                  </Button>
-                                ))}
-                              </div>
-                            ))}
+                <div className="space-y-5">
+                  {renderedMessages.map((message) => {
+                    const isUser = message.role === 'user';
+                    const isProgress = !isUser && message.kind === 'progress';
+                    return (
+                      <div key={message.id} className={cn('flex gap-3', isUser ? 'justify-end' : 'justify-start')}>
+                        {!isUser ? (
+                          <div
+                            className={cn(
+                              'mt-1 flex shrink-0 items-center justify-center rounded-full text-slate-400 dark:text-slate-500',
+                              isProgress
+                                ? 'h-6 w-6 bg-slate-100 dark:bg-white/[0.04]'
+                                : 'h-8 w-8 bg-slate-100 dark:bg-white/[0.06]',
+                            )}
+                          >
+                            {isProgress ? <Circle size={7} className="fill-current" /> : <Bot size={14} />}
                           </div>
                         ) : null}
-                        {!isUser && message.actionStatus ? (
-                          <p
+
+                        <div
+                          data-testid="desktop-chat-message"
+                          data-role={message.role}
+                          data-kind={message.kind || 'final'}
+                          data-order={String(message.order)}
+                          data-timestamp={message.timestamp || ''}
+                          className={cn(
+                            'transition-all',
+                            isUser ? 'max-w-[72%]' : isProgress ? 'max-w-[76%]' : 'max-w-[84%]',
+                          )}
+                        >
+                          <div
                             className={cn(
-                              'mt-3 text-xs',
-                              message.actionInteractive
-                                ? 'text-slate-500 dark:text-slate-400'
-                                : 'text-amber-700 dark:text-amber-200',
+                              'rounded-[22px] px-4 py-3 text-sm',
+                              isUser
+                                ? 'rounded-br-md bg-emerald-400/95 text-black shadow-none'
+                                : isProgress
+                                  ? 'rounded-bl-lg bg-slate-100/80 text-[13px] leading-6 text-slate-500 dark:bg-white/[0.04] dark:text-slate-400'
+                                  : 'rounded-bl-md border border-slate-200/80 bg-white text-slate-800 shadow-[0_6px_18px_rgba(15,23,42,0.04)] dark:border-white/[0.06] dark:bg-white/[0.04] dark:text-slate-100 dark:shadow-none',
                             )}
-                            data-testid="desktop-chat-action-status"
                           >
-                            {message.actionStatus}
-                          </p>
-                        ) : null}
-                        {message.preview ? (
-                          <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-emerald-500 dark:text-emerald-300">实时预览</p>
+                            <div className={cn('mb-2 flex items-center gap-2 text-[10px]', isUser ? 'justify-end text-black/60' : 'text-slate-400 dark:text-slate-500')}>
+                              {isProgress ? (
+                                <span className="tracking-[0.16em] text-amber-500 dark:text-amber-300">过程</span>
+                              ) : null}
+                              {formatMessageTimestamp(message.timestamp) ? (
+                                <span data-testid="desktop-chat-message-timestamp">{formatMessageTimestamp(message.timestamp)}</span>
+                              ) : null}
+                            </div>
+                            <ChatMarkdown content={message.content} isUser={isUser} />
+                            {!isUser && message.actions && message.actions.length > 0 ? (
+                              <div className="mt-4 space-y-2">
+                                {message.actions.map((row, rowIndex) => (
+                                  <div key={`${message.id}-actions-${rowIndex}`} className="flex flex-wrap gap-2">
+                                    {row.map((action) => (
+                                      <Button
+                                        key={`${message.id}-${action.data || action.text}`}
+                                        size="sm"
+                                        variant={String(action.data || '').includes('deny') ? 'danger' : 'secondary'}
+                                        onClick={() => void handleBridgeAction(message, action)}
+                                        disabled={Boolean(message.actionPending || pendingBridgeActionId)}
+                                        loading={pendingBridgeActionId === message.id}
+                                        data-testid="desktop-chat-action-button"
+                                        className="rounded-full"
+                                      >
+                                        {action.text || action.data}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                            {!isUser && message.actionStatus ? (
+                              <p
+                                className={cn(
+                                  'mt-3 text-xs',
+                                  message.actionInteractive
+                                    ? 'text-slate-500 dark:text-slate-400'
+                                    : 'text-amber-700 dark:text-amber-200',
+                                )}
+                                data-testid="desktop-chat-action-status"
+                              >
+                                {message.actionStatus}
+                              </p>
+                            ) : null}
+                            {message.preview ? (
+                              <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-emerald-500 dark:text-emerald-300">实时预览</p>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        {isUser ? (
+                          <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-white/[0.08]">
+                            <User size={14} className="text-slate-500 dark:text-slate-300" />
+                          </div>
                         ) : null}
                       </div>
-                      {isUser ? (
-                        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-slate-100 dark:bg-white/[0.08]">
-                          <User size={15} className="text-slate-500 dark:text-slate-300" />
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })
+                    );
+                  })}
+                </div>
               )}
 
               {taskHint ? (
-                <div className="flex items-center gap-2 text-sm text-slate-400" data-testid="desktop-chat-task-hint">
+                <div className="mt-5 flex items-center gap-2 text-sm text-slate-400" data-testid="desktop-chat-task-hint">
                   <Circle size={8} className="fill-current animate-pulse" /> {taskHint}
                 </div>
               ) : null}
               {bridgeError ? (
                 <div
-                  className="rounded-xl border border-amber-400/20 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-100"
+                  className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-100"
                   data-testid="desktop-chat-bridge-error"
                 >
                   {bridgeError}
@@ -592,36 +592,33 @@ export default function ThreadChat() {
               <div ref={endRef} />
             </div>
 
-            <div className="border-t border-slate-200/70 px-5 py-2.5 dark:border-white/[0.06]">
-              <div className="rounded-[28px] border border-slate-200/70 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-2.5 shadow-[0_14px_30px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.018))] dark:shadow-[0_14px_35px_rgba(0,0,0,0.24)]">
+            <div className="border-t border-slate-200/80 px-6 py-4 dark:border-white/[0.06]">
+              <div className="rounded-[26px] border border-slate-200/80 bg-white p-3 shadow-[0_10px_30px_rgba(15,23,42,0.05)] dark:border-white/[0.08] dark:bg-[#0f151c] dark:shadow-[0_14px_35px_rgba(0,0,0,0.20)]">
                 <div className="relative" ref={knowledgePickerRef}>
-                  <div className="mb-1.5 flex items-center justify-between px-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-[11px] font-medium tracking-[0.18em] text-slate-500">知识库范围</p>
+                  <div className="rounded-[18px] border border-slate-200 bg-slate-50/80 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 dark:text-slate-400">知识库范围</p>
+                      <p className="text-[11px] text-slate-400">
+                        {selectedProject
+                          ? selectedKnowledgeCount > 0
+                            ? `已选 ${selectedKnowledgeCount} 个知识库`
+                            : '当前未限制知识库范围'
+                          : '请先选择项目'}
+                      </p>
                     </div>
-                    <p className="text-[11px] text-slate-400">
-                      {selectedProject
-                        ? selectedKnowledgeCount > 0
-                          ? `已选 ${selectedKnowledgeCount} 个知识库`
-                          : '当前未限制知识库范围'
-                        : '请先选择项目'}
-                    </p>
-                  </div>
-
-                  <div className="rounded-[20px] border border-emerald-200 bg-[linear-gradient(90deg,rgba(16,185,129,0.06),rgba(255,255,255,0.88))] px-3 py-2 dark:border-emerald-400/12 dark:bg-[linear-gradient(90deg,rgba(16,185,129,0.08),rgba(255,255,255,0.02))]">
-                    <div className="flex items-center gap-2">
+                    <div className="mt-2 flex items-center gap-2">
                       <Button
                         size="sm"
                         variant="secondary"
                         disabled={!selectedProject}
                         onClick={() => setKnowledgePickerOpen((current) => !current)}
                         data-testid="desktop-chat-knowledge-base-toggle"
-                        className="shrink-0 rounded-full border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400/12 dark:bg-white/[0.06] dark:text-emerald-200 dark:hover:bg-white/[0.1]"
+                        className="shrink-0 rounded-full border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-white/[0.08] dark:bg-white/[0.06] dark:text-slate-100 dark:hover:bg-white/[0.1]"
                       >
                         <Database size={13} />
                         {selectedKnowledgeCount > 0 ? '调整知识库' : '选择知识库'}
                       </Button>
-                      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap pr-1 [scrollbar-gutter:stable]">
+                      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-gutter:stable]">
                         {selectedKnowledgeBases.length === 0 ? (
                           <span className="text-xs text-slate-400">
                             {selectedProject ? '当前未限制知识库范围' : '选择项目后可设置知识库范围'}
@@ -630,7 +627,7 @@ export default function ThreadChat() {
                           selectedKnowledgeBases.map((base) => (
                             <span
                               key={base.id}
-                              className="inline-flex shrink-0 items-center gap-2 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm dark:border-emerald-400/12 dark:bg-white/[0.06] dark:text-slate-100"
+                              className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 dark:border-white/[0.08] dark:bg-white/[0.06] dark:text-slate-100"
                             >
                               <span className="max-w-[10rem] truncate">{base.name}</span>
                               {base.fileCount > 0 ? <span className="text-[10px] text-slate-500">{base.fileCount} 文档</span> : null}
@@ -650,11 +647,11 @@ export default function ThreadChat() {
                   </div>
 
                   {knowledgePickerOpen ? (
-                    <div className="animate-float-in absolute bottom-full left-0 right-0 z-20 mb-3 rounded-3xl border border-slate-200 bg-white/95 p-3 shadow-[0_24px_60px_rgba(15,23,42,0.16)] backdrop-blur-xl dark:border-white/[0.08] dark:bg-[rgba(10,14,19,0.98)] dark:shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
+                    <div className="animate-float-in absolute bottom-full left-0 right-0 z-20 mb-3 rounded-[24px] border border-slate-200 bg-white p-3 shadow-[0_22px_50px_rgba(15,23,42,0.12)] dark:border-white/[0.08] dark:bg-[#0c1117] dark:shadow-[0_28px_80px_rgba(0,0,0,0.40)]">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">选择知识库</p>
-                          <p className="text-[11px] text-slate-400">已选项会固定排在前面，便于快速确认范围。</p>
+                          <p className="text-[11px] text-slate-400">已选项排在前面，方便快速确认范围。</p>
                         </div>
                         {selectedKnowledgeCount > 0 ? (
                           <button
@@ -695,7 +692,7 @@ export default function ThreadChat() {
                                 className={cn(
                                   'flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition-all duration-200',
                                   checked
-                                    ? 'border-emerald-300 bg-emerald-50 shadow-[0_10px_24px_rgba(16,185,129,0.10)] dark:border-emerald-400/30 dark:bg-emerald-500/12 dark:shadow-[0_10px_25px_rgba(16,185,129,0.12)]'
+                                    ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-400/30 dark:bg-emerald-500/12'
                                     : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:border-white/[0.12] dark:hover:bg-white/[0.05]',
                                 )}
                               >
@@ -725,7 +722,7 @@ export default function ThreadChat() {
                   ) : null}
                 </div>
 
-                <div className="mt-2.5 flex items-end gap-3">
+                <div className="mt-3 flex items-end gap-3">
                   <div className="flex-1">
                     <Textarea
                       data-testid="desktop-chat-input"
@@ -737,7 +734,7 @@ export default function ThreadChat() {
                           void handleSend();
                         }
                       }}
-                      rows={2}
+                      rows={3}
                       placeholder={
                         !serviceRunning
                           ? branding.startFirstPlaceholder
@@ -746,17 +743,18 @@ export default function ThreadChat() {
                             : taskState === 'awaiting_input'
                               ? 'Agent 正在等待你的回复，可直接继续输入。'
                               : taskInputLocked
-                              ? '任务正在运行，点击停止可中断当前执行。'
-                              : branding.sendPlaceholder
+                                ? '任务正在运行，点击停止可中断当前执行。'
+                                : branding.sendPlaceholder
                       }
                       disabled={!serviceRunning || !transportReady || sending || !selectedProject || taskInputLocked}
-                      className="min-h-[68px] rounded-[22px] border-slate-200 bg-white px-4 py-3 text-[15px] leading-6 text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-[#090d12] dark:text-white dark:placeholder:text-slate-500"
+                      className="min-h-[94px] rounded-[20px] border-slate-200 bg-white px-4 py-3 text-[15px] leading-6 text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-[#090d12] dark:text-white dark:placeholder:text-slate-500"
                     />
-                    <div className="mt-1.5 flex items-center justify-between px-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    <div className="mt-2 flex items-center justify-between px-1 text-[11px] text-slate-500 dark:text-slate-400">
                       <span>Enter 发送，Shift + Enter 换行</span>
                       <span>{selectedProject ? '范围会随当前线程保存' : '请先选择项目'}</span>
                     </div>
                   </div>
+
                   {taskState === 'awaiting_permission' && permissionPromptMessage ? (
                     <div className="flex min-w-[220px] flex-col gap-2 rounded-[20px] border border-amber-200 bg-amber-50/80 p-3 dark:border-amber-400/20 dark:bg-amber-500/10">
                       <p className="text-xs font-medium text-amber-800 dark:text-amber-100">请选择权限响应</p>
@@ -784,7 +782,7 @@ export default function ThreadChat() {
                       onClick={() => void handleStopTask()}
                       disabled={(!activeSessionKey && !activeRunId) || taskState === 'stopping'}
                       data-testid="desktop-chat-stop-task"
-                      className="h-14 min-w-[132px] rounded-[20px] bg-red-50 px-5 text-red-600 hover:bg-red-100 dark:bg-red-500/12 dark:text-red-200 dark:hover:bg-red-500/18"
+                      className="h-14 min-w-[124px] rounded-[20px] bg-red-50 px-5 text-red-600 hover:bg-red-100 dark:bg-red-500/12 dark:text-red-200 dark:hover:bg-red-500/18"
                     >
                       <LoaderCircle size={16} className="animate-spin" />
                       {taskState === 'stopping' ? '停止中' : '停止任务'}
@@ -794,7 +792,7 @@ export default function ThreadChat() {
                       onClick={() => void handleSend()}
                       disabled={!draft.trim() || !serviceRunning || !transportReady || sending || !selectedProject}
                       data-testid="desktop-chat-send"
-                      className="h-14 w-14 rounded-[20px] px-0"
+                      className="h-14 w-14 rounded-full px-0 shadow-none"
                     >
                       <Send size={18} />
                     </Button>
@@ -802,7 +800,7 @@ export default function ThreadChat() {
                 </div>
               </div>
             </div>
-          </Card>
+          </section>
         </div>
       </div>
 
