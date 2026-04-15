@@ -4,12 +4,16 @@ import {
   chmodSync,
   constants,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  readlinkSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -29,9 +33,23 @@ const DEFAULT_PROJECT_NAME = 'desktop-demo';
 const MANAGEMENT_READY_TIMEOUT_MS = 20000;
 const MANAGEMENT_READY_POLL_MS = 300;
 const STOP_TIMEOUT_MS = 5000;
-const KNOWLEDGE_SKILL_DIR = join('.agents', 'skills', 'knowledge-base');
-const KNOWLEDGE_SKILL_SCRIPT_PATH = join(KNOWLEDGE_SKILL_DIR, 'scripts', 'search-knowledge.sh');
-const CLAUDE_KNOWLEDGE_SKILL_DIR = join('.claude', 'skills', 'knowledge-base');
+const MANAGED_SKILLS_ROOT = join('.ai-workstation', 'skills');
+const AGENTS_SKILL_DIR = join('.agents', 'skills');
+const CLAUDE_SKILL_DIR = join('.claude', 'skills');
+const MANAGED_SKILLS = [
+  {
+    name: 'knowledge-base',
+    buildMarkdown: knowledgeSkillMarkdown,
+    scripts: [
+      {
+        relativePath: join('scripts', 'search-knowledge.sh'),
+        content: knowledgeSkillScript,
+        executable: true,
+      },
+    ],
+  },
+] as const;
+type ManagedSkillDefinition = (typeof MANAGED_SKILLS)[number];
 
 const DEFAULT_CONFIG_TEMPLATE = `# Managed by AI-WorkStation
 [log]
@@ -250,34 +268,118 @@ export class ServiceManager extends EventEmitter {
     const configDir = dirname(this.settings.configPath);
     const warnings: string[] = [];
 
+    for (const skill of MANAGED_SKILLS) {
+      try {
+        this.ensureManagedSkillSource(skill);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        warnings.push(
+          `Managed bundled skill "${skill.name}" was not written to shared directory ${this.getManagedSkillsRoot()}: ${detail}`,
+        );
+      }
+    }
+
     projects.forEach((project) => {
       const projectName = String(project.name || '').trim() || 'unnamed-project';
       const rawWorkDir = String(project.agent?.options?.work_dir || '.').trim() || '.';
       const workDir = isAbsolute(rawWorkDir) ? rawWorkDir : resolve(configDir, rawWorkDir);
-      const skillDir = join(workDir, KNOWLEDGE_SKILL_DIR);
-      const scriptPath = join(workDir, KNOWLEDGE_SKILL_SCRIPT_PATH);
-      const claudeSkillLinkPath = join(workDir, CLAUDE_KNOWLEDGE_SKILL_DIR);
-      try {
-        mkdirSync(join(skillDir, 'scripts'), { recursive: true });
-        writeFileSync(join(skillDir, 'SKILL.md'), knowledgeSkillMarkdown(), 'utf8');
-        writeFileSync(scriptPath, knowledgeSkillScript(), 'utf8');
-        chmodSync(scriptPath, 0o755);
-        mkdirSync(dirname(claudeSkillLinkPath), { recursive: true });
-        this.replaceWithSymlink(claudeSkillLinkPath, resolve(skillDir));
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        warnings.push(`Knowledge skill was not written for project "${projectName}" at ${workDir}: ${detail}`);
+      for (const skill of MANAGED_SKILLS) {
+        try {
+          const sharedSkillDir = this.getManagedSkillPath(skill.name);
+          if (!this.pathExists(sharedSkillDir)) {
+            continue;
+          }
+          this.ensureWorkspaceSkillLink(workDir, AGENTS_SKILL_DIR, skill.name, sharedSkillDir);
+          this.ensureWorkspaceSkillLink(workDir, CLAUDE_SKILL_DIR, skill.name, sharedSkillDir);
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          warnings.push(
+            `Managed bundled skill "${skill.name}" was not linked for project "${projectName}" at ${workDir}: ${detail}`,
+          );
+        }
       }
     });
 
     return warnings;
   }
 
-  private replaceWithSymlink(linkPath: string, targetPath: string) {
-    if (existsSync(linkPath)) {
-      rmSync(linkPath, { recursive: true, force: true });
+  private ensureManagedSkillSource(skill: ManagedSkillDefinition) {
+    const skillDir = this.getManagedSkillPath(skill.name);
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), skill.buildMarkdown(), 'utf8');
+    for (const script of skill.scripts) {
+      const scriptPath = join(skillDir, script.relativePath);
+      mkdirSync(dirname(scriptPath), { recursive: true });
+      writeFileSync(scriptPath, script.content(), 'utf8');
+      if (script.executable) {
+        chmodSync(scriptPath, 0o755);
+      }
+    }
+  }
+
+  private ensureWorkspaceSkillLink(workDir: string, skillRoot: string, skillName: string, targetPath: string) {
+    const linkPath = join(workDir, skillRoot, skillName);
+    mkdirSync(dirname(linkPath), { recursive: true });
+    this.replaceWithSymlink(linkPath, targetPath, true);
+  }
+
+  private getManagedSkillsRoot() {
+    return join(homedir(), MANAGED_SKILLS_ROOT);
+  }
+
+  private getManagedSkillPath(skillName: string) {
+    return join(this.getManagedSkillsRoot(), skillName);
+  }
+
+  private replaceWithSymlink(linkPath: string, targetPath: string, backupExisting = false) {
+    if (this.isSymlinkTo(linkPath, targetPath)) {
+      return;
+    }
+    if (this.pathExists(linkPath)) {
+      if (backupExisting) {
+        this.backupExistingPath(linkPath);
+      } else {
+        rmSync(linkPath, { recursive: true, force: true });
+      }
     }
     symlinkSync(targetPath, linkPath, 'dir');
+  }
+
+  private isSymlinkTo(linkPath: string, targetPath: string) {
+    try {
+      const stat = lstatSync(linkPath);
+      if (!stat.isSymbolicLink()) {
+        return false;
+      }
+      return resolve(dirname(linkPath), readlinkSync(linkPath)) === resolve(targetPath);
+    } catch {
+      return false;
+    }
+  }
+
+  private pathExists(path: string) {
+    try {
+      lstatSync(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private backupExistingPath(path: string) {
+    const backupPath = this.nextBackupPath(path);
+    renameSync(path, backupPath);
+  }
+
+  private nextBackupPath(path: string) {
+    let index = 0;
+    while (true) {
+      const candidate = `${path}.bak${index === 0 ? '' : `-${index}`}`;
+      if (!this.pathExists(candidate)) {
+        return candidate;
+      }
+      index += 1;
+    }
   }
 
   async start() {
