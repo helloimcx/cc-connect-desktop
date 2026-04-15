@@ -40,22 +40,11 @@ const AI_WORKSTATION_ROOT = '.ai-workstation';
 const MANAGED_SKILLS_ROOT = join(AI_WORKSTATION_ROOT, 'skills');
 const MANAGED_SKILLS_PACKAGES_DIR = join(MANAGED_SKILLS_ROOT, 'packages');
 const MANAGED_SKILLS_ACTIVE_DIR = join(MANAGED_SKILLS_ROOT, 'active');
-const MANAGED_TOOLS_ROOT = join(AI_WORKSTATION_ROOT, 'tools');
 const MANAGED_STATE_PATH = join(AI_WORKSTATION_ROOT, 'state', 'managed-skills.json');
 const AGENTS_SKILL_DIR = join('.agents', 'skills');
 const CLAUDE_SKILL_DIR = join('.claude', 'skills');
 
 type ManagedSkillMountTarget = 'agents' | 'claude';
-type ManagedSkillPostInstall =
-  | { type: 'none' }
-  | {
-      type: 'npm-tool';
-      toolId: string;
-      packageName: string;
-      version: string;
-      binName: string;
-      installArgs?: string[][];
-    };
 
 interface ManagedSkillManifestEntry {
   id: string;
@@ -64,14 +53,6 @@ interface ManagedSkillManifestEntry {
   bundlePath: string;
   mountTargets: ManagedSkillMountTarget[];
   executablePaths: string[];
-  postInstall: ManagedSkillPostInstall;
-}
-
-interface ManagedToolStateRecord {
-  version: string;
-  status: 'ready' | 'error';
-  installedAt?: string;
-  lastError?: string;
 }
 
 interface ManagedSkillStateRecord {
@@ -82,7 +63,6 @@ interface ManagedSkillStateRecord {
 
 interface ManagedSkillsState {
   skills: Record<string, ManagedSkillStateRecord>;
-  tools: Record<string, ManagedToolStateRecord>;
 }
 
 const MANAGED_SKILLS: ManagedSkillManifestEntry[] = [
@@ -93,7 +73,6 @@ const MANAGED_SKILLS: ManagedSkillManifestEntry[] = [
     bundlePath: resolve(process.cwd(), 'electron', 'managed-skills', 'knowledge-base'),
     mountTargets: ['agents', 'claude'],
     executablePaths: [join('scripts', 'search-knowledge.sh')],
-    postInstall: { type: 'none' },
   },
   {
     id: 'agent-browser',
@@ -101,15 +80,11 @@ const MANAGED_SKILLS: ManagedSkillManifestEntry[] = [
     sourceType: 'bundled',
     bundlePath: resolve(process.cwd(), 'electron', 'managed-skills', 'agent-browser'),
     mountTargets: ['agents', 'claude'],
-    executablePaths: [join('scripts', 'agent-browser.sh')],
-    postInstall: {
-      type: 'npm-tool',
-      toolId: 'agent-browser',
-      packageName: 'agent-browser',
-      version: '0.25.4',
-      binName: 'agent-browser',
-      installArgs: [['install']],
-    },
+    executablePaths: [
+      join('templates', 'authenticated-session.sh'),
+      join('templates', 'capture-workflow.sh'),
+      join('templates', 'form-automation.sh'),
+    ],
   },
 ];
 
@@ -324,20 +299,12 @@ export class ServiceManager extends EventEmitter {
     mkdirSync(dirname(activePath), { recursive: true });
     this.replaceWithSymlink(activePath, packagePath);
 
-    const warnings: string[] = [];
-    if (skill.postInstall.type === 'npm-tool') {
-      const toolWarning = this.ensureManagedNpmToolInstalled(skill.postInstall, state);
-      if (toolWarning) {
-        warnings.push(toolWarning);
-      }
-    }
-
     state.skills[skill.id] = {
       version: skill.version,
       installedAt: new Date().toISOString(),
       activePath,
     };
-    return warnings;
+    return [];
   }
 
   private ensureBundledSkillPackage(skill: ManagedSkillManifestEntry) {
@@ -345,12 +312,9 @@ export class ServiceManager extends EventEmitter {
       throw new Error(`bundle path does not exist: ${skill.bundlePath}`);
     }
     const packagePath = this.getManagedSkillPackagePath(skill.id, skill.version);
-    const expectedSkillFile = join(packagePath, 'SKILL.md');
-    if (!this.pathExists(expectedSkillFile)) {
-      rmSync(packagePath, { recursive: true, force: true });
-      mkdirSync(dirname(packagePath), { recursive: true });
-      this.copyDirectory(skill.bundlePath, packagePath);
-    }
+    rmSync(packagePath, { recursive: true, force: true });
+    mkdirSync(dirname(packagePath), { recursive: true });
+    this.copyDirectory(skill.bundlePath, packagePath);
     for (const relativePath of skill.executablePaths) {
       const executablePath = join(packagePath, relativePath);
       if (this.pathExists(executablePath)) {
@@ -369,10 +333,6 @@ export class ServiceManager extends EventEmitter {
     return target === 'agents' ? AGENTS_SKILL_DIR : CLAUDE_SKILL_DIR;
   }
 
-  private getAiWorkstationRoot() {
-    return join(homedir(), AI_WORKSTATION_ROOT);
-  }
-
   private getManagedSkillsRoot() {
     return join(homedir(), MANAGED_SKILLS_ROOT);
   }
@@ -385,131 +345,8 @@ export class ServiceManager extends EventEmitter {
     return join(homedir(), MANAGED_SKILLS_ACTIVE_DIR, skillId);
   }
 
-  private getManagedToolsRoot() {
-    return join(homedir(), MANAGED_TOOLS_ROOT);
-  }
-
-  private getManagedToolVersionPath(toolId: string, version: string) {
-    return join(this.getManagedToolsRoot(), toolId, version);
-  }
-
-  private getManagedToolCurrentPath(toolId: string) {
-    return join(this.getManagedToolsRoot(), toolId, 'current');
-  }
-
   private getManagedStatePath() {
     return join(homedir(), MANAGED_STATE_PATH);
-  }
-
-  private ensureManagedNpmToolInstalled(postInstall: Extract<ManagedSkillPostInstall, { type: 'npm-tool' }>, state: ManagedSkillsState) {
-    const npmCheck = spawnSync('npm', ['--version'], { encoding: 'utf8' });
-    if (npmCheck.status !== 0) {
-      const warning = `Managed tool "${postInstall.toolId}" was not installed: npm is not available on this machine`;
-      state.tools[postInstall.toolId] = {
-        version: postInstall.version,
-        status: 'error',
-        lastError: warning,
-      };
-      return warning;
-    }
-
-    const versionPath = this.getManagedToolVersionPath(postInstall.toolId, postInstall.version);
-    const currentPath = this.getManagedToolCurrentPath(postInstall.toolId);
-    const wrapperPath = join(versionPath, 'bin', postInstall.binName);
-
-    if (!this.isExecutablePath(wrapperPath)) {
-      mkdirSync(versionPath, { recursive: true });
-      const packageJsonPath = join(versionPath, 'package.json');
-      if (!this.pathExists(packageJsonPath)) {
-        writeFileSync(
-          packageJsonPath,
-          JSON.stringify(
-            {
-              private: true,
-              name: `ai-workstation-managed-tool-${postInstall.toolId}`,
-              version: postInstall.version,
-            },
-            null,
-            2,
-          ),
-          'utf8',
-        );
-      }
-      const installResult = spawnSync(
-        'npm',
-        ['install', '--no-save', '--no-package-lock', '--no-audit', '--no-fund', `${postInstall.packageName}@${postInstall.version}`],
-        {
-          cwd: versionPath,
-          env: {
-            ...process.env,
-            AI_WORKSTATION_HOME: this.getAiWorkstationRoot(),
-          },
-          encoding: 'utf8',
-        },
-      );
-      if (installResult.status !== 0) {
-        const warning = `Managed tool "${postInstall.toolId}" install failed: ${(installResult.stderr || installResult.stdout || 'npm install failed').trim()}`;
-        state.tools[postInstall.toolId] = {
-          version: postInstall.version,
-          status: 'error',
-          lastError: warning,
-        };
-        return warning;
-      }
-
-      const localBinaryPath = join(versionPath, 'node_modules', '.bin', postInstall.binName);
-      if (!this.isExecutablePath(localBinaryPath)) {
-        const warning = `Managed tool "${postInstall.toolId}" install failed: local binary ${localBinaryPath} was not created`;
-        state.tools[postInstall.toolId] = {
-          version: postInstall.version,
-          status: 'error',
-          lastError: warning,
-        };
-        return warning;
-      }
-
-      mkdirSync(dirname(wrapperPath), { recursive: true });
-      writeFileSync(
-        wrapperPath,
-        `#!/bin/sh
-set -eu
-ROOT_DIR=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-BIN="$ROOT_DIR/node_modules/.bin/${postInstall.binName}"
-exec "$BIN" "$@"
-`,
-        'utf8',
-      );
-      chmodSync(wrapperPath, 0o755);
-
-      for (const args of postInstall.installArgs || []) {
-        const setupResult = spawnSync(wrapperPath, args, {
-          cwd: versionPath,
-          env: {
-            ...process.env,
-            AI_WORKSTATION_HOME: this.getAiWorkstationRoot(),
-          },
-          encoding: 'utf8',
-        });
-        if (setupResult.status !== 0) {
-          const warning = `Managed tool "${postInstall.toolId}" setup failed: ${(setupResult.stderr || setupResult.stdout || args.join(' ')).trim()}`;
-          state.tools[postInstall.toolId] = {
-            version: postInstall.version,
-            status: 'error',
-            lastError: warning,
-          };
-          return warning;
-        }
-      }
-    }
-
-    mkdirSync(dirname(currentPath), { recursive: true });
-    this.replaceWithSymlink(currentPath, versionPath);
-    state.tools[postInstall.toolId] = {
-      version: postInstall.version,
-      status: 'ready',
-      installedAt: new Date().toISOString(),
-    };
-    return null;
   }
 
   private copyDirectory(sourcePath: string, targetPath: string) {
@@ -536,10 +373,9 @@ exec "$BIN" "$@"
       const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<ManagedSkillsState>;
       return {
         skills: raw.skills && typeof raw.skills === 'object' ? raw.skills as ManagedSkillsState['skills'] : {},
-        tools: raw.tools && typeof raw.tools === 'object' ? raw.tools as ManagedSkillsState['tools'] : {},
       };
     } catch {
-      return { skills: {}, tools: {} };
+      return { skills: {} };
     }
   }
 

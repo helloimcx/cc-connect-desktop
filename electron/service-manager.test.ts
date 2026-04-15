@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { accessSync, chmodSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtempSync } from 'node:fs';
@@ -34,49 +34,6 @@ function withTempHome() {
   };
 }
 
-function withFakeNpm() {
-  const previousPath = process.env.PATH;
-  const temp = withTempDir();
-  const npmPath = join(temp.dir, 'npm');
-  writeFileSync(
-    npmPath,
-    `#!/bin/sh
-set -eu
-
-if [ "$#" -ge 1 ] && [ "$1" = "--version" ]; then
-  echo "10.0.0"
-  exit 0
-fi
-
-if [ "$#" -ge 1 ] && [ "$1" = "install" ]; then
-  mkdir -p "$PWD/node_modules/.bin"
-  cat > "$PWD/node_modules/.bin/agent-browser" <<'EOF'
-#!/bin/sh
-set -eu
-if [ "$#" -ge 1 ] && [ "$1" = "install" ]; then
-  exit 0
-fi
-echo "agent-browser $@"
-EOF
-  chmod +x "$PWD/node_modules/.bin/agent-browser"
-  exit 0
-fi
-
-echo "unsupported npm invocation: $*" >&2
-exit 1
-`,
-    'utf8',
-  );
-  chmodSync(npmPath, 0o755);
-  process.env.PATH = `${temp.dir}:${previousPath || ''}`;
-  return {
-    cleanup() {
-      process.env.PATH = previousPath;
-      temp.cleanup();
-    },
-  };
-}
-
 function buildConfig(workDir: string): DesktopConnectConfig {
   return {
     projects: [
@@ -97,7 +54,6 @@ function buildConfig(workDir: string): DesktopConnectConfig {
 test('writeStructuredConfig generates the bundled knowledge skill files', async () => {
   const temp = withTempDir();
   const home = withTempHome();
-  const fakeNpm = withFakeNpm();
   try {
     const manager = new ServiceManager(temp.dir);
     const workDir = join(temp.dir, 'runtime', 'project-alpha');
@@ -112,23 +68,22 @@ test('writeStructuredConfig generates the bundled knowledge skill files', async 
     const knowledgeSkillPath = join(knowledgePackageDir, 'SKILL.md');
     const knowledgeScriptPath = join(knowledgePackageDir, 'scripts', 'search-knowledge.sh');
     const browserSkillPath = join(browserPackageDir, 'SKILL.md');
-    const browserWrapperPath = join(browserPackageDir, 'scripts', 'agent-browser.sh');
+    const browserReferencePath = join(browserPackageDir, 'references', 'commands.md');
+    const browserTemplatePath = join(browserPackageDir, 'templates', 'capture-workflow.sh');
     const agentKnowledgeLinkPath = join(workDir, '.agents', 'skills', 'knowledge-base');
     const claudeKnowledgeLinkPath = join(workDir, '.claude', 'skills', 'knowledge-base');
     const agentBrowserLinkPath = join(workDir, '.agents', 'skills', 'agent-browser');
     const claudeBrowserLinkPath = join(workDir, '.claude', 'skills', 'agent-browser');
-    const managedToolWrapper = join(home.dir, '.ai-workstation', 'tools', 'agent-browser', '0.25.4', 'bin', 'agent-browser');
-    const managedToolCurrent = join(home.dir, '.ai-workstation', 'tools', 'agent-browser', 'current');
     const managedStatePath = join(home.dir, '.ai-workstation', 'state', 'managed-skills.json');
 
     assert.deepEqual(saved.warnings || [], []);
     assert.equal(existsSync(knowledgeSkillPath), true);
     assert.equal(existsSync(knowledgeScriptPath), true);
     assert.equal(existsSync(browserSkillPath), true);
-    assert.equal(existsSync(browserWrapperPath), true);
+    assert.equal(existsSync(browserReferencePath), true);
+    assert.equal(existsSync(browserTemplatePath), true);
     accessSync(knowledgeScriptPath, constants.X_OK);
-    accessSync(browserWrapperPath, constants.X_OK);
-    accessSync(managedToolWrapper, constants.X_OK);
+    accessSync(browserTemplatePath, constants.X_OK);
     assert.equal(lstatSync(knowledgeActiveDir).isSymbolicLink(), true);
     assert.equal(lstatSync(browserActiveDir).isSymbolicLink(), true);
     assert.equal(readlinkSync(knowledgeActiveDir), knowledgePackageDir);
@@ -141,15 +96,14 @@ test('writeStructuredConfig generates the bundled knowledge skill files', async 
     assert.equal(readlinkSync(claudeKnowledgeLinkPath), knowledgeActiveDir);
     assert.equal(readlinkSync(agentBrowserLinkPath), browserActiveDir);
     assert.equal(readlinkSync(claudeBrowserLinkPath), browserActiveDir);
-    assert.equal(readlinkSync(managedToolCurrent), join(home.dir, '.ai-workstation', 'tools', 'agent-browser', '0.25.4'));
     assert.match(readFileSync(knowledgeSkillPath, 'utf8'), /Selected Knowledge Bases/);
     assert.match(readFileSync(knowledgeScriptPath, 'utf8'), /knowledge\/bases\/\$KB_ID\/search/);
-    assert.match(readFileSync(browserSkillPath, 'utf8'), /browser or Electron UI automation/);
-    assert.match(readFileSync(browserWrapperPath, 'utf8'), /tools\/agent-browser\/current\/bin\/agent-browser/);
+    assert.match(readFileSync(browserSkillPath, 'utf8'), /You must run `agent-browser skills get <name>`/);
+    assert.match(readFileSync(browserReferencePath, 'utf8'), /Command Reference/);
+    assert.match(readFileSync(browserTemplatePath, 'utf8'), /Capture Workflow/);
     assert.match(readFileSync(managedStatePath, 'utf8'), /"agent-browser"/);
     assert.equal(readFileSync(customSkillPath, 'utf8'), 'custom skill');
   } finally {
-    fakeNpm.cleanup();
     home.cleanup();
     temp.cleanup();
   }
@@ -158,7 +112,6 @@ test('writeStructuredConfig generates the bundled knowledge skill files', async 
 test('writeStructuredConfig backs up old workspace skill directories before linking shared skills', async () => {
   const temp = withTempDir();
   const home = withTempHome();
-  const fakeNpm = withFakeNpm();
   try {
     const manager = new ServiceManager(temp.dir);
     const workDir = join(temp.dir, 'runtime', 'project-alpha');
@@ -182,7 +135,6 @@ test('writeStructuredConfig backs up old workspace skill directories before link
     assert.equal(readlinkSync(oldAgentSkillDir), sharedSkillDir);
     assert.equal(readlinkSync(oldClaudeSkillDir), sharedSkillDir);
   } finally {
-    fakeNpm.cleanup();
     home.cleanup();
     temp.cleanup();
   }
@@ -211,7 +163,6 @@ test('writeStructuredConfig returns warnings when the shared skill directory can
 test('writeStructuredConfig returns warnings when a workspace skill link cannot be created', async () => {
   const temp = withTempDir();
   const home = withTempHome();
-  const fakeNpm = withFakeNpm();
   try {
     const manager = new ServiceManager(temp.dir);
     const blockedPath = join(temp.dir, 'runtime', 'blocked');
@@ -226,7 +177,6 @@ test('writeStructuredConfig returns warnings when a workspace skill link cannot 
     assert.match(saved.warnings?.[1] || '', /Managed bundled skill "agent-browser" was not linked for project/);
     assert.equal(existsSync(saved.path), true);
   } finally {
-    fakeNpm.cleanup();
     home.cleanup();
     temp.cleanup();
   }
