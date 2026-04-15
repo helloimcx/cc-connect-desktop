@@ -84,7 +84,7 @@ export function useThreadChatConversationState({
       setBridgeError(
         mode === 'permission_continue'
           ? brandingReplyTimeoutLabel
-          : 'Agent did not respond in time. Check Desktop Runtime logs or adjust the model/provider.',
+          : 'Agent did not respond in time. Check AI-WorkStation runtime logs or adjust the model/provider.',
       );
     }, ASSISTANT_REPLY_TIMEOUT_MS);
   }, [brandingReplyTimeoutLabel, clearReplyTimeout, setBridgeError, updateTaskState]);

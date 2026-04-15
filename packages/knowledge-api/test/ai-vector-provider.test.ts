@@ -9,7 +9,7 @@ import { AiVectorKnowledgeProvider, defaultKnowledgeConfig } from '../src/ai-vec
 import { KnowledgeSqliteStore } from '../src/sqlite-store.js';
 
 function withTempDir() {
-  const dir = mkdtempSync(join(tmpdir(), 'cc-connect-kb-'));
+  const dir = mkdtempSync(join(tmpdir(), 'ai-workstation-kb-'));
   return {
     dir,
     cleanup() {

@@ -5,7 +5,7 @@ import { CcConnectController } from '../../../packages/adapter-cc-connect/src/in
 import { LocalAiCoreServer } from './server.js';
 
 async function main() {
-  const userDataPath = process.env.CC_CONNECT_DESKTOP_USER_DATA_DIR?.trim() || join(process.cwd(), '.local-ai-core');
+  const userDataPath = process.env.AI_WORKSTATION_USER_DATA_DIR?.trim() || join(process.cwd(), '.ai-workstation-core');
   mkdirSync(userDataPath, { recursive: true });
   const controller = new CcConnectController(userDataPath);
   await controller.init();

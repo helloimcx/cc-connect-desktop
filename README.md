@@ -1,4 +1,4 @@
-# cc-connect-desktop
+# AI-WorkStation
 
 `cc-connect` backend 服务的桌面管理客户端，正在演进为基于 Local AI Core 的单机版 Super AI App。
 
@@ -39,8 +39,11 @@ pnpm start:core   # 启动已构建的 Local AI Core
 
 | 变量 | 说明 |
 |---|---|
-| `CC_CONNECT_DESKTOP_USER_DATA_DIR` | 用户数据目录 |
-| `CC_CONNECT_DESKTOP_SMOKE_OUTPUT` | 冒烟测试输出路径 |
+| `AI_WORKSTATION_USER_DATA_DIR` | 用户数据目录 |
+| `AI_WORKSTATION_SMOKE_OUTPUT` | 冒烟测试输出路径 |
+| `AI_WORKSTATION_SMOKE_SCENARIO` | 冒烟测试场景 |
+| `AI_WORKSTATION_FORCE_RUNTIME_STATUS_ERROR` | 强制触发运行时状态错误，用于测试 |
+| `AI_WORKSTATION_DEV_SERVER_URL` | Electron 开发模式连接的前端地址 |
 
 ## 项目结构
 

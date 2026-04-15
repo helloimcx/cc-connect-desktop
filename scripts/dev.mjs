@@ -8,7 +8,7 @@ import { getElectronBinaryPath } from './electron-bin.mjs';
 
 const rootDir = process.cwd();
 const distElectronDir = path.join(rootDir, 'dist-electron');
-const devServerUrl = process.env.CC_CONNECT_DESKTOP_DEV_SERVER_URL ?? 'http://127.0.0.1:5173';
+const devServerUrl = process.env.AI_WORKSTATION_DEV_SERVER_URL ?? 'http://127.0.0.1:5173';
 const isWindows = process.platform === 'win32';
 const electronBinary = getElectronBinaryPath();
 
@@ -83,7 +83,7 @@ function maybeLaunchElectron() {
     stdio: 'inherit',
     env: {
       ...process.env,
-      CC_CONNECT_DESKTOP_DEV_SERVER_URL: devServerUrl,
+      AI_WORKSTATION_DEV_SERVER_URL: devServerUrl,
       NODE_ENV: 'development',
       ELECTRON_RUN_AS_NODE: undefined,
     },

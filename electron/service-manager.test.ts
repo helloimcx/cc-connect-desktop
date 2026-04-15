@@ -8,7 +8,7 @@ import type { DesktopConnectConfig } from '../shared/desktop.js';
 import { ServiceManager } from './service-manager.js';
 
 function withTempDir() {
-  const dir = mkdtempSync(join(tmpdir(), 'cc-connect-service-manager-'));
+  const dir = mkdtempSync(join(tmpdir(), 'ai-workstation-service-manager-'));
   return {
     dir,
     cleanup() {

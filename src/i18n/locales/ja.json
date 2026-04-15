@@ -151,8 +151,8 @@
     "limit": "行数の上限"
   },
   "login": {
-    "title": "CC-Connect 管理コンソール",
-    "subtitle": "CC-Connect インスタンスに接続",
+    "title": "AI-WorkStation",
+    "subtitle": "AI-WorkStation インスタンスに接続",
     "token": "API トークン",
     "serverUrl": "サーバー URL",
     "connect": "接続",

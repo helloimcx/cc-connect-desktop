@@ -24,10 +24,10 @@ type BootstrapState =
 function LoadingScreen() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-950 p-6">
-      <div className="flex items-center gap-3 rounded-2xl border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-gray-900 px-5 py-4 text-sm text-gray-600 dark:text-gray-300 shadow-sm">
-        <RefreshCw size={16} className="animate-spin" />
-        Initializing desktop runtime…
-      </div>
+        <div className="flex items-center gap-3 rounded-2xl border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-gray-900 px-5 py-4 text-sm text-gray-600 dark:text-gray-300 shadow-sm">
+          <RefreshCw size={16} className="animate-spin" />
+        正在初始化 AI-WorkStation 运行时…
+        </div>
     </div>
   );
 }
@@ -50,7 +50,7 @@ function BootstrapFailureScreen({
               <AlertTriangle size={18} />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-red-700 dark:text-red-300">Desktop runtime failed to initialize</h1>
+              <h1 className="text-lg font-semibold text-red-700 dark:text-red-300">AI-WorkStation 运行时初始化失败</h1>
               <p className="mt-1 text-sm text-red-600 dark:text-red-400 break-words">{message}</p>
             </div>
           </div>
@@ -59,13 +59,13 @@ function BootstrapFailureScreen({
           <div className="rounded-2xl border border-gray-200 dark:border-white/[0.08] px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
             <p className="font-medium text-gray-900 dark:text-white">What we can do next</p>
             <p className="mt-1">
-              Retry the desktop bootstrap first. If it still fails, check the runtime logs below and verify the local
-              `cc-connect` binary path in your desktop settings.
+              请先重试桌面端初始化。如果仍然失败，请检查下方运行时日志，并确认桌面设置中的本地
+              `cc-connect` 二进制路径是否正确。
             </p>
           </div>
           {logs.length > 0 && (
             <div className="rounded-2xl border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-gray-950/40 px-4 py-3">
-              <p className="text-sm font-medium text-gray-900 dark:text-white">Recent desktop logs</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">最近的桌面日志</p>
               <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs text-gray-600 dark:text-gray-300 font-mono">
                 {logs.join('\n')}
               </pre>
@@ -73,10 +73,10 @@ function BootstrapFailureScreen({
           )}
           <div className="flex gap-3">
             <Button onClick={onRetry}>
-              <RefreshCw size={14} /> Retry bootstrap
+              <RefreshCw size={14} /> 重试初始化
             </Button>
             <Button variant="secondary" onClick={() => window.location.reload()}>
-              Reload app
+              重新加载应用
             </Button>
           </div>
         </div>

@@ -22,7 +22,7 @@ async function waitForFile(filePath, timeoutMs = 180000) {
 }
 
 async function runScenario(name, extraEnv = {}) {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `cc-connect-desktop-e2e-${name}-`));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `ai-workstation-e2e-${name}-`));
   const userDataDir = path.join(tempRoot, 'user-data');
   const outputPath = path.join(tempRoot, 'smoke-result.json');
   log(`scenario=${name} userDataDir=${userDataDir}`);
@@ -31,8 +31,8 @@ async function runScenario(name, extraEnv = {}) {
     stdio: 'inherit',
     env: {
       ...process.env,
-      CC_CONNECT_DESKTOP_USER_DATA_DIR: userDataDir,
-      CC_CONNECT_DESKTOP_SMOKE_OUTPUT: outputPath,
+      AI_WORKSTATION_USER_DATA_DIR: userDataDir,
+      AI_WORKSTATION_SMOKE_OUTPUT: outputPath,
       ...extraEnv,
     },
   });
@@ -55,8 +55,8 @@ async function runScenario(name, extraEnv = {}) {
 async function main() {
   await runScenario('default');
   await runScenario('bootstrap-error', {
-    CC_CONNECT_DESKTOP_SMOKE_SCENARIO: 'bootstrap-error',
-    CC_CONNECT_DESKTOP_FORCE_RUNTIME_STATUS_ERROR: '1',
+    AI_WORKSTATION_SMOKE_SCENARIO: 'bootstrap-error',
+    AI_WORKSTATION_FORCE_RUNTIME_STATUS_ERROR: '1',
   });
 }
 

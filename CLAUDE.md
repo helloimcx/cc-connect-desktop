@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-cc-connect-desktop is an Electron + React app that manages a `cc-connect` backend service. It runs in two modes:
+AI-WorkStation is an Electron + React app that manages a `cc-connect` backend service. It runs in two modes:
 - **Desktop mode**: Electron app spawns/manages a local `cc-connect` binary, with real-time chat via WebSocket bridge
 - **Web admin mode**: Connects to a remote `cc-connect` instance via API token + server URL
 
@@ -63,7 +63,7 @@ React 19, Electron 35, Vite 6.3, TypeScript (strict), Tailwind CSS 3.4, Zustand 
 - Accent color `#42ff9c` (bright green) throughout the UI
 - Tailwind class-based dark mode with `@tailwindcss/typography`
 - Keep shared desktop contracts in `shared/` so renderer and Electron stay type-aligned
-- Environment variables: `CC_CONNECT_DESKTOP_USER_DATA_DIR`, `CC_CONNECT_DESKTOP_SMOKE_OUTPUT`
+- Environment variables: `AI_WORKSTATION_USER_DATA_DIR`, `AI_WORKSTATION_SMOKE_OUTPUT`
 
 ## Large Files
 

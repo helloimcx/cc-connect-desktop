@@ -151,8 +151,8 @@
     "limit": "行数限制"
   },
   "login": {
-    "title": "CC-Connect 管理后台",
-    "subtitle": "连接到您的 CC-Connect 实例",
+    "title": "AI-WorkStation",
+    "subtitle": "连接到您的 AI-WorkStation 实例",
     "token": "API 令牌",
     "serverUrl": "服务器地址",
     "connect": "连接",

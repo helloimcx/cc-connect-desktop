@@ -63,7 +63,7 @@ export function getRuntimeBranding(): RuntimeBranding {
   return {
     chatTitle: '桌面对话',
     chatHeading: '桌面对话',
-    chatDescription: '搜索会话、切换项目，并保持桌面对话井然有序。',
+    chatDescription: '',
     scopeLabel: '当前项目',
     scopeSelectPlaceholder: '选择项目',
     searchPlaceholder: '搜索会话、用户或消息摘要',

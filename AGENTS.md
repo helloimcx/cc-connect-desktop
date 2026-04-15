@@ -23,4 +23,4 @@ There is no unit-test runner configured in this snapshot. The current verificati
 This workspace snapshot does not include `.git`, so local history could not be inspected. Use short, imperative commit subjects such as `Add bridge runtime retry` or `Fix smoke test startup timing`. Keep pull requests focused, describe user-visible changes, list validation commands you ran, and include screenshots for UI updates.
 
 ## Configuration Notes
-Development scripts honor Electron runtime overrides such as `CC_CONNECT_DESKTOP_USER_DATA_DIR` and `CC_CONNECT_DESKTOP_SMOKE_OUTPUT`. Avoid committing machine-specific paths, secrets, or generated output.
+Development scripts honor Electron runtime overrides such as `AI_WORKSTATION_USER_DATA_DIR` and `AI_WORKSTATION_SMOKE_OUTPUT`. Avoid committing machine-specific paths, secrets, or generated output.

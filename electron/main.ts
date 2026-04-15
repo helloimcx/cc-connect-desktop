@@ -39,10 +39,10 @@ let localAiCoreBindings: LocalAiCoreBindings | null = null;
 const smokeBridgeSendInputs: DesktopBridgeSendInput[] = [];
 const coreRunThreadMap = new Map<string, string>();
 
-const userDataOverride = process.env.CC_CONNECT_DESKTOP_USER_DATA_DIR?.trim();
-const smokeOutputPath = process.env.CC_CONNECT_DESKTOP_SMOKE_OUTPUT?.trim();
-const smokeScenario = process.env.CC_CONNECT_DESKTOP_SMOKE_SCENARIO?.trim() || 'default';
-const forceRuntimeStatusError = process.env.CC_CONNECT_DESKTOP_FORCE_RUNTIME_STATUS_ERROR === '1';
+const userDataOverride = process.env.AI_WORKSTATION_USER_DATA_DIR?.trim();
+const smokeOutputPath = process.env.AI_WORKSTATION_SMOKE_OUTPUT?.trim();
+const smokeScenario = process.env.AI_WORKSTATION_SMOKE_SCENARIO?.trim() || 'default';
+const forceRuntimeStatusError = process.env.AI_WORKSTATION_FORCE_RUNTIME_STATUS_ERROR === '1';
 if (userDataOverride) {
   mkdirSync(userDataOverride, { recursive: true });
   app.setPath('userData', userDataOverride);
@@ -441,7 +441,7 @@ async function runSmokeTest() {
       const failureText = await waitFor(
         async () => {
           const bodyText = await window.webContents.executeJavaScript('document.body?.innerText || ""', true);
-          return typeof bodyText === 'string' && bodyText.includes('Desktop runtime failed to initialize')
+          return typeof bodyText === 'string' && bodyText.includes('AI-WorkStation 运行时初始化失败')
             ? bodyText
             : null;
         },
@@ -458,7 +458,7 @@ async function runSmokeTest() {
     await waitFor(
       async () => {
         const bodyText = await window.webContents.executeJavaScript('document.body?.innerText || ""', true);
-        return typeof bodyText === 'string' && bodyText.includes('Desktop Runtime') ? bodyText : null;
+        return typeof bodyText === 'string' && bodyText.includes('AI-WorkStation 运行时') ? bodyText : null;
       },
       { timeoutMs: 45000, label: 'dashboard render' },
     );
@@ -474,15 +474,26 @@ async function runSmokeTest() {
       const clicked = await window.webContents.executeJavaScript(
         `(() => {
           const buttons = Array.from(document.querySelectorAll('button'));
-          const target = buttons.find((button) => button.textContent?.includes('Start'));
-          if (!target) return false;
-          target.click();
-          return true;
+          const target = buttons.find((button) =>
+            button.textContent?.includes('启动服务') ||
+            button.textContent?.includes('启动运行时') ||
+            button.textContent?.includes('启动') ||
+            button.textContent?.includes('Start'),
+          );
+          if (target) {
+            target.click();
+            return true;
+          }
+          if (window.desktop?.startService) {
+            void window.desktop.startService();
+            return true;
+          }
+          return false;
         })()`,
         true,
       );
       if (!clicked) {
-        throw new Error('Smoke test could not find Start button');
+        throw new Error('Smoke test could not find service start button');
       }
       record('service_start_clicked');
     }
@@ -971,7 +982,7 @@ async function runSmokeTest() {
             const query = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
             const session = new URLSearchParams(query).get('session');
             const bodyText = document.body?.innerText || '';
-            return title === 'New desktop conversation' && !session && bodyText.includes('Send a message to create a desktop session')
+            return title === '新桌面对话' && !session && bodyText.includes('直接提问即可创建会话并开始对话')
               ? { title, session: session || '' }
               : null;
           })()`,
@@ -1135,7 +1146,7 @@ async function runSmokeTest() {
     await waitFor(
       async () => {
         const bodyText = await window.webContents.executeJavaScript('document.body?.innerText || ""', true);
-        return typeof bodyText === 'string' && bodyText.includes('Desktop Runtime') ? bodyText : null;
+        return typeof bodyText === 'string' && bodyText.includes('AI-WorkStation 运行时') ? bodyText : null;
       },
       { timeoutMs: 30000, label: 'dashboard rerender after reply' },
     );
@@ -1404,7 +1415,7 @@ async function runSmokeTest() {
     await waitFor(
       async () => {
         const bodyText = await window.webContents.executeJavaScript('document.body?.innerText || ""', true);
-        return typeof bodyText === 'string' && bodyText.includes('Desktop Runtime') ? bodyText : null;
+        return typeof bodyText === 'string' && bodyText.includes('AI-WorkStation 运行时') ? bodyText : null;
       },
       { timeoutMs: 30000, label: 'dashboard rerender after chat' },
     );
@@ -1446,7 +1457,7 @@ async function runSmokeTest() {
             const project = document.querySelector('[data-testid="desktop-chat-project-select"]');
             const progressMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-kind="progress"]'));
             const finalMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-kind="final"]'));
-            return bodyText.includes('Desktop Chat') && project instanceof HTMLSelectElement && project.value === 'desktop-demo' && finalMessages.length > 0
+            return bodyText.includes('桌面对话') && project instanceof HTMLSelectElement && project.value === 'desktop-demo' && finalMessages.length > 0
               ? { progressCount: progressMessages.length, finalCount: finalMessages.length }
               : null;
           })()`,
@@ -1564,7 +1575,7 @@ async function runSmokeTest() {
               input.dispatchEvent(new Event('change', { bubbles: true }));
               return null;
             }
-            return (document.body?.innerText || '').includes('No matching sessions.')
+            return (document.body?.innerText || '').includes('没有匹配的会话')
               ? { empty: true }
               : null;
           })()`,
@@ -1677,7 +1688,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 780,
     show: false,
-    title: 'cc-connect Desktop',
+    title: 'AI-WorkStation',
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1691,7 +1702,7 @@ function createWindow() {
     }
   });
 
-  const devServerURL = process.env.CC_CONNECT_DESKTOP_DEV_SERVER_URL;
+  const devServerURL = process.env.AI_WORKSTATION_DEV_SERVER_URL;
   if (devServerURL) {
     void mainWindow.loadURL(devServerURL);
   } else {

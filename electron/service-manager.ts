@@ -33,7 +33,7 @@ const KNOWLEDGE_SKILL_DIR = join('.agents', 'skills', 'knowledge-base');
 const KNOWLEDGE_SKILL_SCRIPT_PATH = join(KNOWLEDGE_SKILL_DIR, 'scripts', 'search-knowledge.sh');
 const CLAUDE_KNOWLEDGE_SKILL_DIR = join('.claude', 'skills', 'knowledge-base');
 
-const DEFAULT_CONFIG_TEMPLATE = `# Managed by cc-connect-desktop
+const DEFAULT_CONFIG_TEMPLATE = `# Managed by AI-WorkStation
 [log]
 level = "info"
 

@@ -825,7 +825,7 @@ export default function DesktopWorkspace() {
       <div className="grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] gap-6">
         <Card className="space-y-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Desktop Runtime</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">AI-WorkStation 运行时</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Manage the local `cc-connect` process and where this app stores its runtime files.
             </p>

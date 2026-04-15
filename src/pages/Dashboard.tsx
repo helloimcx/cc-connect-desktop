@@ -100,7 +100,7 @@ export default function Dashboard() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                {localCoreManaged ? 'Local AI Core' : 'Desktop Runtime'}
+                {localCoreManaged ? 'Local AI Core' : 'AI-WorkStation 运行时'}
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 {localCoreManaged
@@ -110,15 +110,15 @@ export default function Dashboard() {
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={() => void startDesktopService().then(() => fetchData())} disabled={runtime?.phase === 'starting' || runtime?.phase === 'api_ready' || runtime?.phase === 'bridge_ready'}>
-                <Play size={14} /> Start
+                <Play size={14} /> 启动
               </Button>
               <Button size="sm" variant="secondary" onClick={() => void restartDesktopService().then(() => fetchData())}>
-                <RotateCw size={14} /> Restart
+                <RotateCw size={14} /> 重启
               </Button>
               {desktopWorkspace && (
                 <Link to="/workspace">
                   <Button size="sm" variant="secondary">
-                    <Wrench size={14} /> Workspace
+                    <Wrench size={14} /> 工作区
                   </Button>
                 </Link>
               )}

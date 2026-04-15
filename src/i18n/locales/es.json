@@ -151,8 +151,8 @@
     "limit": "Límite de líneas"
   },
   "login": {
-    "title": "CC-Connect Admin",
-    "subtitle": "Conéctese a su instancia de CC-Connect",
+    "title": "AI-WorkStation",
+    "subtitle": "Conéctese a su instancia de AI-WorkStation",
     "token": "Token de API",
     "serverUrl": "URL del servidor",
     "connect": "Conectar",
