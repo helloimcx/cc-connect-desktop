@@ -150,22 +150,17 @@ export function useThreadChatSessionBrowser({
     if (!workspaceId || !threadId || !serviceRunning) {
       return;
     }
+    holdBlankComposerRef.current = false;
     clearLocalCorePolling();
     updateTaskState('idle');
     setTyping(false);
     if (runtimeProvider === 'local_core') {
       const detail = await getThread(threadId);
-      if (holdBlankComposerRef.current) {
-        return;
-      }
       applyLocalCoreThreadDetail(detail);
       return;
     }
     const detail = await getSession(workspaceId, threadId, 200);
     const selectedKnowledgeBaseIds = await getThreadKnowledgeBases(workspaceId, threadId).catch(() => []);
-    if (holdBlankComposerRef.current) {
-      return;
-    }
     lastSessionByProjectRef.current[workspaceId] = detail.id;
     setSelectedProject(workspaceId);
     setActiveSessionId(detail.id);
