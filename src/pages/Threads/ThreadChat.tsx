@@ -164,13 +164,10 @@ export default function ThreadChat() {
             <div className="border-b border-slate-200/70 px-5 py-4 dark:border-white/[0.06]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-400 dark:text-slate-500">Desktop Workspace</p>
+                  <p className="text-[11px] font-medium tracking-[0.18em] text-slate-400 dark:text-slate-500">会话导航</p>
                   <h2 className="mt-2 text-[1.55rem] font-semibold leading-tight text-slate-900 dark:text-white">
                     {branding.chatHeading}
                   </h2>
-                  <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                    {branding.chatDescription}
-                  </p>
                 </div>
                 <Button
                   size="sm"
@@ -302,7 +299,7 @@ export default function ThreadChat() {
                           className={cn(
                             'group rounded-[22px] border px-4 py-3 transition-all duration-200',
                             session.id === activeSessionId
-                              ? 'border-emerald-300/70 bg-emerald-50 shadow-[0_18px_36px_rgba(16,185,129,0.10)] dark:border-emerald-400/35 dark:bg-emerald-500/10 dark:shadow-[0_16px_35px_rgba(16,185,129,0.12)]'
+                              ? 'border-emerald-300/60 bg-white shadow-[0_16px_28px_rgba(16,185,129,0.08)] dark:border-emerald-400/30 dark:bg-white/[0.05] dark:shadow-[0_16px_35px_rgba(16,185,129,0.10)]'
                               : 'border-slate-200/80 bg-white/70 hover:-translate-y-[1px] hover:border-slate-300 hover:bg-white dark:border-white/[0.05] dark:bg-white/[0.03] dark:hover:border-white/[0.12] dark:hover:bg-white/[0.05]',
                           )}
                         >
@@ -391,7 +388,7 @@ export default function ThreadChat() {
             <div className="border-b border-slate-200/70 px-5 py-3 dark:border-white/[0.06]">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-slate-400 dark:text-slate-500">Conversation</p>
+                  <p className="text-[11px] font-medium tracking-[0.18em] text-slate-400 dark:text-slate-500">当前会话</p>
                   <h2
                     className="mt-2 text-[1.9rem] font-semibold leading-none text-slate-900 dark:text-white"
                     data-testid="desktop-chat-active-title"
@@ -458,11 +455,19 @@ export default function ThreadChat() {
               ) : (
                 renderedMessages.map((message) => {
                   const isUser = message.role === 'user';
+                  const isProgress = !isUser && message.kind === 'progress';
                   return (
                     <div key={message.id} className={cn('flex gap-3', isUser ? 'justify-end' : 'justify-start')}>
                       {!isUser ? (
-                        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-slate-300">
-                          <Bot size={15} />
+                        <div
+                          className={cn(
+                            'mt-1 flex shrink-0 items-center justify-center rounded-2xl text-slate-500 dark:text-slate-300',
+                            isProgress
+                              ? 'h-7 w-7 bg-slate-100/80 dark:bg-white/[0.04]'
+                              : 'h-8 w-8 bg-slate-100 dark:bg-white/[0.06]',
+                          )}
+                        >
+                          {isProgress ? <Circle size={8} className="fill-current" /> : <Bot size={15} />}
                         </div>
                       ) : null}
                       <div
@@ -472,17 +477,17 @@ export default function ThreadChat() {
                         data-order={String(message.order)}
                         data-timestamp={message.timestamp || ''}
                         className={cn(
-                          'rounded-[24px] px-5 py-4 text-sm shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition-all dark:shadow-[0_10px_28px_rgba(0,0,0,0.16)]',
+                          'rounded-[24px] px-5 py-4 text-sm transition-all',
                           isUser
-                            ? 'max-w-[80%] rounded-br-md bg-emerald-400 text-black'
-                            : message.kind === 'progress'
-                              ? 'max-w-[88%] rounded-bl-md border border-slate-200/80 bg-slate-50/95 text-slate-700 dark:border-white/[0.06] dark:bg-white/[0.035] dark:text-slate-200'
-                              : 'max-w-[88%] rounded-bl-md border border-slate-200/80 bg-white text-slate-800 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-slate-100',
+                            ? 'max-w-[80%] rounded-br-md bg-emerald-400 text-black shadow-[0_10px_24px_rgba(16,185,129,0.18)]'
+                            : isProgress
+                              ? 'max-w-[78%] rounded-bl-xl border border-slate-200/70 bg-slate-50/85 px-4 py-3 text-[13px] leading-6 text-slate-600 shadow-none dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-slate-300'
+                              : 'max-w-[88%] rounded-bl-md border border-slate-200/80 bg-white text-slate-800 shadow-[0_10px_24px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-slate-100 dark:shadow-[0_10px_28px_rgba(0,0,0,0.16)]',
                         )}
                       >
                         <div className={cn('mb-2 flex items-center gap-2 text-[10px]', isUser ? 'justify-end text-black/60' : 'text-slate-400 dark:text-slate-500')}>
-                          {!isUser && message.kind === 'progress' ? (
-                            <span className="uppercase tracking-[0.18em] text-amber-500 dark:text-amber-300">
+                          {isProgress ? (
+                            <span className="tracking-[0.18em] text-amber-500 dark:text-amber-300">
                               过程
                             </span>
                           ) : null}
@@ -556,16 +561,11 @@ export default function ThreadChat() {
             </div>
 
             <div className="border-t border-slate-200/70 px-5 py-2.5 dark:border-white/[0.06]">
-              <div className="rounded-[28px] border border-slate-200/70 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-3 shadow-[0_14px_30px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.018))] dark:shadow-[0_14px_35px_rgba(0,0,0,0.24)]">
+              <div className="rounded-[28px] border border-slate-200/70 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-2.5 shadow-[0_14px_30px_rgba(15,23,42,0.06)] dark:border-white/[0.08] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.018))] dark:shadow-[0_14px_35px_rgba(0,0,0,0.24)]">
                 <div className="relative" ref={knowledgePickerRef}>
-                  <div className="mb-2 flex items-center justify-between px-1">
+                  <div className="mb-1.5 flex items-center justify-between px-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-slate-500">知识库范围</p>
-                      {selectedProject ? (
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500 dark:bg-white/[0.06] dark:text-slate-400">
-                          {selectedProject}
-                        </span>
-                      ) : null}
+                      <p className="text-[11px] font-medium tracking-[0.18em] text-slate-500">知识库范围</p>
                     </div>
                     <p className="text-[11px] text-slate-400">
                       {selectedProject
@@ -576,7 +576,7 @@ export default function ThreadChat() {
                     </p>
                   </div>
 
-                  <div className="rounded-[22px] border border-emerald-200 bg-[linear-gradient(90deg,rgba(16,185,129,0.08),rgba(255,255,255,0.9))] px-3 py-2.5 dark:border-emerald-400/12 dark:bg-[linear-gradient(90deg,rgba(16,185,129,0.10),rgba(255,255,255,0.02))]">
+                  <div className="rounded-[20px] border border-emerald-200 bg-[linear-gradient(90deg,rgba(16,185,129,0.06),rgba(255,255,255,0.88))] px-3 py-2 dark:border-emerald-400/12 dark:bg-[linear-gradient(90deg,rgba(16,185,129,0.08),rgba(255,255,255,0.02))]">
                     <div className="flex items-center gap-2">
                       <Button
                         size="sm"
@@ -592,7 +592,7 @@ export default function ThreadChat() {
                       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap pr-1 [scrollbar-gutter:stable]">
                         {selectedKnowledgeBases.length === 0 ? (
                           <span className="text-xs text-slate-400">
-                            {selectedProject ? '不限制范围时，回答会基于默认上下文。' : '选择项目后可设置知识库范围。'}
+                            {selectedProject ? '当前未限制知识库范围' : '选择项目后可设置知识库范围'}
                           </span>
                         ) : (
                           selectedKnowledgeBases.map((base) => (
@@ -693,7 +693,7 @@ export default function ThreadChat() {
                   ) : null}
                 </div>
 
-                <div className="mt-3 flex items-end gap-3">
+                <div className="mt-2.5 flex items-end gap-3">
                   <div className="flex-1">
                     <Textarea
                       data-testid="desktop-chat-input"
@@ -716,11 +716,11 @@ export default function ThreadChat() {
                               : branding.sendPlaceholder
                       }
                       disabled={!serviceRunning || !transportReady || sending || !selectedProject || taskRunning}
-                      className="min-h-[74px] rounded-[22px] border-slate-200 bg-white px-4 py-3 text-[15px] leading-6 text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-[#090d12] dark:text-white dark:placeholder:text-slate-500"
+                      className="min-h-[68px] rounded-[22px] border-slate-200 bg-white px-4 py-3 text-[15px] leading-6 text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-[#090d12] dark:text-white dark:placeholder:text-slate-500"
                     />
-                    <div className="mt-2 flex items-center justify-between px-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    <div className="mt-1.5 flex items-center justify-between px-1 text-[11px] text-slate-500 dark:text-slate-400">
                       <span>Enter 发送，Shift + Enter 换行</span>
-                      <span>{selectedProject ? '知识库范围会随当前线程保存' : '请先选择项目'}</span>
+                      <span>{selectedProject ? '范围会随当前线程保存' : '请先选择项目'}</span>
                     </div>
                   </div>
                   {taskRunning ? (

@@ -110,7 +110,7 @@ export function useThreadChatSendingActions({
     const sessionKey = `desktop:${selectedProject}:${chatId}`;
     const created = await createSession(selectedProject, {
       session_key: sessionKey,
-      name: `Desktop ${new Date().toLocaleTimeString()}`,
+      name: `${brandingNewThreadLabel} ${new Date().toLocaleTimeString()}`,
     });
     const nextSessions = await refreshSessionsForProject(selectedProject);
     const matched = nextSessions.find((session) => session.bridgeSessionKey === sessionKey);
