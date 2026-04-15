@@ -22,6 +22,8 @@ export default function Header() {
   const [spinning, setSpinning] = useState(false);
   const desktopChat = supportsDesktopChat();
   const runtimeProvider = getRuntimeProvider();
+  const compactDesktopChatHeader =
+    pathname.startsWith('/chat') && desktopChat && runtimeProvider === 'electron';
 
   const matchedTitleKey =
     Object.entries(routeTitles).find(([path]) =>
@@ -45,27 +47,32 @@ export default function Header() {
   return (
     <header
       className={cn(
-        'h-14 flex items-center justify-between px-6 shrink-0',
+        compactDesktopChatHeader ? 'h-11 px-4' : 'h-14 px-6',
+        'flex items-center justify-between shrink-0',
         'border-b border-gray-200/80 dark:border-white/[0.08]',
         'bg-white/70 backdrop-blur-xl dark:bg-[rgba(0,0,0,0.72)] dark:backdrop-blur-xl'
       )}
     >
-      <h1 className="text-lg font-semibold text-gray-900 dark:text-white tracking-tight">
-        {t(titleKey)}
-      </h1>
-      <button
-        type="button"
-        onClick={handleRefresh}
-        className={cn(
-          'p-2 rounded-xl transition-all duration-200',
-          'text-gray-500 dark:text-gray-400',
-          'hover:bg-gray-100/90 dark:hover:bg-white/[0.08] hover:text-gray-800 dark:hover:text-white',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40'
-        )}
-        aria-label={t('common.refresh')}
-      >
-        <RefreshCw size={18} className={spinning ? 'animate-spin' : ''} />
-      </button>
+      {compactDesktopChatHeader ? <div /> : (
+        <h1 className="text-lg font-semibold text-gray-900 dark:text-white tracking-tight">
+          {t(titleKey)}
+        </h1>
+      )}
+      {compactDesktopChatHeader ? null : (
+        <button
+          type="button"
+          onClick={handleRefresh}
+          className={cn(
+            'p-2 rounded-xl transition-all duration-200',
+            'text-gray-500 dark:text-gray-400',
+            'hover:bg-gray-100/90 dark:hover:bg-white/[0.08] hover:text-gray-800 dark:hover:text-white',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40'
+          )}
+          aria-label={t('common.refresh')}
+        >
+          <RefreshCw size={18} className={spinning ? 'animate-spin' : ''} />
+        </button>
+      )}
     </header>
   );
 }

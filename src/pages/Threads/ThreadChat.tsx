@@ -179,7 +179,7 @@ export default function ThreadChat() {
 
   return (
     <>
-      <div className="h-[calc(100vh-8rem)] overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)] animate-fade-in dark:border-white/[0.06] dark:bg-[#0b0f14] dark:shadow-[0_20px_70px_rgba(0,0,0,0.28)]">
+      <div className="h-full overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)] animate-fade-in dark:border-white/[0.06] dark:bg-[#0b0f14] dark:shadow-[0_20px_70px_rgba(0,0,0,0.28)]">
         <div className="grid h-full grid-cols-[288px_minmax(0,1fr)]">
           <aside className="flex min-h-0 flex-col border-r border-slate-200/80 bg-[linear-gradient(180deg,#fbfcfe_0%,#f5f7fb_100%)] dark:border-white/[0.06] dark:bg-[linear-gradient(180deg,#10151c_0%,#0c1016_100%)]">
             <div className="border-b border-slate-200/80 px-4 py-4 dark:border-white/[0.06]">
@@ -592,21 +592,12 @@ export default function ThreadChat() {
               <div ref={endRef} />
             </div>
 
-            <div className="border-t border-slate-200/80 px-6 py-4 dark:border-white/[0.06]">
-              <div className="rounded-[26px] border border-slate-200/80 bg-white p-3 shadow-[0_10px_30px_rgba(15,23,42,0.05)] dark:border-white/[0.08] dark:bg-[#0f151c] dark:shadow-[0_14px_35px_rgba(0,0,0,0.20)]">
+            <div className="border-t border-slate-200/80 px-6 py-3 dark:border-white/[0.06]">
+              <div className="rounded-[24px] border border-slate-200/80 bg-white p-2.5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:border-white/[0.08] dark:bg-[#0f151c] dark:shadow-[0_12px_28px_rgba(0,0,0,0.20)]">
                 <div className="relative" ref={knowledgePickerRef}>
-                  <div className="rounded-[18px] border border-slate-200 bg-slate-50/80 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.03]">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-[11px] font-medium tracking-[0.16em] text-slate-500 dark:text-slate-400">知识库范围</p>
-                      <p className="text-[11px] text-slate-400">
-                        {selectedProject
-                          ? selectedKnowledgeCount > 0
-                            ? `已选 ${selectedKnowledgeCount} 个知识库`
-                            : '当前未限制知识库范围'
-                          : '请先选择项目'}
-                      </p>
-                    </div>
-                    <div className="mt-2 flex items-center gap-2">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-1.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
+                    <div className="flex items-center gap-2">
+                      <p className="shrink-0 text-[11px] font-medium text-slate-500 dark:text-slate-400">知识库范围</p>
                       <Button
                         size="sm"
                         variant="secondary"
@@ -643,6 +634,13 @@ export default function ThreadChat() {
                           ))
                         )}
                       </div>
+                      <p className="shrink-0 text-[11px] text-slate-400">
+                        {selectedProject
+                          ? selectedKnowledgeCount > 0
+                            ? `已选 ${selectedKnowledgeCount} 个`
+                            : '未限制'
+                          : '请先选项目'}
+                      </p>
                     </div>
                   </div>
 
@@ -722,7 +720,7 @@ export default function ThreadChat() {
                   ) : null}
                 </div>
 
-                <div className="mt-3 flex items-end gap-3">
+                <div className="mt-2.5 flex items-end gap-3">
                   <div className="flex-1">
                     <Textarea
                       data-testid="desktop-chat-input"
@@ -749,7 +747,7 @@ export default function ThreadChat() {
                       disabled={!serviceRunning || !transportReady || sending || !selectedProject || taskInputLocked}
                       className="min-h-[94px] rounded-[20px] border-slate-200 bg-white px-4 py-3 text-[15px] leading-6 text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-[#090d12] dark:text-white dark:placeholder:text-slate-500"
                     />
-                    <div className="mt-2 flex items-center justify-between px-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    <div className="mt-1.5 flex items-center justify-between px-1 text-[11px] text-slate-500 dark:text-slate-400">
                       <span>Enter 发送，Shift + Enter 换行</span>
                       <span>{selectedProject ? '范围会随当前线程保存' : '请先选择项目'}</span>
                     </div>

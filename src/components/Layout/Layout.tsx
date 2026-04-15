@@ -1,9 +1,14 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { cn } from '@/lib/utils';
+import { getRuntimeProvider, supportsDesktopChat } from '@/app/runtime';
 
 export default function Layout() {
+  const { pathname } = useLocation();
+  const compactDesktopChatLayout =
+    pathname.startsWith('/chat') && supportsDesktopChat() && getRuntimeProvider() === 'electron';
+
   return (
     <div
       className={cn(
@@ -14,8 +19,11 @@ export default function Layout() {
     >
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6">
+        {compactDesktopChatLayout ? null : <Header />}
+        <main className={cn(
+          'flex-1',
+          compactDesktopChatLayout ? 'overflow-hidden p-0' : 'overflow-y-auto p-6',
+        )}>
           <Outlet />
         </main>
       </div>
