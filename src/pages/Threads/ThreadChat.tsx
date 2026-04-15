@@ -296,17 +296,24 @@ export default function ThreadChat() {
                           data-testid="desktop-chat-session-row"
                           data-session-id={session.id}
                           data-project={group.project}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => void loadActiveSession(group.project, session.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              void loadActiveSession(group.project, session.id);
+                            }
+                          }}
                           className={cn(
-                            'group rounded-[22px] border px-4 py-3 transition-all duration-200',
+                            'group cursor-pointer rounded-[22px] border px-4 py-3 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-400/20',
                             session.id === activeSessionId
                               ? 'border-emerald-300/60 bg-white shadow-[0_16px_28px_rgba(16,185,129,0.08)] dark:border-emerald-400/30 dark:bg-white/[0.05] dark:shadow-[0_16px_35px_rgba(16,185,129,0.10)]'
                               : 'border-slate-200/80 bg-white/70 hover:-translate-y-[1px] hover:border-slate-300 hover:bg-white dark:border-white/[0.05] dark:bg-white/[0.03] dark:hover:border-white/[0.12] dark:hover:bg-white/[0.05]',
                           )}
                         >
                           <div className="flex items-start justify-between gap-3">
-                            <button
-                              type="button"
-                              onClick={() => void loadActiveSession(group.project, session.id)}
+                            <div
                               data-testid="desktop-chat-session-open"
                               data-session-id={session.id}
                               data-project={group.project}
@@ -342,13 +349,16 @@ export default function ThreadChat() {
                                   {session.bridgeSessionKey}
                                 </p>
                               ) : null}
-                            </button>
+                            </div>
 
                             <div className="flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => openRenameModal(group.project, session)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openRenameModal(group.project, session);
+                                }}
                                 data-testid="desktop-chat-session-rename"
                                 data-session-id={session.id}
                                 data-project={group.project}
@@ -363,13 +373,14 @@ export default function ThreadChat() {
                                 data-testid="desktop-chat-session-delete"
                                 data-session-id={session.id}
                                 data-project={group.project}
-                                onClick={() =>
+                                onClick={(event) => {
+                                  event.stopPropagation();
                                   setDeleteTarget({
                                     project: group.project,
                                     id: session.id,
                                     name: session.name,
-                                  })
-                                }
+                                  });
+                                }}
                               >
                                 <Trash2 size={14} />
                               </Button>
