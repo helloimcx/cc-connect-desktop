@@ -2,14 +2,17 @@ import { EventEmitter } from 'node:events';
 import {
   accessSync,
   chmodSync,
+  copyFileSync,
   constants,
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -33,23 +36,82 @@ const DEFAULT_PROJECT_NAME = 'desktop-demo';
 const MANAGEMENT_READY_TIMEOUT_MS = 20000;
 const MANAGEMENT_READY_POLL_MS = 300;
 const STOP_TIMEOUT_MS = 5000;
-const MANAGED_SKILLS_ROOT = join('.ai-workstation', 'skills');
+const AI_WORKSTATION_ROOT = '.ai-workstation';
+const MANAGED_SKILLS_ROOT = join(AI_WORKSTATION_ROOT, 'skills');
+const MANAGED_SKILLS_PACKAGES_DIR = join(MANAGED_SKILLS_ROOT, 'packages');
+const MANAGED_SKILLS_ACTIVE_DIR = join(MANAGED_SKILLS_ROOT, 'active');
+const MANAGED_TOOLS_ROOT = join(AI_WORKSTATION_ROOT, 'tools');
+const MANAGED_STATE_PATH = join(AI_WORKSTATION_ROOT, 'state', 'managed-skills.json');
 const AGENTS_SKILL_DIR = join('.agents', 'skills');
 const CLAUDE_SKILL_DIR = join('.claude', 'skills');
-const MANAGED_SKILLS = [
+
+type ManagedSkillMountTarget = 'agents' | 'claude';
+type ManagedSkillPostInstall =
+  | { type: 'none' }
+  | {
+      type: 'npm-tool';
+      toolId: string;
+      packageName: string;
+      version: string;
+      binName: string;
+      installArgs?: string[][];
+    };
+
+interface ManagedSkillManifestEntry {
+  id: string;
+  version: string;
+  sourceType: 'bundled';
+  bundlePath: string;
+  mountTargets: ManagedSkillMountTarget[];
+  executablePaths: string[];
+  postInstall: ManagedSkillPostInstall;
+}
+
+interface ManagedToolStateRecord {
+  version: string;
+  status: 'ready' | 'error';
+  installedAt?: string;
+  lastError?: string;
+}
+
+interface ManagedSkillStateRecord {
+  version: string;
+  installedAt?: string;
+  activePath?: string;
+}
+
+interface ManagedSkillsState {
+  skills: Record<string, ManagedSkillStateRecord>;
+  tools: Record<string, ManagedToolStateRecord>;
+}
+
+const MANAGED_SKILLS: ManagedSkillManifestEntry[] = [
   {
-    name: 'knowledge-base',
-    buildMarkdown: knowledgeSkillMarkdown,
-    scripts: [
-      {
-        relativePath: join('scripts', 'search-knowledge.sh'),
-        content: knowledgeSkillScript,
-        executable: true,
-      },
-    ],
+    id: 'knowledge-base',
+    version: '1.0.0',
+    sourceType: 'bundled',
+    bundlePath: resolve(process.cwd(), 'electron', 'managed-skills', 'knowledge-base'),
+    mountTargets: ['agents', 'claude'],
+    executablePaths: [join('scripts', 'search-knowledge.sh')],
+    postInstall: { type: 'none' },
   },
-] as const;
-type ManagedSkillDefinition = (typeof MANAGED_SKILLS)[number];
+  {
+    id: 'agent-browser',
+    version: '0.25.4',
+    sourceType: 'bundled',
+    bundlePath: resolve(process.cwd(), 'electron', 'managed-skills', 'agent-browser'),
+    mountTargets: ['agents', 'claude'],
+    executablePaths: [join('scripts', 'agent-browser.sh')],
+    postInstall: {
+      type: 'npm-tool',
+      toolId: 'agent-browser',
+      packageName: 'agent-browser',
+      version: '0.25.4',
+      binName: 'agent-browser',
+      installArgs: [['install']],
+    },
+  },
+];
 
 const DEFAULT_CONFIG_TEMPLATE = `# Managed by AI-WorkStation
 [log]
@@ -82,66 +144,6 @@ function randomToken() {
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
-}
-
-function knowledgeSkillMarkdown() {
-  return `---
-name: knowledge-base
----
-
-Use this skill when the user message includes a \`[Selected Knowledge Bases]\` block.
-
-- Only search the knowledge bases listed in that block.
-- Prefer the bundled script \`./scripts/search-knowledge.sh\` instead of writing inline \`curl\`.
-- Call the script with the user question first, followed by one or more knowledge-base IDs.
-- If the script reports no matches, tell the user the selected knowledge bases did not contain relevant content.
-- When you answer from retrieved content, cite the matching knowledge base ID or name.
-`;
-}
-
-function knowledgeSkillScript() {
-  return `#!/bin/sh
-set -u
-
-API_BASE="\${KNOWLEDGE_API_BASE_URL:-http://127.0.0.1:9831/api/local/v1}"
-LIMIT="\${KNOWLEDGE_SEARCH_LIMIT:-5}"
-
-escape_json() {
-  printf '%s' "$1" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g'
-}
-
-if [ "$#" -lt 2 ]; then
-  echo "Usage: search-knowledge.sh \\"<query>\\" \\"<kb_id_1>\\" [kb_id_2 ...]" >&2
-  exit 1
-fi
-
-QUERY="$1"
-shift
-ESCAPED_QUERY=$(escape_json "$QUERY")
-
-for KB_ID in "$@"; do
-  echo "=== Knowledge Base: $KB_ID ==="
-  RESPONSE=$(curl -fsS -X POST "$API_BASE/knowledge/bases/$KB_ID/search" \\
-    -H 'Content-Type: application/json' \\
-    --data "{\\"query\\":\\"$ESCAPED_QUERY\\",\\"limit\\":$LIMIT}" 2>&1)
-  STATUS=$?
-
-  if [ "$STATUS" -ne 0 ]; then
-    echo "Error: $RESPONSE"
-    echo
-    continue
-  fi
-
-  if printf '%s' "$RESPONSE" | grep -q '"results":[[:space:]]*\\[\\]'; then
-    echo "No results"
-    echo
-    continue
-  fi
-
-  printf '%s\\n' "$RESPONSE"
-  echo
-done
-`;
 }
 
 export class ServiceManager extends EventEmitter {
@@ -248,7 +250,7 @@ export class ServiceManager extends EventEmitter {
     mkdirSync(dirname(this.settings.configPath), { recursive: true });
     const normalized = this.normalizeLogicalConfig(config);
     writeFileSync(this.settings.configPath, TOML.stringify(normalized as any), 'utf8');
-    const warnings = this.syncKnowledgeSkills(normalized);
+    const warnings = this.syncManagedSkills(normalized);
     this.emit('state');
     const nextState = await this.readConfigState();
     return warnings.length > 0 ? { ...nextState, warnings } : nextState;
@@ -263,19 +265,25 @@ export class ServiceManager extends EventEmitter {
     return this.readConfigState();
   }
 
-  private syncKnowledgeSkills(config: DesktopConnectConfig) {
+  private syncManagedSkills(config: DesktopConnectConfig) {
     const projects = Array.isArray(config.projects) ? config.projects : [];
     const configDir = dirname(this.settings.configPath);
     const warnings: string[] = [];
+    const state = this.loadManagedSkillsState();
 
     for (const skill of MANAGED_SKILLS) {
       try {
-        this.ensureManagedSkillSource(skill);
+        warnings.push(...this.ensureManagedSkillInstalled(skill, state));
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         warnings.push(
-          `Managed bundled skill "${skill.name}" was not written to shared directory ${this.getManagedSkillsRoot()}: ${detail}`,
+          `Managed bundled skill "${skill.id}" was not installed from ${skill.bundlePath}: ${detail}`,
         );
+        state.skills[skill.id] = {
+          version: skill.version,
+          installedAt: state.skills[skill.id]?.installedAt,
+          activePath: state.skills[skill.id]?.activePath,
+        };
       }
     }
 
@@ -285,34 +293,68 @@ export class ServiceManager extends EventEmitter {
       const workDir = isAbsolute(rawWorkDir) ? rawWorkDir : resolve(configDir, rawWorkDir);
       for (const skill of MANAGED_SKILLS) {
         try {
-          const sharedSkillDir = this.getManagedSkillPath(skill.name);
-          if (!this.pathExists(sharedSkillDir)) {
+          const activeSkillDir = this.getManagedSkillActivePath(skill.id);
+          if (!this.pathExists(activeSkillDir)) {
             continue;
           }
-          this.ensureWorkspaceSkillLink(workDir, AGENTS_SKILL_DIR, skill.name, sharedSkillDir);
-          this.ensureWorkspaceSkillLink(workDir, CLAUDE_SKILL_DIR, skill.name, sharedSkillDir);
+          for (const mountTarget of skill.mountTargets) {
+            this.ensureWorkspaceSkillLink(workDir, this.resolveSkillMountRoot(mountTarget), skill.id, activeSkillDir);
+          }
         } catch (error) {
           const detail = error instanceof Error ? error.message : String(error);
           warnings.push(
-            `Managed bundled skill "${skill.name}" was not linked for project "${projectName}" at ${workDir}: ${detail}`,
+            `Managed bundled skill "${skill.id}" was not linked for project "${projectName}" at ${workDir}: ${detail}`,
           );
         }
       }
     });
 
+    try {
+      this.saveManagedSkillsState(state);
+    } catch (error) {
+      this.pushLog(`Failed to write managed skills state: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return warnings;
   }
 
-  private ensureManagedSkillSource(skill: ManagedSkillDefinition) {
-    const skillDir = this.getManagedSkillPath(skill.name);
-    mkdirSync(skillDir, { recursive: true });
-    writeFileSync(join(skillDir, 'SKILL.md'), skill.buildMarkdown(), 'utf8');
-    for (const script of skill.scripts) {
-      const scriptPath = join(skillDir, script.relativePath);
-      mkdirSync(dirname(scriptPath), { recursive: true });
-      writeFileSync(scriptPath, script.content(), 'utf8');
-      if (script.executable) {
-        chmodSync(scriptPath, 0o755);
+  private ensureManagedSkillInstalled(skill: ManagedSkillManifestEntry, state: ManagedSkillsState) {
+    this.ensureBundledSkillPackage(skill);
+    const packagePath = this.getManagedSkillPackagePath(skill.id, skill.version);
+    const activePath = this.getManagedSkillActivePath(skill.id);
+    mkdirSync(dirname(activePath), { recursive: true });
+    this.replaceWithSymlink(activePath, packagePath);
+
+    const warnings: string[] = [];
+    if (skill.postInstall.type === 'npm-tool') {
+      const toolWarning = this.ensureManagedNpmToolInstalled(skill.postInstall, state);
+      if (toolWarning) {
+        warnings.push(toolWarning);
+      }
+    }
+
+    state.skills[skill.id] = {
+      version: skill.version,
+      installedAt: new Date().toISOString(),
+      activePath,
+    };
+    return warnings;
+  }
+
+  private ensureBundledSkillPackage(skill: ManagedSkillManifestEntry) {
+    if (!this.pathExists(skill.bundlePath)) {
+      throw new Error(`bundle path does not exist: ${skill.bundlePath}`);
+    }
+    const packagePath = this.getManagedSkillPackagePath(skill.id, skill.version);
+    const expectedSkillFile = join(packagePath, 'SKILL.md');
+    if (!this.pathExists(expectedSkillFile)) {
+      rmSync(packagePath, { recursive: true, force: true });
+      mkdirSync(dirname(packagePath), { recursive: true });
+      this.copyDirectory(skill.bundlePath, packagePath);
+    }
+    for (const relativePath of skill.executablePaths) {
+      const executablePath = join(packagePath, relativePath);
+      if (this.pathExists(executablePath)) {
+        chmodSync(executablePath, 0o755);
       }
     }
   }
@@ -323,12 +365,188 @@ export class ServiceManager extends EventEmitter {
     this.replaceWithSymlink(linkPath, targetPath, true);
   }
 
+  private resolveSkillMountRoot(target: ManagedSkillMountTarget) {
+    return target === 'agents' ? AGENTS_SKILL_DIR : CLAUDE_SKILL_DIR;
+  }
+
+  private getAiWorkstationRoot() {
+    return join(homedir(), AI_WORKSTATION_ROOT);
+  }
+
   private getManagedSkillsRoot() {
     return join(homedir(), MANAGED_SKILLS_ROOT);
   }
 
-  private getManagedSkillPath(skillName: string) {
-    return join(this.getManagedSkillsRoot(), skillName);
+  private getManagedSkillPackagePath(skillId: string, version: string) {
+    return join(homedir(), MANAGED_SKILLS_PACKAGES_DIR, skillId, version);
+  }
+
+  private getManagedSkillActivePath(skillId: string) {
+    return join(homedir(), MANAGED_SKILLS_ACTIVE_DIR, skillId);
+  }
+
+  private getManagedToolsRoot() {
+    return join(homedir(), MANAGED_TOOLS_ROOT);
+  }
+
+  private getManagedToolVersionPath(toolId: string, version: string) {
+    return join(this.getManagedToolsRoot(), toolId, version);
+  }
+
+  private getManagedToolCurrentPath(toolId: string) {
+    return join(this.getManagedToolsRoot(), toolId, 'current');
+  }
+
+  private getManagedStatePath() {
+    return join(homedir(), MANAGED_STATE_PATH);
+  }
+
+  private ensureManagedNpmToolInstalled(postInstall: Extract<ManagedSkillPostInstall, { type: 'npm-tool' }>, state: ManagedSkillsState) {
+    const npmCheck = spawnSync('npm', ['--version'], { encoding: 'utf8' });
+    if (npmCheck.status !== 0) {
+      const warning = `Managed tool "${postInstall.toolId}" was not installed: npm is not available on this machine`;
+      state.tools[postInstall.toolId] = {
+        version: postInstall.version,
+        status: 'error',
+        lastError: warning,
+      };
+      return warning;
+    }
+
+    const versionPath = this.getManagedToolVersionPath(postInstall.toolId, postInstall.version);
+    const currentPath = this.getManagedToolCurrentPath(postInstall.toolId);
+    const wrapperPath = join(versionPath, 'bin', postInstall.binName);
+
+    if (!this.isExecutablePath(wrapperPath)) {
+      mkdirSync(versionPath, { recursive: true });
+      const packageJsonPath = join(versionPath, 'package.json');
+      if (!this.pathExists(packageJsonPath)) {
+        writeFileSync(
+          packageJsonPath,
+          JSON.stringify(
+            {
+              private: true,
+              name: `ai-workstation-managed-tool-${postInstall.toolId}`,
+              version: postInstall.version,
+            },
+            null,
+            2,
+          ),
+          'utf8',
+        );
+      }
+      const installResult = spawnSync(
+        'npm',
+        ['install', '--no-save', '--no-package-lock', '--no-audit', '--no-fund', `${postInstall.packageName}@${postInstall.version}`],
+        {
+          cwd: versionPath,
+          env: {
+            ...process.env,
+            AI_WORKSTATION_HOME: this.getAiWorkstationRoot(),
+          },
+          encoding: 'utf8',
+        },
+      );
+      if (installResult.status !== 0) {
+        const warning = `Managed tool "${postInstall.toolId}" install failed: ${(installResult.stderr || installResult.stdout || 'npm install failed').trim()}`;
+        state.tools[postInstall.toolId] = {
+          version: postInstall.version,
+          status: 'error',
+          lastError: warning,
+        };
+        return warning;
+      }
+
+      const localBinaryPath = join(versionPath, 'node_modules', '.bin', postInstall.binName);
+      if (!this.isExecutablePath(localBinaryPath)) {
+        const warning = `Managed tool "${postInstall.toolId}" install failed: local binary ${localBinaryPath} was not created`;
+        state.tools[postInstall.toolId] = {
+          version: postInstall.version,
+          status: 'error',
+          lastError: warning,
+        };
+        return warning;
+      }
+
+      mkdirSync(dirname(wrapperPath), { recursive: true });
+      writeFileSync(
+        wrapperPath,
+        `#!/bin/sh
+set -eu
+ROOT_DIR=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+BIN="$ROOT_DIR/node_modules/.bin/${postInstall.binName}"
+exec "$BIN" "$@"
+`,
+        'utf8',
+      );
+      chmodSync(wrapperPath, 0o755);
+
+      for (const args of postInstall.installArgs || []) {
+        const setupResult = spawnSync(wrapperPath, args, {
+          cwd: versionPath,
+          env: {
+            ...process.env,
+            AI_WORKSTATION_HOME: this.getAiWorkstationRoot(),
+          },
+          encoding: 'utf8',
+        });
+        if (setupResult.status !== 0) {
+          const warning = `Managed tool "${postInstall.toolId}" setup failed: ${(setupResult.stderr || setupResult.stdout || args.join(' ')).trim()}`;
+          state.tools[postInstall.toolId] = {
+            version: postInstall.version,
+            status: 'error',
+            lastError: warning,
+          };
+          return warning;
+        }
+      }
+    }
+
+    mkdirSync(dirname(currentPath), { recursive: true });
+    this.replaceWithSymlink(currentPath, versionPath);
+    state.tools[postInstall.toolId] = {
+      version: postInstall.version,
+      status: 'ready',
+      installedAt: new Date().toISOString(),
+    };
+    return null;
+  }
+
+  private copyDirectory(sourcePath: string, targetPath: string) {
+    const sourceStat = statSync(sourcePath);
+    if (!sourceStat.isDirectory()) {
+      throw new Error(`bundle path is not a directory: ${sourcePath}`);
+    }
+    mkdirSync(targetPath, { recursive: true });
+    for (const entry of readdirSync(sourcePath, { withFileTypes: true })) {
+      const sourceEntryPath = join(sourcePath, entry.name);
+      const targetEntryPath = join(targetPath, entry.name);
+      if (entry.isDirectory()) {
+        this.copyDirectory(sourceEntryPath, targetEntryPath);
+      } else if (entry.isFile()) {
+        mkdirSync(dirname(targetEntryPath), { recursive: true });
+        copyFileSync(sourceEntryPath, targetEntryPath);
+      }
+    }
+  }
+
+  private loadManagedSkillsState(): ManagedSkillsState {
+    const path = this.getManagedStatePath();
+    try {
+      const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<ManagedSkillsState>;
+      return {
+        skills: raw.skills && typeof raw.skills === 'object' ? raw.skills as ManagedSkillsState['skills'] : {},
+        tools: raw.tools && typeof raw.tools === 'object' ? raw.tools as ManagedSkillsState['tools'] : {},
+      };
+    } catch {
+      return { skills: {}, tools: {} };
+    }
+  }
+
+  private saveManagedSkillsState(state: ManagedSkillsState) {
+    const path = this.getManagedStatePath();
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(state, null, 2), 'utf8');
   }
 
   private replaceWithSymlink(linkPath: string, targetPath: string, backupExisting = false) {
