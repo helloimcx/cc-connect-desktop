@@ -1170,6 +1170,186 @@ async function runSmokeTest() {
     );
     record('chat_completed_turn_restored_idle', completedTurnRestoredIdle);
 
+    const secondBlankChatStarted = await window.webContents.executeJavaScript(
+      `(() => {
+        const button = document.querySelector('[data-testid="desktop-chat-new-chat"]');
+        if (!(button instanceof HTMLButtonElement)) {
+          return false;
+        }
+        button.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!secondBlankChatStarted) {
+      throw new Error('Smoke test could not create a second blank desktop chat');
+    }
+    record('chat_second_blank_requested');
+
+    const secondBlankChatVisible = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const title = document.querySelector('[data-testid="desktop-chat-active-title"]')?.textContent?.trim() || '';
+            const hash = window.location.hash || '';
+            const query = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+            const session = new URLSearchParams(query).get('session');
+            return title === '新桌面对话' && !session ? { title } : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'second blank chat visible' },
+    );
+    record('chat_second_blank_visible', secondBlankChatVisible);
+
+    await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const row = document.querySelector('[data-testid="desktop-chat-session-row"][data-session-id="${activeDesktopSessionId}"]');
+            return row instanceof HTMLElement ? true : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'existing session row visible after second blank chat' },
+    );
+
+    const switchedBackToExistingSession = await window.webContents.executeJavaScript(
+      `(() => {
+        const row = document.querySelector('[data-testid="desktop-chat-session-row"][data-session-id="${activeDesktopSessionId}"]');
+        if (!(row instanceof HTMLElement)) {
+          return false;
+        }
+        row.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!switchedBackToExistingSession) {
+      throw new Error('Smoke test could not click the existing desktop chat after creating a blank one');
+    }
+    record('chat_switch_back_to_existing_requested', { sessionId: activeDesktopSessionId });
+
+    const switchedBackToExistingDetail = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const title = document.querySelector('[data-testid="desktop-chat-active-title"]')?.textContent?.trim() || '';
+            const hash = window.location.hash || '';
+            const query = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+            const session = new URLSearchParams(query).get('session');
+            const finalMessages = Array.from(document.querySelectorAll('[data-testid="desktop-chat-message"][data-role="assistant"][data-kind="final"]'));
+            return session === "${activeDesktopSessionId}" && title !== '新桌面对话' && finalMessages.length > 0
+              ? { title, session, finalCount: finalMessages.length }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'switch back to existing chat detail' },
+    );
+    record('chat_switch_back_to_existing_succeeded', switchedBackToExistingDetail);
+
+    const awaitingInputSession = await waitFor(
+      async () => {
+        const detail = await latestDesktopSessionDetail(activeDesktopSessionId);
+        return detail?.sessionKey ? detail : null;
+      },
+      { timeoutMs: 15000, label: 'active session detail for awaiting input prompt' },
+    );
+    const awaitingInputReplyCtx = `smoke-awaiting-input-${Date.now()}`;
+    emitSmokeBridgeEvent({
+      type: 'reply',
+      sessionKey: awaitingInputSession.sessionKey,
+      replyCtx: awaitingInputReplyCtx,
+      content: 'Agent 提问 (1/3)\n请直接输入你的回答。',
+    });
+    record('chat_awaiting_input_injected', {
+      sessionId: awaitingInputSession.sessionId,
+      sessionKey: awaitingInputSession.sessionKey,
+      replyCtx: awaitingInputReplyCtx,
+    });
+
+    const awaitingInputVisible = await waitFor(
+      async () => {
+        const result = await window.webContents.executeJavaScript(
+          `(() => {
+            const bodyText = document.body?.innerText || '';
+            const input = document.querySelector('[data-testid="desktop-chat-input"]');
+            const send = document.querySelector('[data-testid="desktop-chat-send"]');
+            const stop = document.querySelector('[data-testid="desktop-chat-stop-task"]');
+            const hint = document.querySelector('[data-testid="desktop-chat-task-hint"]')?.textContent?.trim() || '';
+            return bodyText.includes('Agent 提问 (1/3)') &&
+              (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) &&
+              !input.disabled &&
+              send instanceof HTMLButtonElement &&
+              !stop &&
+              hint.includes('waiting for your reply')
+              ? { hint, sendVisible: true }
+              : null;
+          })()`,
+          true,
+        );
+        return result || null;
+      },
+      { timeoutMs: 15000, label: 'awaiting input state visible and unlocked' },
+    );
+    record('chat_awaiting_input_visible', awaitingInputVisible);
+
+    const awaitingInputResponseSent = await window.webContents.executeJavaScript(
+      `(() => {
+        const input = document.querySelector('[data-testid="desktop-chat-input"]');
+        const send = document.querySelector('[data-testid="desktop-chat-send"]');
+        if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) || !(send instanceof HTMLButtonElement)) {
+          return false;
+        }
+        const setter = input instanceof HTMLTextAreaElement
+          ? Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+          : Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        setter?.call(input, '选项 1');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        send.click();
+        return true;
+      })()`,
+      true,
+    );
+    if (!awaitingInputResponseSent) {
+      throw new Error('Smoke test could not send a reply while agent was awaiting input');
+    }
+    record('chat_awaiting_input_response_clicked');
+
+    const awaitingInputBridgeSend = await waitFor(
+      async () => {
+        const sent = [...smokeBridgeSendInputs].reverse().find((input) => input.content === '选项 1');
+        return sent
+          ? {
+              content: sent.content,
+              project: sent.project,
+              chatId: sent.chatId,
+            }
+          : null;
+      },
+      { timeoutMs: 15000, label: 'awaiting input bridge send' },
+    );
+    record('chat_awaiting_input_response_sent', awaitingInputBridgeSend);
+
+    emitSmokeBridgeEvent({
+      type: 'reply',
+      sessionKey: awaitingInputSession.sessionKey,
+      replyCtx: `${awaitingInputReplyCtx}-resolved`,
+      content: '收到，继续处理。',
+    });
+    emitSmokeBridgeEvent({
+      type: 'typing_stop',
+      sessionKey: awaitingInputSession.sessionKey,
+      replyCtx: `${awaitingInputReplyCtx}-resolved`,
+    });
+
     const chatMessageOrderValid = await waitFor(
       async () => {
         const result = await window.webContents.executeJavaScript(
