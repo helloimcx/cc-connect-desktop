@@ -19,6 +19,7 @@ type UseThreadChatBridgeInput = {
   refreshThreadsForWorkspace: (workspaceId: string) => Promise<unknown>;
   reserveAssistantMessageOrder: (sessionKey?: string) => number;
   reserveNextMessageOrder: () => number;
+  settlePreviewMessages: (turnKey?: string) => void;
   setActiveRunId: Dispatch<SetStateAction<string>>;
   setBridgeError: Dispatch<SetStateAction<string>>;
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
@@ -49,6 +50,7 @@ export function useThreadChatBridge(input: UseThreadChatBridgeInput) {
     progressSequenceByTurnRef: input.progressSequenceByTurnRef,
     refreshThreadsForWorkspace: input.refreshThreadsForWorkspace,
     reserveAssistantMessageOrder: input.reserveAssistantMessageOrder,
+    settlePreviewMessages: input.settlePreviewMessages,
     setBridgeError: input.setBridgeError,
     setMessages: input.setMessages,
     setTyping: input.setTyping,
@@ -69,6 +71,7 @@ export function useThreadChatBridge(input: UseThreadChatBridgeInput) {
     runtimeProvider: input.runtimeProvider,
     selectedWorkspaceId: input.selectedWorkspaceId,
     sendAction: input.sendAction,
+    settlePreviewMessages: input.settlePreviewMessages,
     setActiveRunId: input.setActiveRunId,
     setBridgeError: input.setBridgeError,
     setMessages: input.setMessages,

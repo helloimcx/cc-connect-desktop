@@ -24,6 +24,7 @@ import type {
   KnowledgeSearchInput,
   KnowledgeSearchResult,
   KnowledgeUploadResult,
+  WorkspaceStreamingProbeResult,
   ThreadDetail,
   ThreadSummary,
   WorkspaceSummary,
@@ -72,6 +73,7 @@ export interface LocalAiCoreBindings extends EventEmitter {
   deleteKnowledgeBaseFile(knowledgeBaseId: string, fileId: string): Promise<{ deleted: boolean }>;
   searchKnowledgeBase(knowledgeBaseId: string, input: KnowledgeSearchInput): Promise<KnowledgeSearchResult[]>;
   getCapabilities(): Promise<LocalCoreCapabilities>;
+  probeWorkspaceStreaming(workspaceId: string): Promise<WorkspaceStreamingProbeResult>;
 }
 
 interface LocalAiCoreServerOptions {
@@ -396,6 +398,11 @@ export class LocalAiCoreServer {
       }
       if (req.method === 'GET' && path === '/api/local/v1/capabilities') {
         json(res, 200, await this.bindings.getCapabilities());
+        return;
+      }
+      if (req.method === 'POST' && path.startsWith('/api/local/v1/workspaces/') && path.endsWith('/streaming-probe')) {
+        const workspaceId = decodeURIComponent(path.slice('/api/local/v1/workspaces/'.length, -'/streaming-probe'.length));
+        json(res, 200, await this.bindings.probeWorkspaceStreaming(workspaceId));
         return;
       }
       if (req.method === 'GET' && path === '/api/local/v1/events') {

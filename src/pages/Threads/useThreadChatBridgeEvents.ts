@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { onBridgeEvent } from '@/api/desktop';
 import { getRuntimeBranding } from '@/lib/runtime-branding';
 import {
+  isAcpAgentType,
   supportsInteractivePermission,
   type DesktopBridgeEvent,
 } from '../../../shared/desktop';
@@ -36,6 +37,7 @@ type UseThreadChatBridgeEventsInput = {
   nextProgressMessageId: (replyCtx?: string) => string;
   reserveAssistantMessageOrder: (sessionKey?: string) => number;
   armReplyTimeout: (mode?: 'reply' | 'permission_continue') => void;
+  settlePreviewMessages: (turnKey?: string) => void;
 } & Pick<ThreadChatSharedHookContext, 'clearLocalCorePolling' | 'clearReplyTimeout' | 'updateTaskState'> &
   Pick<ThreadChatSharedHookContext, 'refreshThreadsForWorkspace' | 'setBridgeError' | 'setMessages' | 'setTyping'> &
   Pick<ThreadChatActiveThreadIdentity, 'activeBridgeSessionKey' | 'activeAgentType'> &
@@ -54,12 +56,14 @@ export function useThreadChatBridgeEvents({
   progressSequenceByTurnRef,
   refreshThreadsForWorkspace,
   reserveAssistantMessageOrder,
+  settlePreviewMessages,
   setBridgeError,
   setMessages,
   setTyping,
   taskStateRef,
   updateTaskState,
 }: UseThreadChatBridgeEventsInput) {
+  const acpStreamingPreview = isAcpAgentType(activeAgentType);
   const promoteStreamingState = useCallback((reason: string) => {
     if (canStreamingPromoteTaskState(taskStateRef.current)) {
       updateTaskState('running', reason);
@@ -92,18 +96,23 @@ export function useThreadChatBridgeEvents({
           updateTaskState('awaiting_input', 'bridge-preview-awaiting-input');
           setBridgeError('');
           setMessages((current) => {
-            const previewId = event.previewHandle || crypto.randomUUID();
-            const existing = current.find((message) => message.id === previewId);
-            const next = current.filter((message) => !(message.preview && message.id === previewId));
+            const existing = current.find((message) =>
+              (event.previewHandle && message.id === event.previewHandle) ||
+              (message.preview && event.replyCtx && message.turnKey === event.replyCtx),
+            );
+            const previewId = existing?.id || event.previewHandle || `${event.replyCtx || crypto.randomUUID()}-preview`;
+            const next = current.filter((message) => message.id !== previewId);
             next.push({
               id: previewId,
               role: 'assistant',
-              content: event.content || '',
+              content: acpStreamingPreview ? existing?.content || '' : event.content || '',
+              streamTargetContent: acpStreamingPreview ? event.content || '' : undefined,
               kind: 'progress',
               order: existing?.order ?? reserveAssistantMessageOrder(event.sessionKey),
               timestamp: existing?.timestamp || new Date().toISOString(),
               turnKey: event.replyCtx,
               preview: true,
+              previewPlainText: acpStreamingPreview,
             });
             return next;
           });
@@ -115,18 +124,23 @@ export function useThreadChatBridgeEvents({
         armReplyTimeout();
         setBridgeError('');
         setMessages((current) => {
-          const previewId = event.previewHandle || crypto.randomUUID();
-          const existing = current.find((message) => message.id === previewId);
-          const next = current.filter((message) => !(message.preview && message.id === previewId));
+          const existing = current.find((message) =>
+            (event.previewHandle && message.id === event.previewHandle) ||
+            (message.preview && event.replyCtx && message.turnKey === event.replyCtx),
+          );
+          const previewId = existing?.id || event.previewHandle || `${event.replyCtx || crypto.randomUUID()}-preview`;
+          const next = current.filter((message) => message.id !== previewId);
           next.push({
             id: previewId,
             role: 'assistant',
-            content: event.content || '',
+            content: acpStreamingPreview ? existing?.content || '' : event.content || '',
+            streamTargetContent: acpStreamingPreview ? event.content || '' : undefined,
             kind: 'progress',
             order: existing?.order ?? reserveAssistantMessageOrder(event.sessionKey),
             timestamp: existing?.timestamp || new Date().toISOString(),
             turnKey: event.replyCtx,
             preview: true,
+            previewPlainText: acpStreamingPreview,
           });
           return next;
         });
@@ -140,23 +154,40 @@ export function useThreadChatBridgeEvents({
           updateTaskState('awaiting_input', 'bridge-update-awaiting-input');
           setBridgeError('');
           setMessages((current) =>
-            current.some((message) => message.id === event.previewHandle)
-              ? current.map((message) =>
-                  message.id === event.previewHandle ? { ...message, content: event.content || '' } : message,
-                )
-              : [
-                  ...current,
-                  {
-                    id: event.previewHandle || crypto.randomUUID(),
-                    role: 'assistant',
-                    content: event.content || '',
-                    kind: 'progress',
-                    order: reserveAssistantMessageOrder(event.sessionKey),
-                    timestamp: new Date().toISOString(),
-                    turnKey: event.replyCtx,
-                    preview: true,
-                  },
-                ],
+            {
+              const existing = current.find((message) =>
+                (event.previewHandle && message.id === event.previewHandle) ||
+                (message.preview && event.replyCtx && message.turnKey === event.replyCtx),
+              );
+              if (existing) {
+                return current.map((message) =>
+                  message.id === existing.id
+                    ? {
+                        ...message,
+                        content: acpStreamingPreview ? message.content : event.content || '',
+                        streamTargetContent: acpStreamingPreview ? event.content || '' : undefined,
+                        preview: true,
+                        previewPlainText: acpStreamingPreview,
+                      }
+                    : message,
+                );
+              }
+              return [
+                ...current,
+                {
+                  id: event.previewHandle || `${event.replyCtx || crypto.randomUUID()}-preview`,
+                  role: 'assistant',
+                  content: acpStreamingPreview ? '' : event.content || '',
+                  streamTargetContent: acpStreamingPreview ? event.content || '' : undefined,
+                  kind: 'progress',
+                  order: reserveAssistantMessageOrder(event.sessionKey),
+                  timestamp: new Date().toISOString(),
+                  turnKey: event.replyCtx,
+                  preview: true,
+                  previewPlainText: acpStreamingPreview,
+                },
+              ];
+            },
           );
           break;
         }
@@ -166,23 +197,40 @@ export function useThreadChatBridgeEvents({
         armReplyTimeout();
         setBridgeError('');
         setMessages((current) =>
-          current.some((message) => message.id === event.previewHandle)
-            ? current.map((message) =>
-                message.id === event.previewHandle ? { ...message, content: event.content || '' } : message,
-              )
-            : [
-                ...current,
-                {
-                  id: event.previewHandle || crypto.randomUUID(),
-                  role: 'assistant',
-                  content: event.content || '',
-                  kind: 'progress',
-                  order: reserveAssistantMessageOrder(event.sessionKey),
-                  timestamp: new Date().toISOString(),
-                  turnKey: event.replyCtx,
-                  preview: true,
-                },
-              ],
+          {
+            const existing = current.find((message) =>
+              (event.previewHandle && message.id === event.previewHandle) ||
+              (message.preview && event.replyCtx && message.turnKey === event.replyCtx),
+            );
+            if (existing) {
+              return current.map((message) =>
+                message.id === existing.id
+                  ? {
+                      ...message,
+                      content: acpStreamingPreview ? message.content : event.content || '',
+                      streamTargetContent: acpStreamingPreview ? event.content || '' : undefined,
+                      preview: true,
+                      previewPlainText: acpStreamingPreview,
+                    }
+                  : message,
+              );
+            }
+            return [
+              ...current,
+              {
+                id: event.previewHandle || `${event.replyCtx || crypto.randomUUID()}-preview`,
+                role: 'assistant',
+                content: acpStreamingPreview ? '' : event.content || '',
+                streamTargetContent: acpStreamingPreview ? event.content || '' : undefined,
+                kind: 'progress',
+                order: reserveAssistantMessageOrder(event.sessionKey),
+                timestamp: new Date().toISOString(),
+                turnKey: event.replyCtx,
+                preview: true,
+                previewPlainText: acpStreamingPreview,
+              },
+            ];
+          },
         );
         break;
       case 'delete_message':
@@ -201,6 +249,7 @@ export function useThreadChatBridgeEvents({
         pendingTurnRef.current = null;
         clearActionStatuses();
         updateTaskState('idle', 'bridge-typing-stop');
+        settlePreviewMessages(event.replyCtx);
         finalizeTurnMessages(event.replyCtx);
         break;
       case 'reply': {
@@ -222,7 +271,10 @@ export function useThreadChatBridgeEvents({
         }
         setBridgeError('');
         setMessages((current) => [
-          ...current.filter((message) => !(message.preview && message.turnKey === event.replyCtx)),
+          ...current.filter((message) =>
+            !(message.preview && message.turnKey === event.replyCtx) &&
+            message.id !== replyMessageId
+          ),
           {
             id: replyMessageId,
             role: 'assistant',
@@ -241,6 +293,7 @@ export function useThreadChatBridgeEvents({
         pendingTurnRef.current = null;
         setBridgeError('');
         clearActionStatuses();
+        settlePreviewMessages(event.replyCtx);
         setMessages((current) => {
           const messageId = `${event.replyCtx || crypto.randomUUID()}-buttons`;
           const actionRows = normalizeBridgeActionRows(event.buttonRows || event.buttons);
@@ -307,6 +360,7 @@ export function useThreadChatBridgeEvents({
         pendingTurnRef.current = null;
         clearActionStatuses();
         updateTaskState('idle', 'bridge-card');
+        settlePreviewMessages(event.replyCtx);
         finalizeTurnMessages(event.replyCtx);
         setBridgeError('');
         setMessages((current) => [
@@ -324,6 +378,7 @@ export function useThreadChatBridgeEvents({
         break;
     }
   }, [
+    acpStreamingPreview,
     activeAgentType,
     activeBridgeSessionKey,
     armReplyTimeout,
@@ -335,6 +390,7 @@ export function useThreadChatBridgeEvents({
     progressSequenceByTurnRef,
     refreshThreadsForWorkspace,
     reserveAssistantMessageOrder,
+    settlePreviewMessages,
     setBridgeError,
     setMessages,
     setTyping,

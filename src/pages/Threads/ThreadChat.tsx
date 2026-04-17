@@ -118,6 +118,10 @@ export default function ThreadChat() {
     }
     return filteredSessionGroups.filter((group) => group.project === selectedProject);
   }, [filteredSessionGroups, selectedProject]);
+  const visibleProjects = useMemo(
+    () => (selectedProject && !projects.includes(selectedProject) ? [selectedProject, ...projects] : projects),
+    [projects, selectedProject],
+  );
 
   const hasVisibleSessions = useMemo(
     () => visibleSessionGroups.some((group) => group.sessions.length > 0),
@@ -212,7 +216,7 @@ export default function ThreadChat() {
                     className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-emerald-400/50 focus:ring-2 focus:ring-emerald-400/15 dark:border-white/[0.08] dark:bg-[#0b1016] dark:text-white"
                   >
                     <option value="">{branding.scopeSelectPlaceholder}</option>
-                    {projects.map((project) => (
+                    {visibleProjects.map((project) => (
                       <option key={project} value={project}>
                         {project}
                       </option>
@@ -523,7 +527,13 @@ export default function ThreadChat() {
                                 <span data-testid="desktop-chat-message-timestamp">{formatMessageTimestamp(message.timestamp)}</span>
                               ) : null}
                             </div>
-                            <ChatMarkdown content={message.content} isUser={isUser} />
+                            {!isUser && message.preview && message.previewPlainText ? (
+                              <div className="whitespace-pre-wrap break-words text-[13px] leading-6 text-inherit">
+                                {message.content}
+                              </div>
+                            ) : (
+                              <ChatMarkdown content={message.content} isUser={isUser} />
+                            )}
                             {!isUser && message.actions && message.actions.length > 0 ? (
                               <div className="mt-4 space-y-2">
                                 {message.actions.map((row, rowIndex) => (

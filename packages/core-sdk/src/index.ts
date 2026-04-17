@@ -20,6 +20,7 @@ import type {
   KnowledgeSource,
   LocalCoreCapabilities,
   LocalCoreEvent,
+  WorkspaceStreamingProbeResult,
   ThreadDetail,
   ThreadSummary,
   WorkspaceSummary,
@@ -315,6 +316,13 @@ export async function getCapabilities() {
   return coreRequest<LocalCoreCapabilities>('GET', '/capabilities');
 }
 
+export async function probeWorkspaceStreaming(workspaceId: string) {
+  return coreRequest<WorkspaceStreamingProbeResult>(
+    'POST',
+    `/workspaces/${encodeURIComponent(workspaceId)}/streaming-probe`,
+  );
+}
+
 export function onRuntimeUpdated(listener: (runtime: DesktopRuntimeStatus) => void) {
   return subscribeEvents((event) => {
     if (event.type === 'runtime.updated') {
@@ -331,8 +339,7 @@ export function onBridgeUpdated(listener: (event: DesktopBridgeEvent) => void) {
     if (
       event.type === 'message.created' ||
       event.type === 'message.updated' ||
-      event.type === 'run.updated' ||
-      event.type === 'presence.updated'
+      event.type === 'run.updated'
     ) {
       if ('bridge' in event && event.bridge) {
         listener(event.bridge);

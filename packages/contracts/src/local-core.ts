@@ -159,6 +159,37 @@ export interface LocalCoreCapabilities {
   };
 }
 
+export interface WorkspaceStreamingProbeEvent {
+  type: DesktopBridgeEvent['type'];
+  at: string;
+  contentLength: number;
+  previewHandle?: string;
+}
+
+export interface WorkspaceStreamingProbeResult {
+  workspaceId: string;
+  agentType: string;
+  transport: 'cc-connect' | 'localcore-acp';
+  prompt: string;
+  passed: boolean;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  threadId?: string;
+  sessionKey?: string;
+  error?: string;
+  criteria: {
+    sawTypingStart: boolean;
+    sawTypingStop: boolean;
+    previewBeforeFinal: boolean;
+    updateMessageCount: number;
+    cumulativeUpdates: boolean;
+    finalEvent: 'reply' | 'typing_stop' | 'timeout' | 'error' | 'none';
+    hungPreview: boolean;
+  };
+  events: WorkspaceStreamingProbeEvent[];
+}
+
 export interface LocalCoreHealth {
   name: string;
   version: string;

@@ -17,6 +17,7 @@ type UseThreadChatBridgeActionsInput = {
   startLocalCoreThreadPolling: (threadId: string, baselineAssistantCount: number) => void;
   armReplyTimeout: (mode?: 'reply' | 'permission_continue') => void;
   clearActionStatuses: () => void;
+  settlePreviewMessages: (turnKey?: string) => void;
   setPendingBridgeActionId: Dispatch<SetStateAction<string | null>>;
   sendAction: (threadId: string, action: string) => Promise<{ runId: string }>;
 } & Pick<ThreadChatSharedHookContext, 'runtimeProvider' | 'selectedWorkspaceId' | 'updateTaskState'> &
@@ -39,6 +40,7 @@ export function useThreadChatBridgeActions({
   runtimeProvider,
   selectedWorkspaceId,
   sendAction,
+  settlePreviewMessages,
   setActiveRunId,
   setBridgeError,
   setMessages,
@@ -47,6 +49,7 @@ export function useThreadChatBridgeActions({
   startLocalCoreThreadPolling,
   updateTaskState,
 }: UseThreadChatBridgeActionsInput & Pick<ThreadChatActiveThreadIdentity, 'activeRunId'> & { setActiveRunId: Dispatch<SetStateAction<string>> }) {
+  const usesManagedThreadApi = runtimeProvider !== 'web_remote';
   const handleBridgeAction = useCallback(async (message: ChatMessage, action: DesktopBridgeButtonOption) => {
     if (!activeThreadId) {
       return;
@@ -69,11 +72,9 @@ export function useThreadChatBridgeActions({
         ...current,
         { id: actionMessageId, role: 'user', content: actionLabel, order: userOrder, timestamp: new Date().toISOString() },
       ]);
-      if (runtimeProvider === 'local_core') {
+      if (usesManagedThreadApi) {
         const result = await sendAction(activeThreadId, actionContent);
         setActiveRunId(result.runId);
-        const assistantCount = messages.filter((item) => item.role === 'assistant').length;
-        startLocalCoreThreadPolling(activeThreadId, assistantCount);
       } else {
         const [, workspaceId = selectedWorkspaceId, chatId = 'main'] = activeBridgeSessionKey.split(':');
         await bridgeSendMessage({
@@ -84,12 +85,13 @@ export function useThreadChatBridgeActions({
       }
       sent = true;
       setBridgeError('');
-      setTyping(runtimeProvider !== 'local_core');
+      settlePreviewMessages(message.actionReplyCtx);
+      setTyping(usesManagedThreadApi);
       clearReplyTimeout();
       clearActionStatuses();
       if (message.actionMode === 'permission' && message.actionInteractive) {
         updateTaskState('permission_submitted', 'bridge-permission-submitted');
-        if (runtimeProvider !== 'local_core') {
+        if (usesManagedThreadApi) {
           armReplyTimeout('permission_continue');
         }
         setMessages((current) =>
@@ -106,7 +108,7 @@ export function useThreadChatBridgeActions({
         );
       } else {
         updateTaskState('running', 'bridge-action-submitted');
-        if (runtimeProvider !== 'local_core') {
+        if (usesManagedThreadApi) {
           armReplyTimeout();
         }
       }
@@ -145,13 +147,14 @@ export function useThreadChatBridgeActions({
     runtimeProvider,
     selectedWorkspaceId,
     sendAction,
+    settlePreviewMessages,
     setActiveRunId,
     setBridgeError,
     setMessages,
     setPendingBridgeActionId,
     setTyping,
-    startLocalCoreThreadPolling,
     updateTaskState,
+    usesManagedThreadApi,
   ]);
 
   return {

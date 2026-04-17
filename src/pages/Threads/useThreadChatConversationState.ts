@@ -15,6 +15,21 @@ import {
   type ThreadGroup,
 } from './thread-chat-model';
 
+function advancePreviewContent(content: string, target: string) {
+  if (!target) {
+    return '';
+  }
+  if (!content || !target.startsWith(content)) {
+    return target.slice(0, Math.min(target.length, Math.max(1, Math.ceil(target.length / 24))));
+  }
+  if (content === target) {
+    return target;
+  }
+  const remaining = target.length - content.length;
+  const step = remaining > 160 ? 14 : remaining > 80 ? 8 : remaining > 24 ? 4 : 2;
+  return target.slice(0, Math.min(target.length, content.length + step));
+}
+
 type UseThreadChatConversationStateInput = {
   activeThreadId: string;
   brandingReplyTimeoutLabel: string;
@@ -109,6 +124,29 @@ export function useThreadChatConversationState({
           : message,
       ),
     );
+  }, []);
+
+  const settlePreviewMessages = useCallback((turnKey?: string) => {
+    setMessages((current) => {
+      let changed = false;
+      const next = current.map((message) => {
+        if (!message.preview) {
+          return message;
+        }
+        if (turnKey && message.turnKey !== turnKey) {
+          return message;
+        }
+        changed = true;
+        return {
+          ...message,
+          content: message.streamTargetContent ?? message.content,
+          streamTargetContent: undefined,
+          preview: false,
+          previewPlainText: false,
+        };
+      });
+      return changed ? next : current;
+    });
   }, []);
 
   const reserveNextMessageOrder = useCallback(() => {
@@ -236,6 +274,42 @@ export function useThreadChatConversationState({
     }, 1500);
   }, [applyLocalCoreThreadDetail, clearLocalCorePolling, setBridgeError, updateTaskState]);
 
+  useEffect(() => {
+    const hasPendingPreview = messages.some((message) =>
+      message.preview &&
+      message.previewPlainText &&
+      typeof message.streamTargetContent === 'string' &&
+      message.streamTargetContent !== message.content,
+    );
+    if (!hasPendingPreview) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setMessages((current) => {
+        let changed = false;
+        const next = current.map((message) => {
+          if (
+            !message.preview ||
+            !message.previewPlainText ||
+            typeof message.streamTargetContent !== 'string' ||
+            message.streamTargetContent === message.content
+          ) {
+            return message;
+          }
+          changed = true;
+          return {
+            ...message,
+            content: advancePreviewContent(message.content, message.streamTargetContent),
+          };
+        });
+        return changed ? next : current;
+      });
+    }, 32);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [messages]);
+
   return {
     applyLocalCoreThreadDetail,
     armReplyTimeout,
@@ -254,6 +328,7 @@ export function useThreadChatConversationState({
     reserveAssistantMessageOrder,
     reserveNextMessageOrder,
     setMessages,
+    settlePreviewMessages,
     setTyping,
     startLocalCoreThreadPolling,
     taskHint,

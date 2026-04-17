@@ -8,6 +8,7 @@ import type {
   DesktopSettingsInput,
   DesktopServiceState,
 } from '../../shared/desktop';
+import type { WorkspaceStreamingProbeResult } from '../../packages/contracts/src';
 
 declare global {
   interface Window {
@@ -27,6 +28,7 @@ declare global {
       bridgeConnect: () => Promise<unknown>;
       bridgeDisconnect: () => Promise<unknown>;
       bridgeSendMessage: (input: DesktopBridgeSendInput) => Promise<DesktopBridgeSendResult>;
+      probeWorkspaceStreaming: (workspaceId: string) => Promise<WorkspaceStreamingProbeResult>;
       onRuntimeEvent: (listener: (runtime: DesktopRuntimeStatus) => void) => () => void;
       onBridgeEvent: (listener: (event: DesktopBridgeEvent) => void) => () => void;
     };

@@ -21,7 +21,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createServer } from 'node:net';
-import { DEFAULT_DESKTOP_AGENT_TYPE, normalizeDesktopAgentModel } from '../shared/desktop.js';
+import { DEFAULT_DESKTOP_AGENT_TYPE, LOCALCORE_ACP_AGENT_TYPE, normalizeDesktopAgentModel } from '../shared/desktop.js';
 import type {
   ConfigFileState,
   DesktopConnectConfig,
@@ -791,9 +791,14 @@ export class ServiceManager extends EventEmitter {
       return next;
     }
 
-    next.projects = next.projects.map((project) => {
+    next.projects = next.projects.flatMap((project) => {
       if (project?.agent) {
         const agentType = String(project.agent.type || '').trim().toLowerCase();
+
+        if (agentType === LOCALCORE_ACP_AGENT_TYPE) {
+          // localcore-acp workspaces are executed by the local AI core router, not by cc-connect itself.
+          return [];
+        }
 
         // Transform opencode agent to use ACP adapter for permission support
         if (agentType === 'opencode') {
@@ -836,13 +841,13 @@ export class ServiceManager extends EventEmitter {
         project.platforms[0]?.type !== 'telegram' ||
         project.platforms[0]?.options?.bot_token !== 'replace-me'
       ) {
-        return project;
+        return [project];
       }
 
-      return {
+      return [{
         ...project,
         platforms: [],
-      };
+      }];
     });
 
     return next;

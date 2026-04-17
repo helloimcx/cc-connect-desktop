@@ -23,12 +23,14 @@ import type {
   KnowledgeSearchResult,
   KnowledgeSource,
   KnowledgeUploadResult,
+  WorkspaceStreamingProbeResult,
 } from '../packages/contracts/src/index.js';
 import type { LocalAiCoreBindings } from '../services/local-ai-core/src/server.js';
 import { LocalAiCoreServer } from '../services/local-ai-core/src/server.js';
 import { ServiceManager } from './service-manager.js';
 import { BridgeAdapter } from './bridge-adapter.js';
 import { AiVectorKnowledgeProvider } from '../packages/knowledge-api/src/index.js';
+import { createWorkspaceRouter, encodeThreadId } from '../services/local-ai-core/src/workspace-router.js';
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 let serviceManager: ServiceManager;
@@ -37,7 +39,6 @@ let desktopKnowledgeProvider: AiVectorKnowledgeProvider;
 let localAiCoreServer: LocalAiCoreServer | null = null;
 let localAiCoreBindings: LocalAiCoreBindings | null = null;
 const smokeBridgeSendInputs: DesktopBridgeSendInput[] = [];
-const coreRunThreadMap = new Map<string, string>();
 
 const userDataOverride = process.env.AI_WORKSTATION_USER_DATA_DIR?.trim();
 const smokeOutputPath = process.env.AI_WORKSTATION_SMOKE_OUTPUT?.trim();
@@ -67,21 +68,6 @@ function getDesktopKnowledgeProvider() {
     throw new Error('knowledge provider is not initialized');
   }
   return desktopKnowledgeProvider;
-}
-
-function encodeThreadId(project: string, sessionId: string) {
-  return `${encodeURIComponent(project)}::${encodeURIComponent(sessionId)}`;
-}
-
-function decodeThreadId(threadId: string) {
-  const [workspacePart, sessionPart] = threadId.split('::');
-  if (!workspacePart || !sessionPart) {
-    throw new Error(`Invalid thread id: ${threadId}`);
-  }
-  return {
-    workspaceId: decodeURIComponent(workspacePart),
-    sessionId: decodeURIComponent(sessionPart),
-  };
 }
 
 function buildRuntimeStatus(bridge: ReturnType<BridgeAdapter['getState']>): Promise<DesktopRuntimeStatus> {
@@ -162,6 +148,7 @@ function emitSmokeBridgeEvent(payload: DesktopBridgeEvent) {
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send('desktop:bridge', payload);
   });
+  localAiCoreBindings?.emit('bridge', payload);
 }
 
 async function managementRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -184,6 +171,24 @@ async function managementRequest<T>(method: string, path: string, body?: unknown
 function createLocalAiCoreBindings(): LocalAiCoreBindings {
   const bindings = new EventEmitter() as LocalAiCoreBindings;
   const knowledgeProvider = getDesktopKnowledgeProvider();
+  const workspaceRouter = createWorkspaceRouter({
+    userDataPath: app.getPath('userData'),
+    readConfigState: () => getServiceManager().readConfigState(),
+    managementRequest: (method, path, body) => managementRequest(method, path, body),
+    bridgeSendMessage: (input) => {
+      recordSmokeBridgeSend(input);
+      return getBridgeAdapter().sendMessage(input);
+    },
+    subscribeToBridgeEvents: (listener) => {
+      getBridgeAdapter().on('event', listener);
+      return () => {
+        getBridgeAdapter().removeListener('event', listener);
+      };
+    },
+    knowledgeProvider,
+    emitBridge: (event) => bindings.emit('bridge', event),
+    log: (message) => console.info('[localcore-acp]', message),
+  });
 
   bindings.getRuntimeStatus = () => buildRuntimeStatus(getBridgeAdapter().getState());
   bindings.startService = async () => {
@@ -228,143 +233,21 @@ function createLocalAiCoreBindings(): LocalAiCoreBindings {
     await broadcastRuntime();
     return result;
   };
-  bindings.bridgeSendMessage = (input: DesktopBridgeSendInput) => getBridgeAdapter().sendMessage(input);
-  bindings.listWorkspaces = async () => {
-    const payload = await managementRequest<{ projects: Array<{
-      name: string;
-      agent_type: string;
-      platforms: string[];
-      sessions_count: number;
-      heartbeat_enabled: boolean;
-    }> }>('GET', '/projects');
-    return (payload.projects || []).map((project) => ({
-      id: project.name,
-      name: project.name,
-      agentType: project.agent_type,
-      platforms: project.platforms || [],
-      sessionsCount: project.sessions_count,
-      heartbeatEnabled: Boolean(project.heartbeat_enabled),
-    }));
+  bindings.bridgeSendMessage = (input: DesktopBridgeSendInput) => {
+    recordSmokeBridgeSend(input);
+    return getBridgeAdapter().sendMessage(input);
   };
-  bindings.listThreads = async (workspaceId: string) => {
-    const payload = await managementRequest<{ sessions: Array<any> }>('GET', `/projects/${encodeURIComponent(workspaceId)}/sessions`);
-    return (payload.sessions || []).map((session) => ({
-      id: encodeThreadId(workspaceId, session.id),
-      workspaceId,
-      title: String(session.name || session.user_name || session.chat_name || session.id),
-      live: Boolean(session.live || session.active),
-      updatedAt: session.updated_at,
-      createdAt: session.created_at,
-      historyCount: session.history_count,
-      excerpt: session.last_message?.content?.replace(/\n/g, ' ') || '',
-      participantName: session.user_name || session.chat_name,
-      runId: session.live ? `run:${encodeThreadId(workspaceId, session.id)}` : undefined,
-    }));
-  };
-  bindings.createThread = async (workspaceId: string, title?: string) => {
-    const chatId = `core-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const sessionKey = `desktop:${workspaceId}:${chatId}`;
-    const created = await managementRequest<{ id?: string }>('POST', `/projects/${encodeURIComponent(workspaceId)}/sessions`, {
-      session_key: sessionKey,
-      name: title || `New thread ${new Date().toLocaleTimeString()}`,
-    });
-    const sessions = await managementRequest<{ sessions: Array<any> }>('GET', `/projects/${encodeURIComponent(workspaceId)}/sessions`);
-    const matched =
-      (sessions.sessions || []).find((session) => session.id === created.id) ||
-      (sessions.sessions || []).find((session) => session.session_key === sessionKey);
-    if (!matched) {
-      throw new Error('Created thread could not be loaded');
-    }
-    return bindings.getThread(encodeThreadId(workspaceId, matched.id));
-  };
-  bindings.getThread = async (threadId: string) => {
-    const { workspaceId, sessionId } = decodeThreadId(threadId);
-    const detail = await managementRequest<any>(
-      'GET',
-      `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}?history_limit=200`,
-    );
-    const selectedKnowledgeBaseIds = await knowledgeProvider.listThreadKnowledgeBaseIds(threadId);
-    return {
-      id: threadId,
-      workspaceId,
-      title: String(detail.name || detail.user_name || detail.chat_name || detail.id),
-      live: Boolean(detail.live || detail.active),
-      updatedAt: detail.updated_at,
-      createdAt: detail.created_at,
-      historyCount: detail.history_count,
-      excerpt: detail.last_message?.content?.replace(/\n/g, ' ') || '',
-      participantName: detail.user_name || detail.chat_name,
-      runId: detail.live ? `run:${threadId}` : undefined,
-      selectedKnowledgeBaseIds,
-      messages: (detail.history || []).map((message: any, index: number) => ({
-        id: `${message.timestamp || index}-${message.role}-${index}`,
-        role: message.role === 'user' ? 'user' : message.role === 'assistant' ? 'assistant' : 'system',
-        content: message.content,
-        timestamp: message.timestamp,
-        kind: message.kind === 'progress' ? 'progress' : message.role === 'system' ? 'system' : 'final',
-      })),
-    };
-  };
-  bindings.renameThread = async (threadId: string, title: string) => {
-    const { workspaceId, sessionId } = decodeThreadId(threadId);
-    await managementRequest('PATCH', `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}`, {
-      name: title,
-    });
-    return bindings.getThread(threadId);
-  };
-  bindings.updateThreadKnowledgeBases = async (threadId: string, knowledgeBaseIds: string[]) => ({
-    knowledgeBaseIds: await knowledgeProvider.updateThreadKnowledgeBaseIds(threadId, knowledgeBaseIds),
-  });
-  bindings.deleteThread = async (threadId: string) => {
-    const { workspaceId, sessionId } = decodeThreadId(threadId);
-    await managementRequest('DELETE', `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}`);
-    await knowledgeProvider.deleteThreadKnowledgeBaseLinks(threadId);
-    return { deleted: true };
-  };
-  bindings.sendThreadMessage = async (threadId: string, content: string) => {
-    const { workspaceId, sessionId } = decodeThreadId(threadId);
-    const detail = await managementRequest<any>(
-      'GET',
-      `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}?history_limit=1`,
-    );
-    const sessionKey = String(detail.session_key || '');
-    if (sessionKey.startsWith('desktop:')) {
-      const [, project = workspaceId, chatId = 'main'] = sessionKey.split(':');
-      const result = await getBridgeAdapter().sendMessage({ project, chatId, content });
-      coreRunThreadMap.set(result.messageId, threadId);
-      return { runId: result.messageId };
-    }
-    await managementRequest('POST', `/projects/${encodeURIComponent(workspaceId)}/sessions/switch`, {
-      session_key: detail.session_key,
-      session_id: detail.id,
-    }).catch(() => undefined);
-    await managementRequest('POST', `/projects/${encodeURIComponent(workspaceId)}/send`, {
-      session_key: detail.session_key,
-      message: content,
-    });
-    const runId = `run:${threadId}:${Date.now()}`;
-    coreRunThreadMap.set(runId, threadId);
-    return { runId };
-  };
-  bindings.sendThreadAction = (threadId: string, content: string) => bindings.sendThreadMessage(threadId, content);
-  bindings.interruptRun = async (runId: string) => {
-    const threadId = coreRunThreadMap.get(runId);
-    if (!threadId) {
-      return { interrupted: false };
-    }
-    const { workspaceId, sessionId } = decodeThreadId(threadId);
-    const detail = await managementRequest<any>(
-      'GET',
-      `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}?history_limit=1`,
-    );
-    const sessionKey = String(detail.session_key || '');
-    if (!sessionKey.startsWith('desktop:')) {
-      return { interrupted: false };
-    }
-    const [, project = workspaceId, chatId = 'main'] = sessionKey.split(':');
-    await getBridgeAdapter().sendMessage({ project, chatId, content: '/stop' });
-    return { interrupted: true };
-  };
+  bindings.listWorkspaces = () => workspaceRouter.listWorkspaces();
+  bindings.listThreads = (workspaceId: string) => workspaceRouter.listThreads(workspaceId);
+  bindings.createThread = (workspaceId: string, title?: string) => workspaceRouter.createThread(workspaceId, title);
+  bindings.getThread = (threadId: string) => workspaceRouter.getThread(threadId);
+  bindings.renameThread = (threadId: string, title: string) => workspaceRouter.renameThread(threadId, title);
+  bindings.updateThreadKnowledgeBases = (threadId: string, knowledgeBaseIds: string[]) =>
+    workspaceRouter.updateThreadKnowledgeBases(threadId, knowledgeBaseIds);
+  bindings.deleteThread = (threadId: string) => workspaceRouter.deleteThread(threadId);
+  bindings.sendThreadMessage = (threadId: string, content: string) => workspaceRouter.sendThreadMessage(threadId, content);
+  bindings.sendThreadAction = (threadId: string, content: string) => workspaceRouter.sendThreadAction(threadId, content);
+  bindings.interruptRun = (runId: string) => workspaceRouter.interruptRun(runId);
   bindings.listKnowledgeSources = async (): Promise<KnowledgeSource[]> => knowledgeProvider.listSources();
   bindings.getKnowledgeConfig = async (): Promise<KnowledgeConfig> => knowledgeProvider.getConfig();
   bindings.updateKnowledgeConfig = async (input: Partial<KnowledgeConfig>): Promise<KnowledgeConfig> =>
@@ -398,13 +281,9 @@ function createLocalAiCoreBindings(): LocalAiCoreBindings {
     knowledgeBaseId: string,
     input: KnowledgeSearchInput,
   ): Promise<KnowledgeSearchResult[]> => knowledgeProvider.searchKnowledgeBase(knowledgeBaseId, input);
-  bindings.getCapabilities = async () => ({
-    adapters: {
-      channels: ['cc-connect'],
-      agents: ['opencode', 'codex', 'claudecode', 'cursor', 'gemini', 'qoder', 'iflow'],
-      knowledge: true,
-    },
-  });
+  bindings.getCapabilities = async () => workspaceRouter.getCapabilities();
+  bindings.probeWorkspaceStreaming = (workspaceId: string): Promise<WorkspaceStreamingProbeResult> =>
+    workspaceRouter.probeWorkspaceStreaming(workspaceId);
   return bindings;
 }
 
@@ -1052,8 +931,14 @@ async function runSmokeTest() {
       if (!sessionId) {
         return null;
       }
+      const rawSessionId = sessionId.includes('::')
+        ? decodeURIComponent(sessionId.split('::')[1] || '')
+        : sessionId;
+      if (!rawSessionId) {
+        return null;
+      }
       const detailResponse = await fetch(
-        `${current.managementBaseUrl}/projects/desktop-demo/sessions/${sessionId}?history_limit=200`,
+        `${current.managementBaseUrl}/projects/desktop-demo/sessions/${rawSessionId}?history_limit=200`,
         {
           headers: {
             Authorization: `Bearer ${current.settings.managementToken}`,
@@ -1078,6 +963,7 @@ async function runSmokeTest() {
       const reply = finalEntries.map((entry) => entry.content || '').filter(Boolean).pop();
       return {
         sessionId,
+        rawSessionId,
         sessionKey: detailPayload?.data?.session_key || '',
         progressCount,
         finalCount: finalEntries.length,
@@ -1959,6 +1845,11 @@ function registerIPC() {
     recordSmokeBridgeSend(input);
     return getBridgeAdapter().sendMessage(input);
   });
+  ipcMain.handle('desktop:probe-workspace-streaming', (_event, workspaceId: string) =>
+    localAiCoreBindings
+      ? localAiCoreBindings.probeWorkspaceStreaming(workspaceId)
+      : Promise.reject(new Error('Local AI Core bindings are not initialized')),
+  );
 }
 
 app.whenReady().then(async () => {

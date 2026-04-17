@@ -9,6 +9,7 @@ export const DESKTOP_AGENT_TYPE_OPTIONS = [
   'gemini',
   'qoder',
   'iflow',
+  'localcore-acp',
 ] as const;
 export const DESKTOP_PLATFORM_TYPE_OPTIONS = [
   'telegram',
@@ -35,7 +36,8 @@ export const DESKTOP_PROVIDER_PRESET_OPTIONS = [
   'ollama',
 ] as const;
 export const DESKTOP_PROVIDER_THINKING_OPTIONS = ['', 'enabled', 'disabled'] as const;
-export const DESKTOP_INTERACTIVE_PERMISSION_AGENT_TYPES = ['opencode', 'claudecode', 'acp'] as const;
+export const DESKTOP_INTERACTIVE_PERMISSION_AGENT_TYPES = ['opencode', 'claudecode', 'acp', 'localcore-acp'] as const;
+export const LOCALCORE_ACP_AGENT_TYPE = 'localcore-acp';
 
 const PERMISSION_RESPONSE_MAP: Record<string, 'allow' | 'deny' | 'allow all'> = {
   allow: 'allow',
@@ -199,6 +201,11 @@ export function supportsInteractivePermission(agentType?: string | null) {
     return false;
   }
   return (DESKTOP_INTERACTIVE_PERMISSION_AGENT_TYPES as readonly string[]).includes(String(agentType).trim().toLowerCase());
+}
+
+export function isAcpAgentType(agentType?: string | null) {
+  const normalized = String(agentType || '').trim().toLowerCase();
+  return normalized === 'acp' || normalized === LOCALCORE_ACP_AGENT_TYPE;
 }
 
 export interface DesktopBridgeEvent {

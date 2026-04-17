@@ -36,6 +36,7 @@ type UseThreadChatActionsInput = {
   clearReplyTimeout: () => void;
   refreshSessionsForProject: (project: string) => Promise<Array<{ id: string; bridgeSessionKey?: string }>>;
   reserveNextMessageOrder: () => number;
+  settlePreviewMessages: (turnKey?: string) => void;
   setActiveRunId: Dispatch<SetStateAction<string>>;
   setActiveSessionAgentType: Dispatch<SetStateAction<string>>;
   setActiveSessionId: Dispatch<SetStateAction<string>>;
@@ -84,6 +85,7 @@ export function useThreadChatActions({
   clearReplyTimeout,
   refreshSessionsForProject,
   reserveNextMessageOrder,
+  settlePreviewMessages,
   setActiveRunId,
   setActiveSessionAgentType,
   setActiveSessionId,
@@ -167,6 +169,7 @@ export function useThreadChatActions({
     taskState,
     armReplyTimeout,
     reserveNextMessageOrder,
+    settlePreviewMessages,
     setDraft,
     setSending,
     startLocalCoreThreadPolling,

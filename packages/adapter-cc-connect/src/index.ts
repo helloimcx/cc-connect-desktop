@@ -22,6 +22,7 @@ import type {
   KnowledgeSearchInput,
   KnowledgeSearchResult,
   KnowledgeUploadResult,
+  WorkspaceStreamingProbeResult,
   ThreadDetail,
   ThreadMessage,
   ThreadSummary,
@@ -31,6 +32,7 @@ import { deriveDesktopRuntimePhase } from '../../contracts/src/index.js';
 import { AiVectorKnowledgeProvider, type KnowledgeProvider } from '../../knowledge-api/src/index.js';
 import { BridgeAdapter } from '../../../electron/bridge-adapter.js';
 import { ServiceManager } from '../../../electron/service-manager.js';
+import { createWorkspaceRouter, decodeThreadId, encodeThreadId } from '../../../services/local-ai-core/src/workspace-router.js';
 
 type ManagementSession = {
   id: string;
@@ -59,21 +61,6 @@ type ManagementProject = {
   sessions_count: number;
   heartbeat_enabled: boolean;
 };
-
-function encodeThreadId(workspaceId: string, sessionId: string) {
-  return `${encodeURIComponent(workspaceId)}::${encodeURIComponent(sessionId)}`;
-}
-
-function decodeThreadId(threadId: string) {
-  const [workspacePart, sessionPart] = threadId.split('::');
-  if (!workspacePart || !sessionPart) {
-    throw new Error(`Invalid thread id: ${threadId}`);
-  }
-  return {
-    workspaceId: decodeURIComponent(workspacePart),
-    sessionId: decodeURIComponent(sessionPart),
-  };
-}
 
 function threadTitle(session: ManagementSession | ManagementSessionDetail) {
   return String(session.name || session.user_name || session.chat_name || session.id).trim();
@@ -127,7 +114,7 @@ export class CcConnectController extends EventEmitter {
   private readonly serviceManager: ServiceManager;
   private readonly bridgeAdapter: BridgeAdapter;
   private readonly knowledgeProvider: KnowledgeProvider;
-  private readonly runThreadMap = new Map<string, string>();
+  private readonly workspaceRouter;
 
   constructor(private readonly userDataPath: string) {
     super();
@@ -146,6 +133,21 @@ export class CcConnectController extends EventEmitter {
         await this.emitRuntime();
         return settings.knowledge;
       },
+    });
+    this.workspaceRouter = createWorkspaceRouter({
+      userDataPath,
+      readConfigState: () => this.serviceManager.readConfigState(),
+      managementRequest: (method, path, body) => this.managementRequest(method, path, body),
+      bridgeSendMessage: (input) => this.bridgeAdapter.sendMessage(input),
+      subscribeToBridgeEvents: (listener) => {
+        this.bridgeAdapter.on('event', listener);
+        return () => {
+          this.bridgeAdapter.removeListener('event', listener);
+        };
+      },
+      knowledgeProvider: this.knowledgeProvider,
+      emitBridge: (event) => this.emit('bridge', event),
+      log: (message) => this.emit('logs', message),
     });
   }
 
@@ -250,114 +252,43 @@ export class CcConnectController extends EventEmitter {
   }
 
   async listWorkspaces(): Promise<WorkspaceSummary[]> {
-    const payload = await this.managementGet<{ projects: ManagementProject[] }>('/projects');
-    return (payload.projects || []).map((project) => ({
-      id: project.name,
-      name: project.name,
-      agentType: project.agent_type,
-      platforms: project.platforms || [],
-      sessionsCount: project.sessions_count,
-      heartbeatEnabled: Boolean(project.heartbeat_enabled),
-    }));
+    return this.workspaceRouter.listWorkspaces();
   }
 
   async listThreads(workspaceId: string): Promise<ThreadSummary[]> {
-    const payload = await this.managementGet<{ sessions: ManagementSession[] }>(`/projects/${encodeURIComponent(workspaceId)}/sessions`);
-    return (payload.sessions || []).map((session) => toThreadSummary(workspaceId, session));
+    return this.workspaceRouter.listThreads(workspaceId);
   }
 
   async createThread(workspaceId: string, title?: string): Promise<ThreadDetail> {
-    const chatId = `core-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const sessionKey = `desktop:${workspaceId}:${chatId}`;
-    const created = await this.managementPost<{ id?: string }>(`/projects/${encodeURIComponent(workspaceId)}/sessions`, {
-      session_key: sessionKey,
-      name: title || `New thread ${new Date().toLocaleTimeString()}`,
-    });
-    const sessions = await this.managementGet<{ sessions: ManagementSession[] }>(`/projects/${encodeURIComponent(workspaceId)}/sessions`);
-    const matched =
-      (sessions.sessions || []).find((session) => session.id === created.id) ||
-      (sessions.sessions || []).find((session) => session.session_key === sessionKey);
-    if (!matched) {
-      throw new Error('Created thread could not be loaded');
-    }
-    return this.getThread(encodeThreadId(workspaceId, matched.id));
+    return this.workspaceRouter.createThread(workspaceId, title);
   }
 
   async getThread(threadId: string): Promise<ThreadDetail> {
-    const { workspaceId, sessionId } = decodeThreadId(threadId);
-    const detail = await this.managementGet<ManagementSessionDetail>(
-      `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}?history_limit=200`,
-    );
-    const selectedKnowledgeBaseIds = await this.knowledgeProvider.listThreadKnowledgeBaseIds(threadId);
-    return toThreadDetail(workspaceId, detail, selectedKnowledgeBaseIds);
+    return this.workspaceRouter.getThread(threadId);
   }
 
   async renameThread(threadId: string, title: string): Promise<ThreadDetail> {
-    const { workspaceId, sessionId } = decodeThreadId(threadId);
-    await this.managementRequest('PATCH', `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}`, {
-      name: title,
-    });
-    return this.getThread(threadId);
+    return this.workspaceRouter.renameThread(threadId, title);
   }
 
   async deleteThread(threadId: string): Promise<{ deleted: boolean }> {
-    const { workspaceId, sessionId } = decodeThreadId(threadId);
-    await this.managementRequest('DELETE', `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}`);
-    await this.knowledgeProvider.deleteThreadKnowledgeBaseLinks(threadId);
-    return { deleted: true };
+    return this.workspaceRouter.deleteThread(threadId);
   }
 
   async updateThreadKnowledgeBases(threadId: string, knowledgeBaseIds: string[]): Promise<{ knowledgeBaseIds: string[] }> {
-    return {
-      knowledgeBaseIds: await this.knowledgeProvider.updateThreadKnowledgeBaseIds(threadId, knowledgeBaseIds),
-    };
+    return this.workspaceRouter.updateThreadKnowledgeBases(threadId, knowledgeBaseIds);
   }
 
   async sendThreadMessage(threadId: string, content: string): Promise<{ runId: string }> {
-    const { workspaceId, sessionId } = decodeThreadId(threadId);
-    const detail = await this.managementGet<ManagementSessionDetail>(
-      `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}?history_limit=1`,
-    );
-    const sessionKey = String(detail.session_key || '');
-    if (sessionKey.startsWith('desktop:')) {
-      const [, project = workspaceId, chatId = 'main'] = sessionKey.split(':');
-      const result = await this.bridgeSendMessage({ project, chatId, content });
-      this.runThreadMap.set(result.messageId, threadId);
-      return { runId: result.messageId };
-    }
-    await this.managementPost(`/projects/${encodeURIComponent(workspaceId)}/sessions/switch`, {
-      session_key: detail.session_key,
-      session_id: detail.id,
-    }).catch(() => undefined);
-    await this.managementPost(`/projects/${encodeURIComponent(workspaceId)}/send`, {
-      session_key: detail.session_key,
-      message: content,
-    });
-    const runId = `run:${threadId}:${Date.now()}`;
-    this.runThreadMap.set(runId, threadId);
-    return { runId };
+    return this.workspaceRouter.sendThreadMessage(threadId, content);
   }
 
   async sendThreadAction(threadId: string, content: string) {
-    return this.sendThreadMessage(threadId, content);
+    return this.workspaceRouter.sendThreadAction(threadId, content);
   }
 
   async interruptRun(runId: string): Promise<{ interrupted: boolean }> {
-    const threadId = this.runThreadMap.get(runId);
-    if (!threadId) {
-      return { interrupted: false };
-    }
-    const { workspaceId, sessionId } = decodeThreadId(threadId);
-    const detail = await this.managementGet<ManagementSessionDetail>(
-      `/projects/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(sessionId)}?history_limit=1`,
-    );
-    const sessionKey = String(detail.session_key || '');
-    if (!sessionKey.startsWith('desktop:')) {
-      return { interrupted: false };
-    }
-    const [, project = workspaceId, chatId = 'main'] = sessionKey.split(':');
-    await this.bridgeSendMessage({ project, chatId, content: 'stop' });
-    return { interrupted: true };
+    return this.workspaceRouter.interruptRun(runId);
   }
 
   async listKnowledgeSources(): Promise<KnowledgeSource[]> {
@@ -431,16 +362,15 @@ export class CcConnectController extends EventEmitter {
   }
 
   async getCapabilities(): Promise<LocalCoreCapabilities> {
-    return {
-      adapters: {
-        channels: ['cc-connect'],
-        agents: ['opencode', 'codex', 'claudecode', 'cursor', 'gemini', 'qoder', 'iflow'],
-        knowledge: true,
-      },
-    };
+    return this.workspaceRouter.getCapabilities();
+  }
+
+  async probeWorkspaceStreaming(workspaceId: string): Promise<WorkspaceStreamingProbeResult> {
+    return this.workspaceRouter.probeWorkspaceStreaming(workspaceId);
   }
 
   async close() {
+    this.workspaceRouter.close();
     try {
       await this.serviceManager.stop();
     } catch {

@@ -7,6 +7,7 @@ import type {
   DesktopSettings,
   DesktopSettingsInput,
 } from '../../shared/desktop';
+import type { WorkspaceStreamingProbeResult } from '../../packages/contracts/src';
 import {
   coreBridgeConnect,
   coreBridgeDisconnect,
@@ -17,6 +18,7 @@ import {
   getCoreRuntime,
   onBridgeUpdated,
   onRuntimeUpdated,
+  probeWorkspaceStreaming as probeCoreWorkspaceStreaming,
   readCoreConfigFile,
   restartCoreService,
   saveCoreRawConfigFile,
@@ -44,6 +46,7 @@ type DesktopProvider = {
   bridgeConnect: () => Promise<unknown>;
   bridgeDisconnect: () => Promise<unknown>;
   bridgeSendMessage: (input: DesktopBridgeSendInput) => Promise<DesktopBridgeSendResult>;
+  probeWorkspaceStreaming: (workspaceId: string) => Promise<WorkspaceStreamingProbeResult>;
   onRuntimeEvent: (listener: (runtime: DesktopRuntimeStatus) => void) => () => void;
   onBridgeEvent: (listener: (event: DesktopBridgeEvent) => void) => () => void;
 };
@@ -74,8 +77,9 @@ const electronProvider: DesktopProvider = {
   bridgeConnect: () => requireDesktopBridge().bridgeConnect(),
   bridgeDisconnect: () => requireDesktopBridge().bridgeDisconnect(),
   bridgeSendMessage: (input: DesktopBridgeSendInput) => requireDesktopBridge().bridgeSendMessage(input),
+  probeWorkspaceStreaming: (workspaceId: string) => requireDesktopBridge().probeWorkspaceStreaming(workspaceId),
   onRuntimeEvent: (listener) => requireDesktopBridge().onRuntimeEvent(listener),
-  onBridgeEvent: (listener) => requireDesktopBridge().onBridgeEvent(listener),
+  onBridgeEvent: (listener) => onBridgeUpdated(listener),
 };
 
 const localCoreProvider: DesktopProvider = {
@@ -97,6 +101,7 @@ const localCoreProvider: DesktopProvider = {
   bridgeConnect: () => coreBridgeConnect(),
   bridgeDisconnect: () => coreBridgeDisconnect(),
   bridgeSendMessage: (input: DesktopBridgeSendInput) => coreBridgeSendMessage(input),
+  probeWorkspaceStreaming: (workspaceId: string) => probeCoreWorkspaceStreaming(workspaceId),
   onRuntimeEvent: (listener) => onRuntimeUpdated(listener),
   onBridgeEvent: (listener) => onBridgeUpdated(listener),
 };
@@ -163,5 +168,7 @@ export const saveDesktopSettings = (input: DesktopSettingsInput): Promise<Deskto
 export const bridgeConnect = () => requireProvider().bridgeConnect();
 export const bridgeDisconnect = () => requireProvider().bridgeDisconnect();
 export const bridgeSendMessage = (input: DesktopBridgeSendInput): Promise<DesktopBridgeSendResult> => requireProvider().bridgeSendMessage(input);
+export const probeWorkspaceStreaming = (workspaceId: string): Promise<WorkspaceStreamingProbeResult> =>
+  requireProvider().probeWorkspaceStreaming(workspaceId);
 export const onRuntimeEvent = (listener: (runtime: DesktopRuntimeStatus) => void) => requireProvider().onRuntimeEvent(listener);
 export const onBridgeEvent = (listener: (event: DesktopBridgeEvent) => void) => requireProvider().onBridgeEvent(listener);

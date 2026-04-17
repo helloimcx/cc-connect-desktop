@@ -4,6 +4,7 @@ import type {
   DesktopBridgeSendInput,
   DesktopSettingsInput,
 } from '../shared/desktop.js';
+import type { WorkspaceStreamingProbeResult } from '../packages/contracts/src/index.js';
 
 contextBridge.exposeInMainWorld('desktop', {
   getRuntimeStatus: () => ipcRenderer.invoke('desktop:get-runtime-status'),
@@ -24,6 +25,8 @@ contextBridge.exposeInMainWorld('desktop', {
   bridgeConnect: () => ipcRenderer.invoke('desktop:bridge-connect'),
   bridgeDisconnect: () => ipcRenderer.invoke('desktop:bridge-disconnect'),
   bridgeSendMessage: (input: DesktopBridgeSendInput) => ipcRenderer.invoke('desktop:bridge-send-message', input),
+  probeWorkspaceStreaming: (workspaceId: string): Promise<WorkspaceStreamingProbeResult> =>
+    ipcRenderer.invoke('desktop:probe-workspace-streaming', workspaceId),
   onRuntimeEvent: (listener: (runtime: any) => void) => {
     const wrapped = (_event: unknown, payload: any) => listener(payload);
     ipcRenderer.on('desktop:runtime', wrapped);

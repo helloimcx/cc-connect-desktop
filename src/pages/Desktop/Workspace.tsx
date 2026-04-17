@@ -5,6 +5,7 @@ import { Button, Card, Input, Select, Textarea } from '@/components/ui';
 import {
   getRuntimeStatus,
   onRuntimeEvent,
+  probeWorkspaceStreaming,
   readConfigFile,
   restartDesktopService,
   saveDesktopSettings,
@@ -27,6 +28,7 @@ import type {
   DesktopProjectConfig,
   DesktopRuntimeStatus,
 } from '../../../shared/desktop';
+import type { WorkspaceStreamingProbeResult } from '../../../packages/contracts/src';
 
 type EditorTab = 'visual' | 'raw';
 const CUSTOM_SELECT_VALUE = '__custom__';
@@ -398,6 +400,8 @@ export default function DesktopWorkspace() {
   const [knowledgeToken, setKnowledgeToken] = useState('');
   const [knowledgeHeaderName, setKnowledgeHeaderName] = useState('X-API-Key');
   const [knowledgeDefaultCollection, setKnowledgeDefaultCollection] = useState('personal_knowledge');
+  const [probePending, setProbePending] = useState(false);
+  const [streamingProbe, setStreamingProbe] = useState<WorkspaceStreamingProbeResult | null>(null);
   const requestedProject = searchParams.get('project') || '';
   const requestedProjectRef = useRef(requestedProject);
   const runtimeReady = runtime?.phase === 'api_ready' || runtime?.phase === 'bridge_ready';
@@ -491,6 +495,15 @@ export default function DesktopWorkspace() {
 
   const projects = configDraft?.projects || [];
   const selectedProject = projects[selectedIndex];
+  const selectedAgentType = String(selectedProject?.agent?.type || '').trim().toLowerCase();
+  const probeSupported = selectedAgentType === 'acp' || selectedAgentType === 'localcore-acp';
+  const probeNeedsBridge = selectedAgentType === 'acp';
+  const probeBlockedByUnsavedConfig = visualDirty || rawDirty;
+  const probeDisabled = !selectedProject?.name
+    || !probeSupported
+    || probePending
+    || probeBlockedByUnsavedConfig
+    || (probeNeedsBridge && runtime?.bridge.status !== 'connected');
 
   const projectNames = useMemo(() => projects.map((project) => project.name), [projects]);
 
@@ -521,6 +534,10 @@ export default function DesktopWorkspace() {
     next.set('project', selectedProject.name);
     setSearchParams(next, { replace: true });
   }, [searchParams, selectedProject?.name, setSearchParams, visualDirty]);
+
+  useEffect(() => {
+    setStreamingProbe(null);
+  }, [selectedProject?.name, selectedAgentType]);
 
   const updateSelectedProject = useCallback((updater: (project: DesktopProjectConfig) => DesktopProjectConfig) => {
     setNotice(null);
@@ -788,6 +805,34 @@ export default function DesktopWorkspace() {
       setPendingAction(null);
     }
   }, [loadAll]);
+
+  const handleProbeStreaming = useCallback(async () => {
+    if (!selectedProject?.name || probeDisabled) {
+      return;
+    }
+    setProbePending(true);
+    setStreamingProbe(null);
+    setNotice(null);
+    try {
+      const result = await probeWorkspaceStreaming(selectedProject.name);
+      setStreamingProbe(result);
+      setNotice({
+        tone: result.passed ? 'success' : 'warning',
+        title: result.passed ? 'ACP streaming probe passed' : 'ACP streaming probe finished with gaps',
+        detail: result.passed
+          ? 'The workspace emitted a complete typing, preview, update, and stop sequence.'
+          : result.error || 'Review the probe result below for the missing event sequence.',
+      });
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        title: 'ACP streaming probe failed',
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setProbePending(false);
+    }
+  }, [probeDisabled, selectedProject?.name]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -1153,6 +1198,65 @@ export default function DesktopWorkspace() {
                         }))
                       }
                     />
+
+                    {probeSupported && (
+                      <section className="rounded-2xl border border-gray-200/80 dark:border-white/[0.08] p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="font-medium text-gray-900 dark:text-white">ACP streaming probe</h3>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              Runs one temporary prompt against the saved config on disk and checks the streaming bridge sequence.
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => void handleProbeStreaming()}
+                            disabled={probeDisabled}
+                            loading={probePending}
+                            data-testid="desktop-workspace-probe-streaming"
+                          >
+                            <Wrench size={14} /> Run probe
+                          </Button>
+                        </div>
+                        {probeBlockedByUnsavedConfig && (
+                          <p className="text-xs text-amber-600 dark:text-amber-300">
+                            Save the workspace config first. The probe always uses the config file currently on disk.
+                          </p>
+                        )}
+                        {!probeBlockedByUnsavedConfig && probeNeedsBridge && runtime?.bridge.status !== 'connected' && (
+                          <p className="text-xs text-amber-600 dark:text-amber-300">
+                            The bridge must be connected before an `acp` probe can run.
+                          </p>
+                        )}
+                        {streamingProbe && (
+                          <div
+                            className={`rounded-xl border px-4 py-3 text-sm ${
+                              streamingProbe.passed
+                                ? noticeClasses('success')
+                                : streamingProbe.error
+                                  ? noticeClasses('error')
+                                  : noticeClasses('warning')
+                            }`}
+                            data-testid="desktop-workspace-probe-result"
+                          >
+                            <p className="font-medium">
+                              {streamingProbe.passed ? 'Probe passed' : 'Probe did not meet the streaming contract'}
+                            </p>
+                            <p className="mt-1">
+                              {streamingProbe.transport} · {streamingProbe.durationMs} ms · final {streamingProbe.criteria.finalEvent}
+                            </p>
+                            <p className="mt-1">
+                              updates {streamingProbe.criteria.updateMessageCount} · cumulative {streamingProbe.criteria.cumulativeUpdates ? 'yes' : 'no'} · preview-before-final {streamingProbe.criteria.previewBeforeFinal ? 'yes' : 'no'}
+                            </p>
+                            {streamingProbe.error && <p className="mt-1">{streamingProbe.error}</p>}
+                            <p className="mt-2 text-xs opacity-80">
+                              events: {streamingProbe.events.map((event) => event.type).join(' → ') || 'none'}
+                            </p>
+                          </div>
+                        )}
+                      </section>
+                    )}
 
                     <section className="space-y-3">
                       <div className="flex items-center justify-between">

@@ -16,6 +16,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  streamTargetContent?: string;
   kind?: 'final' | 'progress';
   order: number;
   timestamp?: string;
@@ -27,6 +28,7 @@ export interface ChatMessage {
   actionStatus?: string;
   actionInteractive?: boolean;
   preview?: boolean;
+  previewPlainText?: boolean;
 }
 
 export type ChatTaskState =

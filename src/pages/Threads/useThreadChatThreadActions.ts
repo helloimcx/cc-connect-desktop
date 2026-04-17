@@ -1,6 +1,4 @@
 import { useCallback } from 'react';
-import { deleteThreadKnowledgeBases } from '@/api/desktop';
-import { deleteSession, renameSession } from '@/api/sessions';
 import {
   createThread,
   deleteThread as deleteCoreThread,
@@ -65,6 +63,8 @@ export function useThreadChatThreadActions({
   pendingTurnRef,
   progressSequenceByTurnRef,
 }: UseThreadChatThreadActionsInput) {
+  const usesManagedThreadApi = runtimeProvider !== 'web_remote';
+  const shouldCreateThreadImmediately = runtimeProvider === 'local_core';
   const resetBlankConversation = useCallback(() => {
     holdBlankComposerRef.current = true;
     setActiveSessionId('');
@@ -103,7 +103,7 @@ export function useThreadChatThreadActions({
     if (!selectedProject) {
       return;
     }
-    if (runtimeProvider === 'local_core') {
+    if (usesManagedThreadApi && shouldCreateThreadImmediately) {
       setPendingSessionAction('rename');
       try {
         const detail = await createThread(selectedProject, `${brandingNewThreadLabel} ${new Date().toLocaleTimeString()}`);
@@ -125,20 +125,18 @@ export function useThreadChatThreadActions({
       return;
     }
     resetBlankConversation();
-    const next = new URLSearchParams(searchParams);
-    next.delete('session');
-    setSearchParams(next, { replace: true });
   }, [
     applyLocalCoreThreadDetail,
     brandingNewThreadLabel,
     refreshSessionsForProject,
     resetBlankConversation,
-    runtimeProvider,
     searchParams,
     selectedKnowledgeBaseIds,
     selectedProject,
     setPendingSessionAction,
     setSearchParams,
+    shouldCreateThreadImmediately,
+    usesManagedThreadApi,
   ]);
 
   const openRenameModal = useCallback((project: string, session: ChatThreadSummary) => {
@@ -153,10 +151,10 @@ export function useThreadChatThreadActions({
     setPendingSessionAction('rename');
     try {
       const name = renameDraft.trim();
-      if (runtimeProvider === 'local_core') {
+      if (usesManagedThreadApi) {
         await renameThread(renameTarget.id, name);
       } else {
-        await renameSession(renameTarget.project, renameTarget.id, { name });
+        throw new Error('Managed desktop thread transport is unavailable.');
       }
       if (renameTarget.id === activeThreadId) {
         setActiveSessionName(name);
@@ -172,11 +170,11 @@ export function useThreadChatThreadActions({
     refreshSessionsForProject,
     renameDraft,
     renameTarget,
-    runtimeProvider,
     setActiveSessionName,
     setPendingSessionAction,
     setRenameDraft,
     setRenameTarget,
+    usesManagedThreadApi,
   ]);
 
   const handleDeleteSession = useCallback(async () => {
@@ -185,11 +183,10 @@ export function useThreadChatThreadActions({
     }
     setPendingSessionAction('delete');
     try {
-      if (runtimeProvider === 'local_core') {
+      if (usesManagedThreadApi) {
         await deleteCoreThread(deleteTarget.id);
       } else {
-        await deleteSession(deleteTarget.project, deleteTarget.id);
-        await deleteThreadKnowledgeBases(deleteTarget.project, deleteTarget.id).catch(() => ({ deleted: false }));
+        throw new Error('Managed desktop thread transport is unavailable.');
       }
       if (deleteTarget.id === activeThreadId) {
         resetBlankConversation();
@@ -204,9 +201,9 @@ export function useThreadChatThreadActions({
     deleteTarget,
     refreshSessionsForProject,
     resetBlankConversation,
-    runtimeProvider,
     setDeleteTarget,
     setPendingSessionAction,
+    usesManagedThreadApi,
   ]);
 
   return {
