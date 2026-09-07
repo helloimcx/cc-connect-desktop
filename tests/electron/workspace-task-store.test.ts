@@ -45,7 +45,7 @@ test('workspace registry entries persist in LocalCoreAcpStore', () => {
 test('runtime project migration makes workspace registry authoritative and preserves identity across rename', async () => {
   const userDataPath = mkdtempSync(join(tmpdir(), 'workspace-project-migration-'));
   try {
-    const runtime = bootstrapLocalCoreRuntime({ userDataPath, enableKnowledge: false, log: () => {} });
+    const runtime = bootstrapLocalCoreRuntime({ userDataPath, log: () => {} });
     const controller = new LocalCoreController(userDataPath, runtime);
     await controller.saveRuntimeConfig({
       projects: [{
@@ -175,7 +175,6 @@ test('controller stores embedded project providers as-is without migrating them'
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
       log: () => {},
     });
     const controller = new LocalCoreController(userDataPath, runtime);
@@ -213,7 +212,6 @@ test('workspace router resolves projects that select a shared provider', async (
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
       log: () => {},
     });
     const controller = new LocalCoreController(userDataPath, runtime);
@@ -251,7 +249,6 @@ test('scheduler create resolves a Lark delivery route without binding the job to
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
       log: () => {},
     });
     const controller = new LocalCoreController(userDataPath, runtime);
@@ -296,7 +293,6 @@ test('scheduler create from a bound thread preserves channel instance route', as
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
       log: () => {},
     });
     const controller = new LocalCoreController(userDataPath, runtime);
@@ -1364,7 +1360,7 @@ test('scheduler dispatches due jobs without waiting for long-running jobs', asyn
 
 test('scheduler ignores malformed enabled legacy cron jobs during startup and ticks', async () => {
   const userDataPath = mkdtempSync(join(tmpdir(), 'scheduler-malformed-cron-'));
-  const runtime = bootstrapLocalCoreRuntime({ userDataPath, enableKnowledge: false, log: () => {} });
+  const runtime = bootstrapLocalCoreRuntime({ userDataPath, log: () => {} });
   try {
     const job = runtime.store.createScheduledJob({
       workspaceId: 'workspace-a',
@@ -1659,7 +1655,7 @@ test('WorkspaceRouter retrieves artifact content with security boundary checks',
   const userDataPath = mkdtempSync(join(tmpdir(), 'artifact-content-test-'));
   const workspacePath = mkdtempSync(join(tmpdir(), 'workspace-artifact-test-'));
   try {
-    const runtime = bootstrapLocalCoreRuntime({ userDataPath, enableKnowledge: false, log: () => {} });
+    const runtime = bootstrapLocalCoreRuntime({ userDataPath, log: () => {} });
     const controller = new LocalCoreController(userDataPath, runtime);
 
     const workspaceId = 'ws-artifact-test';
@@ -1751,7 +1747,7 @@ test('WorkspaceRouter restricts artifact reads to the run artifacts directory', 
   const workspacePath = mkdtempSync(join(tmpdir(), 'artifact-scope-ws-'));
   const secretPath = join(tmpdir(), `artifact-scope-secret-${process.pid}.txt`);
   try {
-    const runtime = bootstrapLocalCoreRuntime({ userDataPath, enableKnowledge: false, log: () => {} });
+    const runtime = bootstrapLocalCoreRuntime({ userDataPath, log: () => {} });
     const controller = new LocalCoreController(userDataPath, runtime);
 
     const workspaceId = 'ws-artifact-scope';

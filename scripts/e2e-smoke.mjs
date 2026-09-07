@@ -29,13 +29,6 @@ function writeSettings(userDataDir, settings) {
     `${JSON.stringify({
       defaultProject: 'default',
       autoStartService: true,
-      knowledge: {
-        baseUrl: '',
-        authMode: 'none',
-        token: '',
-        headerName: 'X-API-Key',
-        defaultCollection: 'personal_knowledge',
-      },
       plugins: {},
       ...settings,
     }, null, 2)}\n`,

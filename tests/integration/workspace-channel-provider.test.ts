@@ -309,7 +309,6 @@ test('WorkspaceRouter resolves channel preferred provider via channelRoute with 
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
     runtime.store.upsertModelProvider({
       id: 'provider-default',

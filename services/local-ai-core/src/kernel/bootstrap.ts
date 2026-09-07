@@ -199,7 +199,6 @@ function isAgentPlugin(plugin: RuntimePlugin | null): plugin is AgentPlugin {
 export function bootstrapLocalCoreRuntime(options: {
   userDataPath: string;
   localCoreBase?: string;
-  enableKnowledge?: boolean;
   log?: (message: string) => void;
 }): LocalCoreRuntimeBootstrap {
   const state = createLocalCoreRuntimeState({
