@@ -77,16 +77,6 @@ export function registerRuntimeHandlers(
       configPath: 'string',
       autoStartService: 'boolean',
       defaultProject: 'string',
-      knowledge: {
-        kind: 'object',
-        fields: {
-          baseUrl: 'string',
-          authMode: { kind: 'string', allowedValues: ['none', 'bearer', 'header'] },
-          token: 'string',
-          headerName: 'string',
-          defaultCollection: 'string',
-        },
-      },
       plugins: {
         kind: 'object',
         valueSchema: {

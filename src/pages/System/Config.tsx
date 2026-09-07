@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, FileCode, Plug, RefreshCw, RotateCcw, Save, ScrollText, ShieldCheck, Stethoscope } from 'lucide-react';
+import { AlertTriangle, FileCode, Plug, RefreshCw, RotateCcw, ScrollText, ShieldCheck, Stethoscope } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   getCoreRuntime,
@@ -8,9 +8,8 @@ import {
   listDiagnosticErrors,
   restartCoreService,
   runDiagnosticsDoctor,
-  saveCoreSettings,
 } from '@cc/core-sdk/runtime';
-import { Badge, Button, Input, PageHeader, SectionCard, StatusPill } from '@/components/ui';
+import { Badge, Button, PageHeader, SectionCard, StatusPill } from '@/components/ui';
 import type { DesktopRuntimeStatus } from '@cc/superai-contracts';
 import type { LocalCoreDoctorResult, LocalCoreErrorSummary, LocalCorePluginDiagnostics } from '@cc/superai-contracts';
 
@@ -27,10 +26,7 @@ export default function SystemConfig() {
   const [plugins, setPlugins] = useState<LocalCorePluginDiagnostics | null>(null);
   const [diagnosticErrors, setDiagnosticErrors] = useState<LocalCoreErrorSummary[]>([]);
   const [doctorResult, setDoctorResult] = useState<LocalCoreDoctorResult | null>(null);
-  const [knowledgeBaseUrl, setKnowledgeBaseUrl] = useState('');
-  const [persistedKnowledgeBaseUrl, setPersistedKnowledgeBaseUrl] = useState('');
   const [loading, setLoading] = useState(true);
-  const [savingKnowledge, setSavingKnowledge] = useState(false);
   const [runningDoctor, setRunningDoctor] = useState(false);
   const [actionMsg, setActionMsg] = useState('');
 
@@ -44,8 +40,6 @@ export default function SystemConfig() {
       ]);
       if (runtimeResult.status === 'fulfilled') {
         setRuntime(runtimeResult.value);
-        setKnowledgeBaseUrl(runtimeResult.value.settings.knowledge.baseUrl || '');
-        setPersistedKnowledgeBaseUrl(runtimeResult.value.settings.knowledge.baseUrl || '');
       }
       if (pluginResult.status === 'fulfilled') setPlugins(pluginResult.value);
       if (errorResult.status === 'fulfilled') setDiagnosticErrors(errorResult.value);
@@ -80,28 +74,6 @@ export default function SystemConfig() {
     }
   };
 
-  const handleSaveKnowledge = async () => {
-    setSavingKnowledge(true);
-    try {
-      const settings = await saveCoreSettings({
-        knowledge: {
-          baseUrl: knowledgeBaseUrl,
-          authMode: runtime?.settings.knowledge.authMode || 'none',
-          token: runtime?.settings.knowledge.token || '',
-          headerName: runtime?.settings.knowledge.headerName || 'X-API-Key',
-          defaultCollection: runtime?.settings.knowledge.defaultCollection || 'personal_knowledge',
-        },
-      });
-      setRuntime((current) => current ? { ...current, settings } : current);
-      setPersistedKnowledgeBaseUrl(settings.knowledge.baseUrl || '');
-      setActionMsg(t('common.success'));
-    } catch (e: any) {
-      setActionMsg(e.message);
-    } finally {
-      setSavingKnowledge(false);
-    }
-  };
-
   const handleRunDoctor = async () => {
     setRunningDoctor(true);
     try {
@@ -115,8 +87,6 @@ export default function SystemConfig() {
       setRunningDoctor(false);
     }
   };
-
-  const knowledgeDirty = knowledgeBaseUrl !== persistedKnowledgeBaseUrl;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -246,29 +216,6 @@ export default function SystemConfig() {
           )}
         </SectionCard>
       </div>
-
-      <SectionCard
-        className="app-panel"
-        title="Knowledge"
-        description="System-wide knowledge API connection."
-        actions={(
-          <Button
-            size="sm"
-            onClick={() => void handleSaveKnowledge()}
-            loading={savingKnowledge}
-            disabled={!knowledgeDirty && !savingKnowledge}
-          >
-            <Save size={14} /> Save
-          </Button>
-        )}
-      >
-        <Input
-          label="Knowledge base URL"
-          value={knowledgeBaseUrl}
-          onChange={(event) => setKnowledgeBaseUrl(event.target.value)}
-          placeholder="http://127.0.0.1:16007"
-        />
-      </SectionCard>
 
       <SectionCard className="app-panel" title={t('system.plugins')} description="Plugin state is read-only in the daily UI. Use backend config for advanced changes.">
         {!plugins ? (

@@ -33,7 +33,6 @@ import {
   createKernelBuiltinPlugins,
   createRuntimeAgentPlugins,
   createRuntimeChannelPlugins,
-  createRuntimeKnowledgePlugin,
   createRuntimeMonitorPlugins,
   createRuntimeSchedulerPlugins,
 } from '../plugins/builtin/catalog.js';
@@ -200,7 +199,6 @@ function isAgentPlugin(plugin: RuntimePlugin | null): plugin is AgentPlugin {
 export function bootstrapLocalCoreRuntime(options: {
   userDataPath: string;
   localCoreBase?: string;
-  enableKnowledge?: boolean;
   log?: (message: string) => void;
 }): LocalCoreRuntimeBootstrap {
   const state = createLocalCoreRuntimeState({
@@ -234,12 +232,7 @@ export function bootstrapLocalCoreRuntime(options: {
   });
   const channelPlugin = channelPlugins.lark;
   const weixinChannelPlugin = channelPlugins.weixin;
-  const knowledgePlugin = createRuntimeKnowledgePlugin({
-    enableKnowledge: options.enableKnowledge,
-    userDataPath: options.userDataPath,
-    getConfig: () => state.getKnowledgeConfig(),
-    setConfig: (input) => state.updateKnowledgeConfig(input),
-  });
+  const knowledgePlugin = createBuiltinNoopKnowledgePlugin();
   const schedulerPlugins = createRuntimeSchedulerPlugins({
     store,
     getWorkspaceRouter: () => workspaceRouter,

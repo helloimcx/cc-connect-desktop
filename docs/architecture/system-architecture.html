@@ -5004,7 +5004,7 @@
     <!-- Main Diagram -->
     <div class="diagram-container" data-detail-level="read"
          data-preset-badge-editorial-plate="ARCHIFY / 图版 04">
-      <svg viewBox="0 0 1356 658" role="img" lang="zh-CN" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
+      <svg viewBox="0 0 1356 648" role="img" lang="zh-CN" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
         <title id="archify-diagram-title">AgentDock 系统架构图</title>
         <desc id="archify-diagram-description">由 Archify 生成的架构图。</desc>
         <!-- Definitions -->
@@ -5032,7 +5032,7 @@
         <!-- Boundaries (behind everything) -->
         <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="0" data-composition-frame-label="桌面客户端 (AgentDock Desktop)" x="34" y="96" width="182" height="224" rx="8" class="c-security-group" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="1" data-composition-frame-label="Local AI Core (本地服务进程 127.0.0.1:9831)" x="306" y="96" width="748" height="494" rx="12" class="c-region" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="1" data-composition-frame-label="Local AI Core (本地服务进程 127.0.0.1:9831)" x="306" y="96" width="748" height="408" rx="12" class="c-region" stroke-width="1"/>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="2" data-composition-frame-label="云端沙箱隔离区 (Cloud Sandbox)" x="1124" y="296" width="192" height="108" rx="8" class="c-security-group" stroke-width="1"/>
 
@@ -5040,15 +5040,14 @@
         <path data-edge-from="electron" data-edge-to="core_api" data-edge-label="伴生拉起" data-edge-key="0" data-edge-id="electron-to-core" data-composition-points="200,150;410,150;410,295" d="M 200 150 L 402 150 Q 410 150 410 158 L 410 295" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="renderer" data-edge-to="core_api" data-edge-label="REST &amp; SSE" data-edge-key="1" data-edge-id="renderer-to-core" data-composition-points="200,270;265,270;265,323;330,323" d="M 200 270 L 257 270 Q 265 270 265 278 L 265 315 Q 265 323 273 323 L 330 323" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="channels" data-edge-to="core_api" data-edge-label="Webhook 接入" data-edge-key="2" data-edge-id="channels-to-core" data-composition-points="200,430;265,430;265,337;330,337" d="M 200 430 L 257 430 Q 265 430 265 422 L 265 345 Q 265 337 273 337 L 330 337" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="external_client" data-edge-to="core_api" data-edge-label="Webhook 触发" data-edge-key="3" data-edge-id="external-to-core" data-composition-points="200,550;410,550;410,365" d="M 200 550 L 402 550 Q 410 550 410 542 L 410 365" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="external_client" data-edge-to="core_api" data-edge-label="API 调用 · Webhook 触发" data-edge-key="3" data-edge-id="external-to-core" data-composition-points="200,550;410,550;410,365" d="M 200 550 L 402 550 Q 410 550 410 542 L 410 365" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="core_api" data-edge-to="kernel" data-edge-label="请求路由" data-edge-key="4" data-edge-id="core-to-kernel" data-composition-points="490,330;600,330" d="M 490 330 L 600 330" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="kernel" data-edge-to="sqlite" data-edge-label="状态持久化" data-edge-key="5" data-edge-id="kernel-to-sqlite" data-composition-points="680,295;680,180" d="M 680 295 L 680 180" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="kernel" data-edge-to="knowledge" data-edge-label="向量检索" data-edge-key="6" data-edge-id="kernel-to-knowledge" data-composition-points="680,365;680,510" d="M 680 365 L 680 510" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="kernel" data-edge-to="acp_engine" data-edge-label="驱动会话" data-edge-key="7" data-edge-id="kernel-to-acp" data-composition-points="760,323;815,323;815,232;870,232" d="M 760 323 L 807 323 Q 815 323 815 315 L 815 240 Q 815 232 823 232 L 870 232" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="kernel" data-edge-to="scheduler" data-edge-label="注册任务" data-edge-key="8" data-edge-id="kernel-to-scheduler" data-composition-points="760,337;815,337;815,452;870,452" d="M 760 337 L 807 337 Q 815 337 815 345 L 815 444 Q 815 452 823 452 L 870 452" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="scheduler" data-edge-to="acp_engine" data-edge-label="触发 Run" data-edge-key="9" data-edge-id="scheduler-to-acp" data-composition-points="950,420;950,264" d="M 950 420 L 950 264" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="acp_engine" data-edge-to="local_agents" data-edge-label="stdio 通道" data-edge-key="10" data-edge-id="acp-to-local" data-composition-points="1030,225;1085,225;1085,172;1140,172" d="M 1030 225 L 1077 225 Q 1085 225 1085 217 L 1085 180 Q 1085 172 1093 172 L 1140 172" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="acp_engine" data-edge-to="opensandbox" data-edge-label="NDJSON 桥接" data-edge-key="11" data-edge-id="acp-to-sandbox" data-composition-points="1030,239;1085,239;1085,352;1140,352" d="M 1030 239 L 1077 239 Q 1085 239 1085 247 L 1085 344 Q 1085 352 1093 352 L 1140 352" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="kernel" data-edge-to="acp_engine" data-edge-label="驱动会话" data-edge-key="6" data-edge-id="kernel-to-acp" data-composition-points="760,323;815,323;815,232;870,232" d="M 760 323 L 807 323 Q 815 323 815 315 L 815 240 Q 815 232 823 232 L 870 232" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="kernel" data-edge-to="scheduler" data-edge-label="注册任务" data-edge-key="7" data-edge-id="kernel-to-scheduler" data-composition-points="760,337;815,337;815,452;870,452" d="M 760 337 L 807 337 Q 815 337 815 345 L 815 444 Q 815 452 823 452 L 870 452" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="scheduler" data-edge-to="acp_engine" data-edge-label="触发 Run" data-edge-key="8" data-edge-id="scheduler-to-acp" data-composition-points="950,420;950,264" d="M 950 420 L 950 264" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="acp_engine" data-edge-to="local_agents" data-edge-label="stdio 通道" data-edge-key="9" data-edge-id="acp-to-local" data-composition-points="1030,225;1085,225;1085,172;1140,172" d="M 1030 225 L 1077 225 Q 1085 225 1085 217 L 1085 180 Q 1085 172 1093 172 L 1140 172" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="acp_engine" data-edge-to="opensandbox" data-edge-label="NDJSON 桥接" data-edge-key="10" data-edge-id="acp-to-sandbox" data-composition-points="1030,239;1085,239;1085,352;1140,352" d="M 1030 239 L 1077 239 Q 1085 239 1085 247 L 1085 344 Q 1085 352 1093 352 L 1140 352" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
 
         <!-- Components -->
         <g id="node-electron" data-node-id="electron" data-node-label="Electron 桌面壳" tabindex="0" role="button" aria-label="聚焦Electron 桌面壳，生命周期与窗口管理, 桌面客户端 (AgentDock Desktop)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="生命周期与窗口管理" data-node-context="桌面客户端 (AgentDock Desktop)">
@@ -5090,16 +5089,16 @@
         <text data-detail="context" x="125" y="444" class="t-muted" font-size="9" text-anchor="middle">飞书 / 企业微信 Ingress</text>
         </g>
 
-        <g id="node-external_client" data-node-id="external_client" data-node-label="外部系统 / Webhook" tabindex="0" role="button" aria-label="聚焦外部系统 / Webhook，Webhook / API 接入, 架构组件" aria-pressed="false" data-node-kind="external" data-node-sublabel="Webhook / API 接入" data-node-context="架构组件">
-          <title>外部系统 / Webhook · Webhook / API 接入 · 架构组件</title>
+        <g id="node-external_client" data-node-id="external_client" data-node-label="外部系统 / API · Webhook" tabindex="0" role="button" aria-label="聚焦外部系统 / API · Webhook，/external/* · Webhook 接入, 架构组件" aria-pressed="false" data-node-kind="external" data-node-sublabel="/external/* · Webhook 接入" data-node-context="架构组件">
+          <title>外部系统 / API · Webhook · /external/* · Webhook 接入 · 架构组件</title>
           <rect x="50" y="520" width="150" height="60" rx="6" class="c-mask"/>
           <rect x="50" y="520" width="150" height="60" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(56 526) scale(0.6875)">
             <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="125" y="548" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">外部系统 / Webhook</text>
-        <text data-detail="context" x="125" y="564" class="t-muted" font-size="9" text-anchor="middle">Webhook / API 接入</text>
+          <text data-node-label="" data-detail-anchor="" x="125" y="548" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">外部系统 / API · Webhook</text>
+        <text data-detail="context" x="125" y="564" class="t-muted" font-size="9" text-anchor="middle">/external/* · Webhook 接入</text>
         </g>
 
         <g id="node-core_api" data-node-id="core_api" data-node-label="Core API 路由层" tabindex="0" role="button" aria-label="聚焦Core API 路由层，/api/local/v1 · 统一网关, Local AI Core (本地服务进程 127.0.0.1:9831)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="/api/local/v1 · 统一网关" data-node-context="Local AI Core (本地服务进程 127.0.0.1:9831)">
@@ -5134,18 +5133,6 @@
           </g>
           <text data-node-label="" data-detail-anchor="" x="680" y="328" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Core 内核与插件</text>
         <text data-detail="context" x="680" y="344" class="t-muted" font-size="9" text-anchor="middle">路由调度 · Monitor 触发</text>
-        </g>
-
-        <g id="node-knowledge" data-node-id="knowledge" data-node-label="向量知识库引擎" tabindex="0" role="button" aria-label="聚焦向量知识库引擎，ai_vector · 分块检索, Local AI Core (本地服务进程 127.0.0.1:9831)" aria-pressed="false" data-node-kind="database" data-node-sublabel="ai_vector · 分块检索" data-node-context="Local AI Core (本地服务进程 127.0.0.1:9831)">
-          <title>向量知识库引擎 · ai_vector · 分块检索 · Local AI Core (本地服务进程 127.0.0.1:9831)</title>
-          <rect x="600" y="510" width="160" height="60" rx="6" class="c-mask"/>
-          <rect x="600" y="510" width="160" height="60" rx="6" class="c-database" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(606 516) scale(0.6875)">
-            <ellipse cx="8" cy="4" rx="5" ry="2"/>
-            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="680" y="538" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">向量知识库引擎</text>
-        <text data-detail="context" x="680" y="554" class="t-muted" font-size="9" text-anchor="middle">ai_vector · 分块检索</text>
         </g>
 
         <g id="node-acp_engine" data-node-id="acp_engine" data-node-label="ACP 会话运行时" tabindex="0" role="button" aria-label="聚焦ACP 会话运行时，会话管理 · 权限治理 · 桥接, Local AI Core (本地服务进程 127.0.0.1:9831)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="会话管理 · 权限治理 · 桥接" data-node-context="Local AI Core (本地服务进程 127.0.0.1:9831)">
@@ -5205,9 +5192,9 @@
           <rect x="231.2" y="363.5" width="67.6" height="14" rx="3" class="c-mask"/>
           <text x="265" y="373.5" class="t-muted" font-size="8" text-anchor="middle">Webhook 接入</text>
         </g>
-        <g data-detail="context" data-edge-from="external_client" data-edge-to="core_api" data-edge-label="Webhook 触发" data-edge-key="3" data-edge-id="external-to-core">
+        <g data-detail="context" data-edge-from="external_client" data-edge-to="core_api" data-edge-label="API 调用 · Webhook 触发" data-edge-key="3" data-edge-id="external-to-core">
           <rect x="376.2" y="437.5" width="67.6" height="14" rx="3" class="c-mask"/>
-          <text x="410" y="447.5" class="t-muted" font-size="8" text-anchor="middle">Webhook 触发</text>
+          <text x="410" y="447.5" class="t-muted" font-size="8" text-anchor="middle">API 调用 · Webhook 触发</text>
         </g>
         <g data-detail="context" data-edge-from="core_api" data-edge-to="kernel" data-edge-label="请求路由" data-edge-key="4" data-edge-id="core-to-kernel">
           <rect x="520.8" y="310" width="48.4" height="14" rx="3" class="c-mask"/>
@@ -5217,27 +5204,23 @@
           <rect x="651" y="275" width="58" height="14" rx="3" class="c-mask"/>
           <text x="680" y="285" class="t-muted" font-size="8" text-anchor="middle">状态持久化</text>
         </g>
-        <g data-detail="context" data-edge-from="kernel" data-edge-to="knowledge" data-edge-label="向量检索" data-edge-key="6" data-edge-id="kernel-to-knowledge">
-          <rect x="655.8" y="375" width="48.4" height="14" rx="3" class="c-mask"/>
-          <text x="680" y="385" class="t-muted" font-size="8" text-anchor="middle">向量检索</text>
-        </g>
-        <g data-detail="context" data-edge-from="kernel" data-edge-to="acp_engine" data-edge-label="驱动会话" data-edge-key="7" data-edge-id="kernel-to-acp">
+        <g data-detail="context" data-edge-from="kernel" data-edge-to="acp_engine" data-edge-label="驱动会话" data-edge-key="6" data-edge-id="kernel-to-acp">
           <rect x="790.8" y="257.5" width="48.4" height="14" rx="3" class="c-mask"/>
           <text x="815" y="267.5" class="t-backend" font-size="8" text-anchor="middle">驱动会话</text>
         </g>
-        <g data-detail="context" data-edge-from="kernel" data-edge-to="scheduler" data-edge-label="注册任务" data-edge-key="8" data-edge-id="kernel-to-scheduler">
+        <g data-detail="context" data-edge-from="kernel" data-edge-to="scheduler" data-edge-label="注册任务" data-edge-key="7" data-edge-id="kernel-to-scheduler">
           <rect x="790.8" y="374.5" width="48.4" height="14" rx="3" class="c-mask"/>
           <text x="815" y="384.5" class="t-muted" font-size="8" text-anchor="middle">注册任务</text>
         </g>
-        <g data-detail="context" data-edge-from="scheduler" data-edge-to="acp_engine" data-edge-label="触发 Run" data-edge-key="9" data-edge-id="scheduler-to-acp">
+        <g data-detail="context" data-edge-from="scheduler" data-edge-to="acp_engine" data-edge-label="触发 Run" data-edge-key="8" data-edge-id="scheduler-to-acp">
           <rect x="925.8" y="400" width="48.4" height="14" rx="3" class="c-mask"/>
           <text x="950" y="410" class="t-muted" font-size="8" text-anchor="middle">触发 Run</text>
         </g>
-        <g data-detail="context" data-edge-from="acp_engine" data-edge-to="local_agents" data-edge-label="stdio 通道" data-edge-key="10" data-edge-id="acp-to-local">
+        <g data-detail="context" data-edge-from="acp_engine" data-edge-to="local_agents" data-edge-label="stdio 通道" data-edge-key="9" data-edge-id="acp-to-local">
           <rect x="1056" y="178.5" width="58" height="14" rx="3" class="c-mask"/>
           <text x="1085" y="188.5" class="t-muted" font-size="8" text-anchor="middle">stdio 通道</text>
         </g>
-        <g data-detail="context" data-edge-from="acp_engine" data-edge-to="opensandbox" data-edge-label="NDJSON 桥接" data-edge-key="11" data-edge-id="acp-to-sandbox">
+        <g data-detail="context" data-edge-from="acp_engine" data-edge-to="opensandbox" data-edge-label="NDJSON 桥接" data-edge-key="10" data-edge-id="acp-to-sandbox">
           <rect x="1053.6" y="275.5" width="62.8" height="14" rx="3" class="c-mask"/>
           <text x="1085" y="285.5" class="t-backend" font-size="8" text-anchor="middle">NDJSON 桥接</text>
         </g>
@@ -5260,30 +5243,30 @@
 
         <!-- Legend -->
         <g data-legend="" data-legend-bridge="">
-          <text x="40" y="622" class="t-primary" font-size="12" font-weight="650">图例</text>
-          <g data-legend-semantic-kind="frontend" data-legend-kind="frontend" data-legend-label="前端" data-legend-x="40" data-legend-baseline="642" data-legend-width="63">
-            <rect x="40" y="633" width="16" height="10" rx="2.5" class="c-frontend" stroke-width="1"/>
-            <text x="62" y="642" class="t-muted" font-size="10" font-weight="500">前端</text>
+          <text x="40" y="612" class="t-primary" font-size="12" font-weight="650">图例</text>
+          <g data-legend-semantic-kind="frontend" data-legend-kind="frontend" data-legend-label="前端" data-legend-x="40" data-legend-baseline="632" data-legend-width="63">
+            <rect x="40" y="623" width="16" height="10" rx="2.5" class="c-frontend" stroke-width="1"/>
+            <text x="62" y="632" class="t-muted" font-size="10" font-weight="500">前端</text>
           </g>
-          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="后端" data-legend-x="125" data-legend-baseline="642" data-legend-width="63">
-            <rect x="125" y="633" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1"/>
-            <text x="147" y="642" class="t-muted" font-size="10" font-weight="500">后端</text>
+          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="后端" data-legend-x="125" data-legend-baseline="632" data-legend-width="63">
+            <rect x="125" y="623" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1"/>
+            <text x="147" y="632" class="t-muted" font-size="10" font-weight="500">后端</text>
           </g>
-          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="数据库" data-legend-x="210" data-legend-baseline="642" data-legend-width="73">
-            <rect x="210" y="633" width="16" height="10" rx="2.5" class="c-database" stroke-width="1"/>
-            <text x="232" y="642" class="t-muted" font-size="10" font-weight="500">数据库</text>
+          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="数据库" data-legend-x="210" data-legend-baseline="632" data-legend-width="73">
+            <rect x="210" y="623" width="16" height="10" rx="2.5" class="c-database" stroke-width="1"/>
+            <text x="232" y="632" class="t-muted" font-size="10" font-weight="500">数据库</text>
           </g>
-          <g data-legend-semantic-kind="cloud" data-legend-kind="cloud" data-legend-label="云服务" data-legend-x="305" data-legend-baseline="642" data-legend-width="73">
-            <rect x="305" y="633" width="16" height="10" rx="2.5" class="c-cloud" stroke-width="1"/>
-            <text x="327" y="642" class="t-muted" font-size="10" font-weight="500">云服务</text>
+          <g data-legend-semantic-kind="cloud" data-legend-kind="cloud" data-legend-label="云服务" data-legend-x="305" data-legend-baseline="632" data-legend-width="73">
+            <rect x="305" y="623" width="16" height="10" rx="2.5" class="c-cloud" stroke-width="1"/>
+            <text x="327" y="632" class="t-muted" font-size="10" font-weight="500">云服务</text>
           </g>
-          <g data-legend-semantic-kind="messagebus" data-legend-kind="messagebus" data-legend-label="消息总线" data-legend-x="400" data-legend-baseline="642" data-legend-width="83">
-            <rect x="400" y="633" width="16" height="10" rx="2.5" class="c-messagebus" stroke-width="1"/>
-            <text x="422" y="642" class="t-muted" font-size="10" font-weight="500">消息总线</text>
+          <g data-legend-semantic-kind="messagebus" data-legend-kind="messagebus" data-legend-label="消息总线" data-legend-x="400" data-legend-baseline="632" data-legend-width="83">
+            <rect x="400" y="623" width="16" height="10" rx="2.5" class="c-messagebus" stroke-width="1"/>
+            <text x="422" y="632" class="t-muted" font-size="10" font-weight="500">消息总线</text>
           </g>
-          <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="外部系统" data-legend-x="505" data-legend-baseline="642" data-legend-width="83">
-            <rect x="505" y="633" width="16" height="10" rx="2.5" class="c-external" stroke-width="1"/>
-            <text x="527" y="642" class="t-muted" font-size="10" font-weight="500">外部系统</text>
+          <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="外部系统" data-legend-x="505" data-legend-baseline="632" data-legend-width="83">
+            <rect x="505" y="623" width="16" height="10" rx="2.5" class="c-external" stroke-width="1"/>
+            <text x="527" y="632" class="t-muted" font-size="10" font-weight="500">外部系统</text>
           </g>
         </g>
       </svg>
@@ -5491,8 +5474,8 @@
         </div>
         <ul>
           <li>&bull; 统一管理 Workspace 隔离、Thread 线程、Run 执行与工件产物</li>
-          <li>&bull; 确定性技能路由与开放式 Monitor 事件源（行情 / Webhook）</li>
-          <li>&bull; 内置 SQLite 本地持久化与基于 ai_vector 的知识库向量检索</li>
+          <li>&bull; 确定性技能路由引擎（Skill Router）、权限动态继承与开放式 Monitor 事件源（行情 / Webhook）</li>
+          <li>&bull; 内置 SQLite 本地持久化与工作区会话状态管理</li>
         </ul>
       </div>
 

@@ -252,7 +252,7 @@ export default function KnowledgeHome() {
         configReady={configReady}
         loading={loading}
         unconfiguredTitle="Knowledge search is not configured yet."
-        unconfiguredHint="Add the ai_vector base URL in System settings before uploading files or running retrieval."
+        unconfiguredHint="Knowledge base functionality is currently disabled."
         successClass="border-primary/20 bg-primary/10 text-primary dark:border-primary/25 dark:bg-primary/10 dark:text-blue-200"
       />
 

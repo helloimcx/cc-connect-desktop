@@ -55,8 +55,8 @@
     {
       "id": "external_client",
       "type": "external",
-      "label": "外部系统 / Webhook",
-      "sublabel": "Webhook / API 接入",
+      "label": "外部系统 / API · Webhook",
+      "sublabel": "/external/* · Webhook 接入",
       "pos": [50, 520],
       "size": [150, 60]
     },
@@ -83,14 +83,6 @@
       "sublabel": "路由调度 · Monitor 触发",
       "pos": [600, 295],
       "size": [160, 70]
-    },
-    {
-      "id": "knowledge",
-      "type": "database",
-      "label": "向量知识库引擎",
-      "sublabel": "ai_vector · 分块检索",
-      "pos": [600, 510],
-      "size": [160, 60]
     },
     {
       "id": "acp_engine",
@@ -135,7 +127,7 @@
     {
       "kind": "region",
       "label": "Local AI Core (本地服务进程 127.0.0.1:9831)",
-      "wraps": ["core_api", "sqlite", "kernel", "knowledge", "acp_engine", "scheduler"],
+      "wraps": ["core_api", "sqlite", "kernel", "acp_engine", "scheduler"],
       "pad": 24
     },
     {
@@ -172,7 +164,7 @@
       "from": "external_client",
       "to": "core_api",
       "toSide": "bottom",
-      "label": "Webhook 触发"
+      "label": "API 调用 · Webhook 触发"
     },
     {
       "id": "core-to-kernel",
@@ -188,15 +180,6 @@
       "fromSide": "top",
       "toSide": "bottom",
       "label": "状态持久化"
-    },
-    {
-      "id": "kernel-to-knowledge",
-      "from": "kernel",
-      "to": "knowledge",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "label": "向量检索",
-      "labelDy": 30
     },
     {
       "id": "kernel-to-acp",
@@ -248,8 +231,8 @@
       "title": "Local AI Core 核心层",
       "items": [
         "统一管理 Workspace 隔离、Thread 线程、Run 执行与工件产物",
-        "确定性技能路由与开放式 Monitor 事件源（行情 / Webhook）",
-        "内置 SQLite 本地持久化与基于 ai_vector 的知识库向量检索"
+        "确定性技能路由引擎（Skill Router）、权限动态继承与开放式 Monitor 事件源（行情 / Webhook）",
+        "内置 SQLite 本地持久化与工作区会话状态管理"
       ]
     },
     {

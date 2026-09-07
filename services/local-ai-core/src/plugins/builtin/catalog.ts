@@ -1,9 +1,8 @@
-import type { DesktopConnectConfig, KnowledgeConfig } from '@cc/superai-contracts';
+import type { DesktopConnectConfig } from '@cc/superai-contracts';
 import type {
   AgentPlugin,
   ChannelPlugin,
   ChannelRuntime,
-  KnowledgePlugin,
   MonitorPlugin,
   RuntimePlugin,
   SchedulerPlugin,
@@ -24,7 +23,6 @@ import { createBuiltinStockMonitorPlugin } from './monitor-stock-plugin.js';
 import { createBuiltinWebhookMonitorPlugin } from './monitor-webhook-plugin.js';
 import { createBuiltinLarkChannelPlugin } from './channel-lark-plugin.js';
 import { createBuiltinWeixinChannelPlugin } from './channel-weixin-plugin.js';
-import { createBuiltinAiVectorKnowledgePlugin } from './knowledge-ai-vector-plugin.js';
 import { createBuiltinNoopKnowledgePlugin } from './knowledge-noop-plugin.js';
 import { createBuiltinCronSchedulerPlugin } from './scheduler-cron-plugin.js';
 import { createBuiltinLarkSchedulerPlugin } from './scheduler-lark-plugin.js';
@@ -62,21 +60,6 @@ export function createRuntimeChannelPlugins(options: {
     lark: createBuiltinLarkChannelPlugin(options),
     weixin: createBuiltinWeixinChannelPlugin(options),
   };
-}
-
-export function createRuntimeKnowledgePlugin(options: {
-  enableKnowledge?: boolean;
-  userDataPath: string;
-  getConfig: () => KnowledgeConfig;
-  setConfig: (input: Partial<KnowledgeConfig>) => Promise<KnowledgeConfig> | KnowledgeConfig;
-}): KnowledgePlugin {
-  return options.enableKnowledge === false
-    ? createBuiltinNoopKnowledgePlugin()
-    : createBuiltinAiVectorKnowledgePlugin({
-        userDataPath: options.userDataPath,
-        getConfig: options.getConfig,
-        setConfig: options.setConfig,
-      });
 }
 
 export function createRuntimeSchedulerPlugins(options: {

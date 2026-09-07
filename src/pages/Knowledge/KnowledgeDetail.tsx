@@ -161,7 +161,7 @@ export default function KnowledgeDetail() {
         configReady={configReady}
         loading={loading}
         unconfiguredTitle="Knowledge retrieval is not configured."
-        unconfiguredHint="Add the ai_vector connection in System settings to upload files and search this knowledge base."
+        unconfiguredHint="Knowledge base functionality is currently disabled."
       />
 
       {loading ? (

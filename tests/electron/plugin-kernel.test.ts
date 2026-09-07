@@ -291,8 +291,8 @@ test('runtime bootstrap registers the active knowledge provider in capability sn
       'hermes',
     ]);
     assert.deepEqual(runtime.kernel.getCapabilitySnapshot().adapters.channels, ['localcore-acp', 'lark', 'weixin']);
-    assert.deepEqual(runtime.kernel.getCapabilitySnapshot().adapters.knowledgeProviders, ['ai-vector']);
-    assert.equal(runtime.kernel.getCapabilitySnapshot().adapters.knowledge, true);
+    assert.deepEqual(runtime.kernel.getCapabilitySnapshot().adapters.knowledgeProviders, []);
+    assert.equal(runtime.kernel.getCapabilitySnapshot().adapters.knowledge, false);
     assert.deepEqual(runtime.kernel.getCapabilitySnapshot().scheduler, {
       enabled: true,
       triggerTypes: ['cron', 'once'],
@@ -312,7 +312,6 @@ test('runtime bootstrap supports a disabled knowledge plugin path', () => {
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
 
     assert.deepEqual(runtime.kernel.getCapabilitySnapshot().adapters.agents, [
@@ -346,7 +345,6 @@ test('codex agent runtime routes projects through the bundled ACP adapter', asyn
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
     await saveConfig(runtime, {
       projects: [{ name: 'codex-workspace', agent: { type: 'codex' } }],
@@ -381,7 +379,6 @@ test('thread slash agent reset resolves the workspace default agent through the 
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
     await saveConfig(runtime, {
       projects: [{ name: 'agent-workspace', agent: { type: 'codex' } }],
@@ -406,7 +403,6 @@ test('thread slash provider commands query and list providers through router', a
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
     runtime.store.upsertModelProvider({
       id: 'provider-default',
@@ -442,7 +438,6 @@ test('hermes agent runtime routes projects through hermes ACP command', async ()
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
     await saveConfig(runtime, {
       projects: [{ name: 'hermes-workspace', agent: { type: 'hermes' } }],
@@ -478,7 +473,6 @@ test('hermes agent runtime injects provider API key, base URL, and model into la
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
     runtime.store.upsertModelProvider({
       id: 'provider-opencode-go',
@@ -528,7 +522,6 @@ test('hermes agent runtime does not silently fallback to first provider when spe
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
     // Add a default provider that should NOT be selected if unmatched provider_id is requested
     runtime.store.upsertModelProvider({
@@ -564,7 +557,6 @@ test('pi agent runtime routes projects through bundled pi ACP and coding agent',
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
     runtime.store.upsertModelProvider({
       id: 'provider-openai',
@@ -625,7 +617,6 @@ test('pi agent runtime writes provider auth and default model into Pi config dir
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
     runtime.store.upsertModelProvider({
       id: 'deepseek',
@@ -683,7 +674,6 @@ test('pi agent runtime normalizes DeepSeek provider when provider name is the mo
   try {
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
     runtime.store.upsertModelProvider({
       id: 'deepseek-v4-flash',
@@ -731,13 +721,11 @@ test('runtime bootstrap knowledge capabilities come from the selected provider p
       userDataPath: enabledUserDataPath,
     });
     const disabledRuntime = bootstrapLocalCoreRuntime({
-      userDataPath: disabledUserDataPath,
-      enableKnowledge: false,
-    });
+      userDataPath: disabledUserDataPath,    });
 
     assert.deepEqual(
       enabledRuntime.kernel.getCapabilitySnapshot().snapshot.knowledge.map((capability) => capability.sourceType),
-      ['ai-vector'],
+      ['noop'],
     );
     assert.deepEqual(disabledRuntime.kernel.getCapabilitySnapshot().snapshot.knowledge, [
       {
@@ -764,13 +752,6 @@ test('runtime bootstrap keeps disabled plugins diagnosable without contributing 
       JSON.stringify({
         defaultProject: 'default',
         autoStartService: true,
-        knowledge: {
-          baseUrl: '',
-          authMode: 'none',
-          token: '',
-          headerName: 'X-API-Key',
-          defaultCollection: 'personal_knowledge',
-        },
         plugins: {
           'builtin.scheduler-lark': { enabled: false },
         },
@@ -883,13 +864,6 @@ test('LocalCoreController accepts injected bootstrap dependencies', async () => 
         bridgePort: 0,
         bridgeToken: '',
         bridgePath: '',
-        knowledge: {
-          baseUrl: '',
-          authMode: 'none',
-          token: '',
-          headerName: 'X-API-Key',
-          defaultCollection: 'personal_knowledge',
-        },
         plugins: {},
       }),
       getLogs: () => [],
@@ -952,7 +926,6 @@ test('runtime logs are persisted to unified sys and level logs', () => {
     withLogEnv(logDir, () => {
       const runtime = bootstrapLocalCoreRuntime({
         userDataPath,
-        enableKnowledge: false,
         log: () => {},
       });
 
@@ -1081,7 +1054,6 @@ test('controller logs are persisted to sys.log', () => {
     withLogEnv(logDir, () => {
       const runtime = bootstrapLocalCoreRuntime({
         userDataPath,
-        enableKnowledge: false,
       });
       const controller = new LocalCoreController(userDataPath, runtime);
       const emittedLogs: string[] = [];
@@ -1224,10 +1196,6 @@ test('server validates the actual desktop settings contract before dispatch', as
   };
   const server = new LocalAiCoreServer({ controller } as any, { port: 0 });
 
-  const invalidKnowledge = await invokeServer(server, 'POST', '/api/local/v1/runtime/settings', { knowledge: 42 });
-  assert.equal(invalidKnowledge.statusCode, 400);
-  assert.match(invalidKnowledge.body.error, /knowledge/);
-
   const invalidPlugins = await invokeServer(server, 'POST', '/api/local/v1/runtime/settings', { plugins: [] });
   assert.equal(invalidPlugins.statusCode, 400);
   assert.match(invalidPlugins.body.error, /plugins/);
@@ -1237,18 +1205,11 @@ test('server validates the actual desktop settings contract before dispatch', as
   });
   assert.equal(invalidPluginSettings.statusCode, 400);
   assert.match(invalidPluginSettings.body.error, /plugins\.channel\.lark\.enabled/);
-
-  const invalidAuthMode = await invokeServer(server, 'POST', '/api/local/v1/runtime/settings', {
-    knowledge: { authMode: 'cookie' },
-  });
-  assert.equal(invalidAuthMode.statusCode, 400);
-  assert.match(invalidAuthMode.body.error, /knowledge\.authMode/);
   assert.equal(dispatched, false);
 
   const valid = await invokeServer(server, 'POST', '/api/local/v1/runtime/settings', {
     autoStartService: true,
     defaultProject: 'workspace-stable',
-    knowledge: { authMode: 'bearer', token: 'secret' },
     plugins: { 'channel.lark': { enabled: true, config: { appId: 'app-id' } } },
   });
   assert.equal(valid.statusCode, 200);
@@ -1439,13 +1400,6 @@ test('agent runtime selection is registry-based and disabled runtimes do not rou
       JSON.stringify({
         defaultProject: 'default',
         autoStartService: true,
-        knowledge: {
-          baseUrl: '',
-          authMode: 'none',
-          token: '',
-          headerName: 'X-API-Key',
-          defaultCollection: 'personal_knowledge',
-        },
         plugins: {
           'builtin.agent-pi': { enabled: false },
           'builtin.agent-claudecode': { enabled: false },

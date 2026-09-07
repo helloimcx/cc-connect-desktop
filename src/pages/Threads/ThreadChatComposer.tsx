@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Button, Input, Textarea } from '@/components/ui';
 import { cn } from '@/lib/utils';
+import { useRuntimeFeatureSupport } from '@/app/runtime';
 import { PermissionRequestCardView } from './ThreadChatMessage';
 import {
   canSubmitComposer,
@@ -84,6 +85,7 @@ export function ThreadChatComposer({
   setDraft,
   setSelectedKnowledgeBaseIds,
 }: ThreadChatComposerProps) {
+  const { knowledgeModule } = useRuntimeFeatureSupport();
   const [knowledgePickerOpen, setKnowledgePickerOpen] = useState(false);
   const knowledgePickerRef = useRef<HTMLDivElement>(null);
   const [knowledgeSearch, setKnowledgeSearch] = useState('');
@@ -234,122 +236,126 @@ export function ThreadChatComposer({
                   {permissionModeSaving ? <LoaderCircle size={12} className="mr-1 animate-spin text-slate-400" /> : null}
                 </div>
 
-                <div className="relative" ref={knowledgePickerRef}>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={!selectedProject}
-                    onClick={() => setKnowledgePickerOpen((current) => !current)}
-                    data-testid="desktop-chat-knowledge-base-toggle"
-                    className="h-8 rounded-full border border-slate-200 bg-white px-2.5 text-xs text-slate-700 shadow-sm hover:bg-slate-100 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-slate-100 dark:hover:bg-white/[0.1]"
-                  >
-                    <Database size={13} />
-                    {selectedKnowledgeCount > 0 ? '调整知识库' : '选择知识库'}
-                  </Button>
-
-                  {knowledgePickerOpen ? (
-                    <div className="animate-float-in absolute bottom-full left-0 z-20 mb-3 w-[min(34rem,calc(100vw-2rem))] max-h-[70dvh] overflow-hidden rounded-[22px] border border-slate-200 bg-white p-3 shadow-[0_18px_45px_rgba(15,23,42,0.12)] dark:border-white/[0.08] dark:bg-[#0c1117]">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white">选择知识库</p>
-                          <p className="text-[11px] text-slate-400">已选项排在前面，方便快速确认范围。</p>
-                        </div>
-                        {selectedKnowledgeCount > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => void setSelectedKnowledgeBaseIds([])}
-                            className="text-xs text-slate-400 transition-colors hover:text-slate-900 dark:hover:text-white"
-                          >
-                            清空
-                          </button>
-                        ) : null}
-                      </div>
-                      <Input
-                        value={knowledgeSearch}
-                        onChange={(event) => setKnowledgeSearch(event.target.value)}
-                        placeholder="搜索知识库"
-                        aria-label="搜索知识库"
-                        className="mt-3 rounded-[18px] border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white dark:placeholder:text-slate-500"
-                      />
-                      <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
-                        {orderedKnowledgeBases.length === 0 ? (
-                          <div className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-500 dark:border-white/[0.08]">
-                            没有匹配的知识库
-                          </div>
-                        ) : (
-                          orderedKnowledgeBases.map((base) => {
-                            const checked = selectedKnowledgeBaseIds.includes(base.id);
-                            return (
-                              <button
-                                key={base.id}
-                                type="button"
-                                onClick={() =>
-                                  void setSelectedKnowledgeBaseIds(
-                                    checked
-                                      ? selectedKnowledgeBaseIds.filter((id) => id !== base.id)
-                                      : [...selectedKnowledgeBaseIds, base.id],
-                                  )
-                                }
-                                data-testid="desktop-chat-knowledge-base-select"
-                                className={cn(
-                                  'flex w-full items-start gap-3 rounded-[16px] border px-3 py-3 text-left transition-all duration-200',
-                                  checked
-                                    ? 'border-primary/25 bg-primary/5 dark:border-primary/30 dark:bg-primary/10'
-                                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-[#fafafa] dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:border-white/[0.12] dark:hover:bg-white/[0.05]',
-                                )}
-                              >
-                                <span
-                                  className={cn(
-                                    'mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px]',
-                                    checked
-                                      ? 'border-primary bg-primary text-white'
-                                      : 'border-slate-300 text-transparent dark:border-white/[0.12]',
-                                  )}
-                                >
-                                  <Check size={12} />
-                                </span>
-                                <span className="min-w-0 flex-1">
-                                  <span className="block truncate text-sm font-medium text-slate-900 dark:text-white">{base.name}</span>
-                                  <span className="mt-1 block text-[11px] text-slate-400">
-                                    {base.fileCount} 文件
-                                    {base.description ? ` · ${base.description}` : ''}
-                                  </span>
-                                </span>
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-gutter:stable]">
-                  {selectedKnowledgeBases.length === 0 ? (
-                    <span className="text-xs text-slate-400">
-                      {selectedProject ? '当前未限制知识库范围' : '选择项目后可设置知识库范围'}
-                    </span>
-                  ) : (
-                    selectedKnowledgeBases.map((base) => (
-                      <span
-                        key={base.id}
-                        className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-slate-100"
+                {knowledgeModule ? (
+                  <>
+                    <div className="relative" ref={knowledgePickerRef}>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={!selectedProject}
+                        onClick={() => setKnowledgePickerOpen((current) => !current)}
+                        data-testid="desktop-chat-knowledge-base-toggle"
+                        className="h-8 rounded-full border border-slate-200 bg-white px-2.5 text-xs text-slate-700 shadow-sm hover:bg-slate-100 dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-slate-100 dark:hover:bg-white/[0.1]"
                       >
-                        <span className="max-w-[10rem] truncate">{base.name}</span>
-                        {base.fileCount > 0 ? <span className="text-[10px] text-slate-500">{base.fileCount} 文件</span> : null}
-                        <button
-                          type="button"
-                          onClick={() => void setSelectedKnowledgeBaseIds(selectedKnowledgeBaseIds.filter((id) => id !== base.id))}
-                          className="text-slate-500 transition-colors hover:text-slate-900 dark:hover:text-white"
-                          data-testid="desktop-chat-knowledge-base-remove"
-                          aria-label={`移除 ${base.name}`}
-                        >
-                          <X size={12} />
-                        </button>
-                      </span>
-                    ))
-                  )}
-                </div>
+                        <Database size={13} />
+                        {selectedKnowledgeCount > 0 ? '调整知识库' : '选择知识库'}
+                      </Button>
+
+                      {knowledgePickerOpen ? (
+                        <div className="animate-float-in absolute bottom-full left-0 z-20 mb-3 w-[min(34rem,calc(100vw-2rem))] max-h-[70dvh] overflow-hidden rounded-[22px] border border-slate-200 bg-white p-3 shadow-[0_18px_45px_rgba(15,23,42,0.12)] dark:border-white/[0.08] dark:bg-[#0c1117]">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900 dark:text-white">选择知识库</p>
+                              <p className="text-[11px] text-slate-400">已选项排在前面，方便快速确认范围。</p>
+                            </div>
+                            {selectedKnowledgeCount > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => void setSelectedKnowledgeBaseIds([])}
+                                className="text-xs text-slate-400 transition-colors hover:text-slate-900 dark:hover:text-white"
+                              >
+                                清空
+                              </button>
+                            ) : null}
+                          </div>
+                          <Input
+                            value={knowledgeSearch}
+                            onChange={(event) => setKnowledgeSearch(event.target.value)}
+                            placeholder="搜索知识库"
+                            aria-label="搜索知识库"
+                            className="mt-3 rounded-[18px] border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-white dark:placeholder:text-slate-500"
+                          />
+                          <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
+                            {orderedKnowledgeBases.length === 0 ? (
+                              <div className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-500 dark:border-white/[0.08]">
+                                没有匹配的知识库
+                              </div>
+                            ) : (
+                              orderedKnowledgeBases.map((base) => {
+                                const checked = selectedKnowledgeBaseIds.includes(base.id);
+                                return (
+                                  <button
+                                    key={base.id}
+                                    type="button"
+                                    onClick={() =>
+                                      void setSelectedKnowledgeBaseIds(
+                                        checked
+                                          ? selectedKnowledgeBaseIds.filter((id) => id !== base.id)
+                                          : [...selectedKnowledgeBaseIds, base.id],
+                                      )
+                                    }
+                                    data-testid="desktop-chat-knowledge-base-select"
+                                    className={cn(
+                                      'flex w-full items-start gap-3 rounded-[16px] border px-3 py-3 text-left transition-all duration-200',
+                                      checked
+                                        ? 'border-primary/25 bg-primary/5 dark:border-primary/30 dark:bg-primary/10'
+                                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-[#fafafa] dark:border-white/[0.06] dark:bg-white/[0.03] dark:hover:border-white/[0.12] dark:hover:bg-white/[0.05]',
+                                    )}
+                                  >
+                                    <span
+                                      className={cn(
+                                        'mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px]',
+                                        checked
+                                          ? 'border-primary bg-primary text-white'
+                                          : 'border-slate-300 text-transparent dark:border-white/[0.12]',
+                                      )}
+                                    >
+                                      <Check size={12} />
+                                    </span>
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate text-sm font-medium text-slate-900 dark:text-white">{base.name}</span>
+                                      <span className="mt-1 block text-[11px] text-slate-400">
+                                        {base.fileCount} 文件
+                                        {base.description ? ` · ${base.description}` : ''}
+                                      </span>
+                                    </span>
+                                  </button>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-gutter:stable]">
+                      {selectedKnowledgeBases.length === 0 ? (
+                        <span className="text-xs text-slate-400">
+                          {selectedProject ? '当前未限制知识库范围' : '选择项目后可设置知识库范围'}
+                        </span>
+                      ) : (
+                        selectedKnowledgeBases.map((base) => (
+                          <span
+                            key={base.id}
+                            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm dark:border-white/[0.08] dark:bg-white/[0.05] dark:text-slate-100"
+                          >
+                            <span className="max-w-[10rem] truncate">{base.name}</span>
+                            {base.fileCount > 0 ? <span className="text-[10px] text-slate-500">{base.fileCount} 文件</span> : null}
+                            <button
+                              type="button"
+                              onClick={() => void setSelectedKnowledgeBaseIds(selectedKnowledgeBaseIds.filter((id) => id !== base.id))}
+                              className="text-slate-500 transition-colors hover:text-slate-900 dark:hover:text-white"
+                              data-testid="desktop-chat-knowledge-base-remove"
+                              aria-label={`移除 ${base.name}`}
+                            >
+                              <X size={12} />
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </>
+                ) : null}
               </div>
 
               <div className="hidden shrink-0 items-center gap-3 sm:flex">

@@ -91,7 +91,7 @@ See [Cloud Sandbox And External Agent API](cloud-sandbox-and-external-api.md) fo
 
 - `packages/contracts`: shared API and data contracts
 - `packages/core-sdk`: Local AI Core browser client
-- `packages/knowledge-api`: knowledge abstraction and `ai_vector` implementation
+- `packages/knowledge-api`: knowledge abstraction and noop fallback runtime
 - `packages/plugin-sdk`: plugin, agent runtime, channel, scheduler, monitor, and sandbox launch contracts
 
 ## Runtime Model

@@ -19,20 +19,24 @@ import type {
   PluginContext,
   ThreadKnowledgeAttachmentStore,
 } from '@cc/plugin-sdk';
-import { AiVectorKnowledgeProvider, defaultKnowledgeConfig } from './ai-vector-provider.js';
-import { SqliteThreadKnowledgeAttachmentStore } from './thread-knowledge-store.js';
 
 export interface KnowledgeProvider extends KnowledgeRuntime {}
 
 export interface KnowledgeAttachmentStore extends ThreadKnowledgeAttachmentStore {}
 
-export interface KnowledgePluginFactoryOptions {
-  userDataPath: string;
-  getConfig: () => KnowledgeConfig;
-  setConfig: (input: Partial<KnowledgeConfig>) => Promise<KnowledgeConfig> | KnowledgeConfig;
-}
-
 export interface KnowledgePluginRuntime extends KnowledgeRuntimeRegistration {}
+
+const DEFAULT_CONFIG: KnowledgeConfig = {
+  baseUrl: '',
+  authMode: 'none',
+  token: '',
+  headerName: 'X-API-Key',
+  defaultCollection: 'personal_knowledge',
+};
+
+export function defaultKnowledgeConfig(): KnowledgeConfig {
+  return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+}
 
 export class NoopThreadKnowledgeAttachmentStore implements KnowledgeAttachmentStore {
   async listThreadKnowledgeBaseIds(): Promise<string[]> {
@@ -117,51 +121,6 @@ export class NoopKnowledgeProvider implements KnowledgeProvider {
   }
 }
 
-export function createAiVectorKnowledgePlugin(options: KnowledgePluginFactoryOptions): KnowledgePlugin {
-  let provider: KnowledgeProvider | null = null;
-  let attachments: KnowledgeAttachmentStore | null = null;
-
-  return {
-    manifest: {
-      id: 'knowledge.ai-vector',
-      kind: 'knowledge',
-      version: '0.1.0',
-      provides: ['knowledge:ai-vector'],
-      configSchema: {
-        fields: [
-          { key: 'baseUrl', type: 'string', label: 'Base URL' },
-          { key: 'authMode', type: 'string', label: 'Auth mode', defaultValue: 'none' },
-          { key: 'defaultCollection', type: 'string', label: 'Default collection' },
-        ],
-      },
-    },
-    capabilities: {
-      knowledge: [
-        {
-          id: 'knowledge.ai-vector',
-          sourceType: 'ai-vector',
-          enabled: true,
-          displayName: 'AI Vector Knowledge',
-        },
-      ],
-    },
-    createRuntime(_ctx: PluginContext): KnowledgePluginRuntime {
-      provider ??= new AiVectorKnowledgeProvider({
-        userDataPath: options.userDataPath,
-        getConfig: options.getConfig,
-        setConfig: options.setConfig,
-      });
-      attachments ??= new SqliteThreadKnowledgeAttachmentStore({
-        userDataPath: options.userDataPath,
-      });
-      return { provider, attachments };
-    },
-    healthCheck() {
-      return { status: 'healthy' as const };
-    },
-  };
-}
-
 export function createNoopKnowledgePlugin(): KnowledgePlugin {
   let provider: KnowledgeProvider | null = null;
   let attachments: KnowledgeAttachmentStore | null = null;
@@ -193,9 +152,3 @@ export function createNoopKnowledgePlugin(): KnowledgePlugin {
     },
   };
 }
-
-export {
-  AiVectorKnowledgeProvider,
-  SqliteThreadKnowledgeAttachmentStore,
-  defaultKnowledgeConfig,
-};
