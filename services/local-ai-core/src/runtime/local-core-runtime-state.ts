@@ -11,13 +11,6 @@ type RuntimeSettingsFile = {
   defaultProject: string;
   autoStartService: boolean;
   plugins: DesktopSettings['plugins'];
-  knowledge: {
-    baseUrl: string;
-    authMode: 'none' | 'bearer' | 'header';
-    token: string;
-    headerName: string;
-    defaultCollection: string;
-  };
 };
 
 export interface LocalCoreRuntimeState {
@@ -84,12 +77,6 @@ class FileBackedLocalCoreRuntimeState implements LocalCoreRuntimeState {
             }),
           )
         : this.settings.plugins,
-      knowledge: input.knowledge
-        ? {
-            ...this.settings.knowledge,
-            ...input.knowledge,
-          }
-        : this.settings.knowledge,
     };
     this.persistSettings();
     return this.settings;
@@ -123,13 +110,6 @@ class FileBackedLocalCoreRuntimeState implements LocalCoreRuntimeState {
       defaultProject: '',
       autoStartService: true,
       plugins: {},
-      knowledge: {
-        baseUrl: '',
-        authMode: 'none',
-        token: '',
-        headerName: 'X-API-Key',
-        defaultCollection: 'personal_knowledge',
-      },
     };
     if (!existsSync(this.settingsPath)) {
       return {
@@ -141,7 +121,6 @@ class FileBackedLocalCoreRuntimeState implements LocalCoreRuntimeState {
         bridgePort: 0,
         bridgeToken: '',
         bridgePath: '',
-        knowledge: defaults.knowledge,
         plugins: defaults.plugins,
       };
     }
@@ -156,10 +135,6 @@ class FileBackedLocalCoreRuntimeState implements LocalCoreRuntimeState {
       bridgeToken: '',
       bridgePath: '',
       plugins: normalizePluginSettings(raw.plugins),
-      knowledge: {
-        ...defaults.knowledge,
-        ...(raw.knowledge || {}),
-      },
     };
   }
 
@@ -168,7 +143,6 @@ class FileBackedLocalCoreRuntimeState implements LocalCoreRuntimeState {
       defaultProject: this.settings.defaultProject,
       autoStartService: this.settings.autoStartService,
       plugins: this.settings.plugins,
-      knowledge: this.settings.knowledge,
     };
     mkdirSync(dirname(this.settingsPath), { recursive: true });
     writeFileSync(this.settingsPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');

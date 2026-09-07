@@ -80,7 +80,6 @@ export interface DesktopSettings {
   bridgePort: number;
   bridgeToken: string;
   bridgePath: string;
-  knowledge: DesktopKnowledgeSettings;
   plugins: Record<string, DesktopPluginSettings>;
 }
 
@@ -363,18 +362,7 @@ export interface DesktopSettingsInput {
   configPath?: string;
   autoStartService?: boolean;
   defaultProject?: string;
-  knowledge?: Partial<DesktopKnowledgeSettings>;
   plugins?: Record<string, Partial<DesktopPluginSettings>>;
-}
-
-export type DesktopKnowledgeAuthMode = 'none' | 'bearer' | 'header';
-
-export interface DesktopKnowledgeSettings {
-  baseUrl: string;
-  authMode: DesktopKnowledgeAuthMode;
-  token: string;
-  headerName: string;
-  defaultCollection: string;
 }
 
 export interface DesktopPluginSettings {
