@@ -514,7 +514,9 @@ export class AutomationService {
       decision = decideCondition({
         condition: automation.condition,
         payload,
-        previous: automation.condition.kind === 'always' ? undefined : automation.lastSuccessfulMatch,
+        previous: (automation.condition.kind === 'always' || (automation.activation.kind === 'provider-event' && automation.activation.sourceType === 'webhook'))
+          ? undefined
+          : automation.lastSuccessfulMatch,
         coolingDown,
         actionRunning,
       }, evaluator);
@@ -639,7 +641,9 @@ export class AutomationService {
         previousState,
       });
       const scriptDecision = decideTrigger({
-        previous: automation.lastSuccessfulMatch,
+        previous: (automation.condition.kind === 'always' || (automation.activation.kind === 'provider-event' && automation.activation.sourceType === 'webhook'))
+          ? undefined
+          : automation.lastSuccessfulMatch,
         matched: scriptResult.matched,
         coolingDown,
         actionRunning,

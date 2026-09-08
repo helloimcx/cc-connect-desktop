@@ -1,7 +1,9 @@
+import { randomBytes } from 'node:crypto';
 import type {
   AutomationMonitor,
   AutomationMonitorCreateInput,
   AutomationMonitorEventSnapshot,
+  AutomationMonitorRun,
   AutomationMonitorSchedule,
   AutomationMonitorUpdateInput,
   ScheduledJobRoute,
@@ -221,8 +223,31 @@ export class AutomationMonitorService {
       : undefined;
   }
 
+  getMonitorByHookId(hookId: string): AutomationMonitor | undefined {
+    const clean = String(hookId || '').trim();
+    if (!clean) return undefined;
+    return this.listMonitors().find((m) =>
+      m.sourceType === 'webhook' && (m.sourceConfig?.hookId === clean || m.id === clean)
+    );
+  }
+
+  private prepareMonitorInput(input: AutomationMonitorCreateInput): AutomationMonitorCreateInput {
+    if (input.sourceType === 'webhook') {
+      const sourceConfig = { ...(input.sourceConfig || {}) };
+      if (!sourceConfig.hookId || typeof sourceConfig.hookId !== 'string' || !sourceConfig.hookId.trim()) {
+        sourceConfig.hookId = `wh_${randomBytes(6).toString('hex')}`;
+      }
+      if (!sourceConfig.token || typeof sourceConfig.token !== 'string' || !sourceConfig.token.trim()) {
+        sourceConfig.token = `whsec_${randomBytes(16).toString('hex')}`;
+      }
+      return { ...input, sourceConfig };
+    }
+    return input;
+  }
+
   async createMonitor(input: AutomationMonitorCreateInput): Promise<AutomationMonitor> {
-    const resolved = this.resolveCreateInput(input);
+    const prepared = this.prepareMonitorInput(input);
+    const resolved = this.resolveCreateInput(prepared);
     this.assertValidMonitorSchedule(resolved.schedule);
     this.providers.get(resolved.sourceType)?.validateConfig?.(resolved.sourceConfig || {});
     const mapped = monitorToAutomationInput(resolved);
@@ -343,6 +368,59 @@ export class AutomationMonitorService {
     });
     if (!evaluated) throw new Error('Automation monitor changed before the provider event could be evaluated.');
     return evaluated;
+  }
+
+  async triggerWebhook(hookId: string, payload: unknown, token?: string): Promise<{
+    success: boolean;
+    monitorId: string;
+    run: AutomationMonitorRun;
+    decision: string;
+  }> {
+    const cleanHookId = String(hookId || '').trim();
+    const monitor = this.getMonitorByHookId(cleanHookId);
+    if (!monitor) {
+      throw new Error(`Webhook monitor not found: ${cleanHookId}`);
+    }
+    if (!monitor.enabled) {
+      throw new Error(`Webhook monitor is disabled: ${cleanHookId}`);
+    }
+
+    const expectedToken = String(monitor.sourceConfig?.token || '').trim();
+    const cleanToken = String(token || '').trim();
+    if (!cleanToken || cleanToken !== expectedToken) {
+      throw new Error('Invalid or missing webhook token.');
+    }
+
+    const body = (typeof payload === 'object' && payload !== null)
+      ? payload as Record<string, unknown>
+      : { raw: payload };
+
+    const event: AutomationMonitorEventSnapshot = {
+      id: `evt_webhook_${Date.now()}_${randomBytes(4).toString('hex')}`,
+      sourceType: 'webhook',
+      occurredAt: new Date().toISOString(),
+      subject: (typeof body.subject === 'string' ? body.subject : undefined)
+        || (typeof body.event === 'string' ? body.event : undefined)
+        || (typeof body.action === 'string' ? String(body.action) : undefined)
+        || `Webhook:${cleanHookId}`,
+      summary: (typeof body.summary === 'string' ? body.summary : undefined)
+        || (typeof body.message === 'string' ? body.message : undefined)
+        || `Inbound webhook triggered for ${cleanHookId}`,
+      payload: body,
+    };
+
+    const run = await this.runMonitorNow(monitor.id, event);
+    const latestEval = this.options.automations.listEvaluations(monitor.id)[0];
+    const decision = latestEval?.conditionOutcome === 'not_matched'
+      ? 'not_matched'
+      : (latestEval?.triggerDecision ?? (run.status === 'succeeded' || run.status === 'running' || run.status === 'queued' ? 'triggered' : run.status));
+
+    return {
+      success: decision === 'triggered',
+      monitorId: monitor.id,
+      run,
+      decision,
+    };
   }
 
   listMonitorsForThread(threadId: string): AutomationMonitor[] {

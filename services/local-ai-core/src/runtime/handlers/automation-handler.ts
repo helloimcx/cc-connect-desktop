@@ -1,8 +1,50 @@
 import type { RouteHandler } from '../server-helpers.js';
-import { json, readJsonBody } from '../server-helpers.js';
+import { json, rawJson, readJsonBody, readRawBody } from '../server-helpers.js';
 import type { AutomationMonitorService } from '../../automation/automation-monitor-service.js';
 import type { AutomationMonitorCreateInput, AutomationMonitorUpdateInput } from '@cc/superai-contracts';
 import { validateBody } from '../request-validation.js';
+
+function extractWebhookToken(req: Parameters<RouteHandler>[1], url?: URL): string {
+  const authHeader = String(req.headers?.authorization || '').trim();
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+  const xHookToken = req.headers?.['x-hook-token'];
+  if (xHookToken) {
+    return String(xHookToken).trim();
+  }
+  return String(url?.searchParams.get('token') || '').trim();
+}
+
+async function readWebhookPayload(req: Parameters<RouteHandler>[1]): Promise<unknown> {
+  const raw = await readRawBody(req);
+  if (!raw.length) {
+    return {};
+  }
+  const text = Buffer.from(raw).toString('utf8');
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    return { raw: parsed };
+  } catch {
+    return { raw: text };
+  }
+}
+
+function handleWebhookError(res: Parameters<RouteHandler>[2], error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  let status = 500;
+  if (message.includes('Invalid or missing webhook token')) {
+    status = 401;
+  } else if (message.includes('Webhook monitor not found')) {
+    status = 404;
+  } else if (message.includes('Webhook monitor is disabled')) {
+    status = 400;
+  }
+  rawJson(res, status, { error: message });
+}
 
 export function registerAutomationHandlers(
   map: Map<string, RouteHandler>,
@@ -43,5 +85,17 @@ export function registerAutomationHandlers(
   });
   map.set('automation.monitor.delete', async (route, _req, res) => {
     json(res, 200, await automationMonitors.deleteMonitor((route as { monitorId: string }).monitorId));
+  });
+  map.set('automation.hooks.trigger', async (route, req, res, url) => {
+    const hookId = (route as { hookId: string }).hookId;
+    const token = extractWebhookToken(req, url);
+    const payload = await readWebhookPayload(req);
+
+    try {
+      const result = await automationMonitors.triggerWebhook(hookId, payload, token);
+      rawJson(res, 200, result);
+    } catch (error) {
+      handleWebhookError(res, error);
+    }
   });
 }

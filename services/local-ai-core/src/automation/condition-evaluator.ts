@@ -1,6 +1,9 @@
 import type { AutomationMonitorCondition, AutomationMonitorEventSnapshot } from '@cc/superai-contracts';
 
 export function evaluateMonitorCondition(condition: AutomationMonitorCondition, event: AutomationMonitorEventSnapshot) {
+  if (condition.metric === 'always' || condition.expression?.trim() === 'always') {
+    return true;
+  }
   if (condition.expression) {
     return evaluateExpression(condition.expression, event);
   }
@@ -39,6 +42,7 @@ export function evaluateOperatorComparison(
 }
 
 export function evaluateExpression(expression: string, event: AutomationMonitorEventSnapshot): boolean {
+  if (String(expression || '').trim() === 'always') return true;
   return evaluateRestrictedExpression(expression, (metric) => readMetric(event, metric));
 }
 
@@ -46,6 +50,7 @@ export function evaluateRestrictedExpression(
   expression: string,
   contextOrResolver: Record<string, unknown> | ((metric: string) => unknown),
 ): boolean {
+  if (String(expression || '').trim() === 'always') return true;
   const compiled = compileRestrictedExpression(expression);
   const resolveMetric = typeof contextOrResolver === 'function'
     ? contextOrResolver
@@ -69,6 +74,9 @@ export function validateRestrictedExpression(expression: string): void {
 
 export function compileRestrictedExpression(expression: string): CompiledRestrictedExpression {
   const source = String(expression || '').trim();
+  if (source === 'always') {
+    return [[{ metric: 'always', operator: '==', rawValue: 'true' }]];
+  }
   if (!source) throw new Error(`Unsupported monitor condition expression: ${expression}`);
   return source.split('||').map((orPart) => {
     if (!orPart.trim()) throw new Error(`Unsupported monitor condition expression: ${expression}`);
@@ -77,6 +85,9 @@ export function compileRestrictedExpression(expression: string): CompiledRestric
 }
 
 function compileRestrictedComparison(expression: string, original: string): RestrictedExpressionComparison {
+  if (expression.trim() === 'always') {
+    return { metric: 'always', operator: '==', rawValue: 'true' };
+  }
   const match = expression.match(/^([a-zA-Z0-9_.-]+)\s*(>=|<=|==|!=|>|<)\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s&|<>=!]+)$/);
   if (!match) throw new Error(`Unsupported monitor condition expression: ${original}`);
   return {
@@ -90,6 +101,7 @@ function evaluateRestrictedComparison(
   comparison: RestrictedExpressionComparison,
   resolveMetric: (metric: string) => unknown,
 ) {
+  if (comparison.metric === 'always') return true;
   const rawValue = comparison.rawValue.replace(/^["']|["']$/g, '');
   const numeric = Number(rawValue);
   const actual = resolveMetric(comparison.metric);

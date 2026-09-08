@@ -20,6 +20,7 @@ import {
   getStaticAgentRuntimeDefinitions,
 } from '../../agents/index.js';
 import { createBuiltinStockMonitorPlugin } from './monitor-stock-plugin.js';
+import { createBuiltinWebhookMonitorPlugin } from './monitor-webhook-plugin.js';
 import { createBuiltinLarkChannelPlugin } from './channel-lark-plugin.js';
 import { createBuiltinWeixinChannelPlugin } from './channel-weixin-plugin.js';
 import { createBuiltinNoopKnowledgePlugin } from './knowledge-noop-plugin.js';
@@ -91,6 +92,7 @@ export function createRuntimeSchedulerPlugins(options: {
 export function createRuntimeMonitorPlugins(): MonitorPlugin[] {
   return [
     createBuiltinStockMonitorPlugin(),
+    createBuiltinWebhookMonitorPlugin(),
   ];
 }
 
