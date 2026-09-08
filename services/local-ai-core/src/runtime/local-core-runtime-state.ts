@@ -3,7 +3,6 @@ import { dirname, join } from 'node:path';
 import type {
   DesktopSettings,
   DesktopSettingsInput,
-  KnowledgeConfig,
 } from '@cc/superai-contracts';
 import { AgentDockRotatingLogger, inferLogLevel, type AgentDockLogEntry, type AgentDockLogFile } from '../kernel/rotating-logger.js';
 
@@ -12,13 +11,6 @@ type RuntimeSettingsFile = {
   defaultProject: string;
   autoStartService: boolean;
   plugins: DesktopSettings['plugins'];
-  knowledge: {
-    baseUrl: string;
-    authMode: 'none' | 'bearer' | 'header';
-    token: string;
-    headerName: string;
-    defaultCollection: string;
-  };
 };
 
 export interface LocalCoreRuntimeState {
@@ -29,8 +21,6 @@ export interface LocalCoreRuntimeState {
   readonly logPath: string;
   getSettings(): DesktopSettings;
   saveSettings(input: DesktopSettingsInput): Promise<DesktopSettings>;
-  getKnowledgeConfig(): KnowledgeConfig;
-  updateKnowledgeConfig(input: Partial<KnowledgeConfig>): Promise<KnowledgeConfig>;
   getLogs(limit?: number): string[];
   getLogEntries(level?: string, limit?: number): AgentDockLogEntry[];
   pushLog(message: string): void;
@@ -87,31 +77,9 @@ class FileBackedLocalCoreRuntimeState implements LocalCoreRuntimeState {
             }),
           )
         : this.settings.plugins,
-      knowledge: input.knowledge
-        ? {
-            ...this.settings.knowledge,
-            ...input.knowledge,
-          }
-        : this.settings.knowledge,
     };
     this.persistSettings();
     return this.settings;
-  }
-
-  getKnowledgeConfig(): KnowledgeConfig {
-    return this.settings.knowledge;
-  }
-
-  async updateKnowledgeConfig(input: Partial<KnowledgeConfig>): Promise<KnowledgeConfig> {
-    this.settings = {
-      ...this.settings,
-      knowledge: {
-        ...this.settings.knowledge,
-        ...input,
-      },
-    };
-    this.persistSettings();
-    return this.settings.knowledge;
   }
 
   getLogs(limit = 200): string[] {
@@ -142,13 +110,6 @@ class FileBackedLocalCoreRuntimeState implements LocalCoreRuntimeState {
       defaultProject: '',
       autoStartService: true,
       plugins: {},
-      knowledge: {
-        baseUrl: '',
-        authMode: 'none',
-        token: '',
-        headerName: 'X-API-Key',
-        defaultCollection: 'personal_knowledge',
-      },
     };
     if (!existsSync(this.settingsPath)) {
       return {
@@ -160,7 +121,6 @@ class FileBackedLocalCoreRuntimeState implements LocalCoreRuntimeState {
         bridgePort: 0,
         bridgeToken: '',
         bridgePath: '',
-        knowledge: defaults.knowledge,
         plugins: defaults.plugins,
       };
     }
@@ -175,10 +135,6 @@ class FileBackedLocalCoreRuntimeState implements LocalCoreRuntimeState {
       bridgeToken: '',
       bridgePath: '',
       plugins: normalizePluginSettings(raw.plugins),
-      knowledge: {
-        ...defaults.knowledge,
-        ...(raw.knowledge || {}),
-      },
     };
   }
 
@@ -187,7 +143,6 @@ class FileBackedLocalCoreRuntimeState implements LocalCoreRuntimeState {
       defaultProject: this.settings.defaultProject,
       autoStartService: this.settings.autoStartService,
       plugins: this.settings.plugins,
-      knowledge: this.settings.knowledge,
     };
     mkdirSync(dirname(this.settingsPath), { recursive: true });
     writeFileSync(this.settingsPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');

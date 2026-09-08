@@ -3,7 +3,7 @@ import type { PluginContext, PluginManifest, RuntimePlugin } from './runtime-typ
 export interface MonitorCapability {
   id: string;
   sourceTypes: string[];
-  modes?: Array<'poll' | 'subscribe'>;
+  modes?: Array<'poll' | 'subscribe' | 'webhook'>;
   enabled?: boolean;
   displayName?: string;
 }
@@ -17,7 +17,7 @@ export interface MonitorProviderHandle {
 
 export interface MonitorProviderRuntime {
   readonly sourceType: string;
-  readonly modes: Array<'poll' | 'subscribe'>;
+  readonly modes: Array<'poll' | 'subscribe' | 'webhook'>;
   validateConfig?(config: Record<string, unknown>): void;
   poll?(input: {
     monitorId: string;

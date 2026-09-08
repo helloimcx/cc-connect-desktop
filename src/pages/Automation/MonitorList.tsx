@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bell, Plus } from 'lucide-react';
+import { Bell, Check, Copy, Plus } from 'lucide-react';
 import { subscribeEvents } from '@cc/core-sdk/runtime';
 import {
   createAutomationMonitor as createMonitor,
@@ -11,105 +11,9 @@ import {
 } from '@cc/core-sdk/automation';
 import { listWorkspaces } from '@cc/core-sdk/threads';
 import type { AutomationMonitor as Monitor, AutomationMonitorCreateInput as MonitorCreateInput } from '@cc/superai-contracts';
-import { Badge, Button, Card, EmptyState, Input, Modal, PageHeader, RowActions, Select, Textarea } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, PageHeader, RowActions } from '@/components/ui';
 import { formatTime } from '@/lib/utils';
-
-type MonitorFormState = {
-  workspaceId: string;
-  title: string;
-  sourceType: 'stock.quote';
-  symbol: string;
-  condition: string;
-  promptTemplate: string;
-  workflowTemplate: 'direct' | 'deep-analysis';
-  retrospectiveDelayHours: string;
-  cooldownMinutes: string;
-  executionMode: 'same-thread' | 'side-thread';
-  enabled: boolean;
-};
-
-const DEFAULT_FORM: MonitorFormState = {
-  workspaceId: '',
-  title: '',
-  sourceType: 'stock.quote',
-  symbol: '',
-  condition: 'abs_change_percent >= 3',
-  promptTemplate: '',
-  workflowTemplate: 'direct',
-  retrospectiveDelayHours: '24',
-  cooldownMinutes: '15',
-  executionMode: 'side-thread',
-  enabled: true,
-};
-
-function parseCondition(value: string) {
-  const expression = value.trim();
-  if (expression.includes('&&') || expression.includes('||')) {
-    return {
-      metric: 'expression',
-      operator: '==' as const,
-      value: true,
-      expression,
-    };
-  }
-  const match = expression.match(/^([a-zA-Z0-9_.-]+)\s*(>=|<=|==|!=|>|<)\s*(.+)$/);
-  if (!match) return null;
-  const rawValue = String(match[3] || '').trim();
-  const numeric = Number(rawValue);
-  return {
-    metric: String(match[1] || '').trim(),
-    operator: match[2] as MonitorCreateInput['condition']['operator'],
-    value: Number.isFinite(numeric) && rawValue !== '' ? numeric : rawValue,
-  };
-}
-
-function conditionToText(monitor: Monitor) {
-  if (monitor.condition.expression) return monitor.condition.expression;
-  return `${monitor.condition.metric} ${monitor.condition.operator} ${monitor.condition.value}`;
-}
-
-function toForm(monitor?: Monitor | null): MonitorFormState {
-  if (!monitor) return DEFAULT_FORM;
-  return {
-    workspaceId: monitor.workspaceId,
-    title: monitor.title,
-    sourceType: 'stock.quote',
-    symbol: String(monitor.sourceConfig.symbol || ''),
-    condition: conditionToText(monitor),
-    promptTemplate: monitor.promptTemplate,
-    workflowTemplate: monitor.workflowTemplate || 'direct',
-    retrospectiveDelayHours: String(monitor.retrospectiveDelayHours ?? 24),
-    cooldownMinutes: String(Math.round(monitor.cooldownMs / 60000)),
-    executionMode: monitor.executionMode as MonitorFormState['executionMode'],
-    enabled: monitor.enabled,
-  };
-}
-
-function toPayload(form: MonitorFormState): MonitorCreateInput {
-  const condition = parseCondition(form.condition);
-  if (!condition) throw new Error('Invalid condition');
-  return {
-    workspaceId: form.workspaceId,
-    title: form.title,
-    sourceType: form.sourceType,
-    sourceConfig: sourceDefinitions[form.sourceType].buildConfig(form),
-    condition,
-    promptTemplate: form.promptTemplate,
-    workflowTemplate: form.workflowTemplate,
-    retrospectiveDelayHours: form.workflowTemplate === 'deep-analysis' ? Math.max(1, Number(form.retrospectiveDelayHours || '24')) : undefined,
-    executionMode: form.executionMode,
-    cooldownMs: Math.max(0, Number(form.cooldownMinutes || '0') * 60000),
-    enabled: form.enabled,
-  };
-}
-
-const sourceDefinitions = {
-  'stock.quote': {
-    label: 'Stock quote',
-    buildConfig: (form: MonitorFormState) => ({ symbol: form.symbol.toUpperCase() }),
-    renderSummary: (monitor: Monitor) => String(monitor.sourceConfig.symbol || ''),
-  },
-} as const;
+import MonitorModal, { conditionToText, sourceDefinitions } from './MonitorModal';
 
 export default function MonitorList() {
   const { t } = useTranslation();
@@ -117,24 +21,18 @@ export default function MonitorList() {
   const [workspaces, setWorkspaces] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [editingMonitor, setEditingMonitor] = useState<Monitor | null>(null);
-  const [form, setForm] = useState<MonitorFormState>(DEFAULT_FORM);
-
-  const selectedWorkspaceOptions = useMemo(
-    () => workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>),
-    [workspaces],
-  );
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const fetchMonitors = useCallback(async () => {
     setLoading(true);
     try {
-      const [monitorData, workspaceData] = await Promise.all([listMonitors(), listWorkspaces().then((data) => data.workspaces)]);
+      const [monitorData, workspaceData] = await Promise.all([
+        listMonitors(),
+        listWorkspaces().then((data) => data.workspaces),
+      ]);
       setMonitors(monitorData.monitors || []);
       setWorkspaces(workspaceData);
-      setForm((current) => current.workspaceId || workspaceData.length === 0
-        ? current
-        : { ...current, workspaceId: workspaceData[0].id });
     } finally {
       setLoading(false);
     }
@@ -152,35 +50,21 @@ export default function MonitorList() {
 
   const openCreate = () => {
     setEditingMonitor(null);
-    setForm({ ...DEFAULT_FORM, workspaceId: workspaces[0]?.id || '' });
     setShowModal(true);
   };
 
   const openEdit = (monitor: Monitor) => {
     setEditingMonitor(monitor);
-    setForm(toForm(monitor));
     setShowModal(true);
   };
 
-  const handleSave = async () => {
-    if (!form.workspaceId || !form.title.trim() || !form.symbol.trim() || !form.promptTemplate.trim() || !parseCondition(form.condition)) {
-      return;
+  const handleSave = async (payload: MonitorCreateInput) => {
+    if (editingMonitor) {
+      await updateMonitor(editingMonitor.id, payload);
+    } else {
+      await createMonitor(payload);
     }
-    setSubmitting(true);
-    try {
-      const payload = toPayload(form);
-      if (editingMonitor) {
-        await updateMonitor(editingMonitor.id, payload);
-      } else {
-        await createMonitor(payload);
-      }
-      setShowModal(false);
-      setEditingMonitor(null);
-      setForm(DEFAULT_FORM);
-      await fetchMonitors();
-    } finally {
-      setSubmitting(false);
-    }
+    await fetchMonitors();
   };
 
   const handleDelete = async (id: string) => {
@@ -192,6 +76,16 @@ export default function MonitorList() {
   const handleRun = async (id: string) => {
     await runMonitorNow(id);
     await fetchMonitors();
+  };
+
+  const handleCopyCurl = (monitor: Monitor) => {
+    const hookId = String(monitor.sourceConfig.hookId || '');
+    const token = String(monitor.sourceConfig.token || '');
+    const tokenHeader = token ? ` -H "Authorization: Bearer ${token}"` : '';
+    const cmd = `curl -X POST http://127.0.0.1:9831/api/local/v1/automation/hooks/${encodeURIComponent(hookId)}${tokenHeader} -H "Content-Type: application/json" -d '{"event":"ping"}'`;
+    void navigator.clipboard.writeText(cmd);
+    setCopiedId(monitor.id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   if (loading && monitors.length === 0) {
@@ -226,7 +120,7 @@ export default function MonitorList() {
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
                     <span><strong>Workspace:</strong> {monitor.workspaceId}</span>
-                    <span><strong>Subject:</strong> {sourceDefinitions['stock.quote'].renderSummary(monitor)}</span>
+                    <span><strong>Subject:</strong> {sourceDefinitions[monitor.sourceType as keyof typeof sourceDefinitions]?.renderSummary(monitor) || monitor.sourceType}</span>
                     <span><strong>Condition:</strong> {conditionToText(monitor)}</span>
                     <span><strong>Execution:</strong> {monitor.executionMode}</span>
                     {monitor.workflowTemplate === 'deep-analysis' && (
@@ -235,6 +129,22 @@ export default function MonitorList() {
                     <span><strong>Cooldown:</strong> {Math.round(monitor.cooldownMs / 60000)}m</span>
                     {monitor.lastTriggeredAt && <span><strong>{t('monitors.lastRun')}:</strong> {formatTime(monitor.lastTriggeredAt)}</span>}
                   </div>
+                  {monitor.sourceType === 'webhook' && Boolean(monitor.sourceConfig.hookId) && (
+                    <div className="mt-2 flex flex-wrap items-center gap-3 rounded-lg border border-black/5 bg-black/[0.02] px-3 py-1.5 text-xs dark:border-white/5 dark:bg-white/[0.02]">
+                      <span className="font-mono text-gray-600 dark:text-gray-300">
+                        Endpoint: <code>/api/local/v1/automation/hooks/{String(monitor.sourceConfig.hookId)}</code>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCurl(monitor)}
+                        className="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                        title="Copy curl command"
+                      >
+                        {copiedId === monitor.id ? <Check size={12} /> : <Copy size={12} />}
+                        {copiedId === monitor.id ? 'Copied' : 'Copy curl'}
+                      </button>
+                    </div>
+                  )}
                   <p className="mt-3 line-clamp-3 rounded-[16px] bg-black/[0.035] px-3 py-2 text-sm leading-6 text-gray-700 dark:bg-white/[0.05] dark:text-gray-300">{monitor.promptTemplate}</p>
                   {monitor.lastError && <p className="mt-2 text-xs text-red-500">{monitor.lastError}</p>}
                 </div>
@@ -250,87 +160,15 @@ export default function MonitorList() {
         </div>
       )}
 
-      <Modal open={showModal} title={editingMonitor ? t('monitors.edit') : t('monitors.add')} onClose={() => setShowModal(false)}>
-        <div className="space-y-4">
-          <Select label="Workspace" value={form.workspaceId} onChange={(event) => setForm({ ...form, workspaceId: event.target.value })}>
-            {selectedWorkspaceOptions}
-          </Select>
-          <Input label={t('monitors.monitorTitle')} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} />
-          <Select label="Source" value={form.sourceType} onChange={(event) => setForm({ ...form, sourceType: event.target.value as MonitorFormState['sourceType'] })}>
-            {Object.entries(sourceDefinitions).map(([sourceType, definition]) => (
-              <option key={sourceType} value={sourceType}>{definition.label}</option>
-            ))}
-          </Select>
-          {form.sourceType === 'stock.quote' && (
-            <Input label="Symbol" value={form.symbol} onChange={(event) => setForm({ ...form, symbol: event.target.value })} placeholder="AAPL" />
-          )}
-          <Input label={t('monitors.condition')} value={form.condition} onChange={(event) => setForm({ ...form, condition: event.target.value })} placeholder="abs_change_percent >= 3" />
-          <div className="flex flex-wrap gap-2">
-            {[
-              ['latestPrice <= boll_lower', '周线下轨买入 (<= Lower)'],
-              ['latestPrice >= boll_upper', '周线上轨卖出 (>= Upper)'],
-              ['boll_percent_b <= 0.05', '贴近周线下轨 (%B <= 0.05)'],
-              ['boll_percent_b >= 0.95', '贴近周线上轨 (%B >= 0.95)'],
-              ['dividend_yield >= 5.0', '高股息买入 (>= 5%)'],
-              ['erp_spread >= 2.5', '股债利差优势 (ERP >= 2.5%)'],
-              ['latestPrice <= boll_lower && dividend_yield >= 4.0', '周线下轨 + 高股息共振买点'],
-              ['abs_change_percent >= 3', '+/- 3%'],
-              ['price >= 500', 'Price >= 500'],
-            ].map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setForm({ ...form, condition: value })}
-                className={`app-segment text-xs ${form.condition === value ? 'app-segment-active' : 'app-segment-idle'}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {!parseCondition(form.condition) ? (
-            <p className="text-xs text-amber-700 dark:text-amber-200">Condition should look like metric &gt;= value or a boolean expression.</p>
-          ) : null}
-          <div className="grid grid-cols-2 gap-3">
-            <Select
-              label="Workflow"
-              value={form.workflowTemplate}
-              onChange={(event) => setForm({ ...form, workflowTemplate: event.target.value as MonitorFormState['workflowTemplate'] })}
-            >
-              <option value="direct">Direct (Standard alert)</option>
-              <option value="deep-analysis">Deep Analysis (Bull/Bear debate)</option>
-            </Select>
-            {form.workflowTemplate === 'deep-analysis' ? (
-              <Input
-                label="Retro delay (hours)"
-                type="number"
-                min="1"
-                value={form.retrospectiveDelayHours}
-                onChange={(event) => setForm({ ...form, retrospectiveDelayHours: event.target.value })}
-              />
-            ) : (
-              <Input label={t('monitors.cooldown')} value={form.cooldownMinutes} onChange={(event) => setForm({ ...form, cooldownMinutes: event.target.value })} />
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {form.workflowTemplate === 'deep-analysis' ? (
-              <Input label={t('monitors.cooldown')} value={form.cooldownMinutes} onChange={(event) => setForm({ ...form, cooldownMinutes: event.target.value })} />
-            ) : null}
-            <Select label="Execution" value={form.executionMode} onChange={(event) => setForm({ ...form, executionMode: event.target.value as MonitorFormState['executionMode'] })}>
-              <option value="side-thread">side-thread</option>
-              <option value="same-thread">same-thread</option>
-            </Select>
-          </div>
-          <Textarea label={t('monitors.prompt')} rows={6} value={form.promptTemplate} onChange={(event) => setForm({ ...form, promptTemplate: event.target.value })} />
-          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-            <input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />
-            {t('monitors.enabled')}
-          </label>
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setShowModal(false)}>{t('common.cancel')}</Button>
-            <Button onClick={handleSave} disabled={submitting}>{t('common.save')}</Button>
-          </div>
-        </div>
-      </Modal>
+      {showModal && (
+        <MonitorModal
+          open={showModal}
+          editingMonitor={editingMonitor}
+          workspaces={workspaces}
+          onClose={() => setShowModal(false)}
+          onSave={handleSave}
+        />
+      )}
     </div>
   );
 }

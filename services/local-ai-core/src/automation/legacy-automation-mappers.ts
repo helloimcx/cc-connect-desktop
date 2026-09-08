@@ -276,6 +276,9 @@ export function latestAutomationRun(runs: AutomationRun[]): AutomationRun | unde
 }
 
 function monitorConditionExpression(condition: AutomationMonitorCondition): string {
+  if (condition.metric === 'always' || condition.expression?.trim() === 'always') {
+    return 'always';
+  }
   const operator = normalizeAutomationMonitorConditionOperator(condition.operator);
   if (typeof condition.value !== 'number' && typeof condition.value !== 'string' && typeof condition.value !== 'boolean') {
     throw new Error('Automation monitor condition value must be a number, string, or boolean.');
@@ -292,6 +295,9 @@ function monitorConditionExpression(condition: AutomationMonitorCondition): stri
 }
 
 function expressionToMonitorCondition(expression: string): AutomationMonitorCondition {
+  if (expression.trim() === 'always') {
+    return { metric: 'always', operator: '==', value: true, expression: 'always' };
+  }
   if (expression.includes('&&') || expression.includes('||')) {
     return { metric: 'expression', operator: '==', value: true, expression };
   }

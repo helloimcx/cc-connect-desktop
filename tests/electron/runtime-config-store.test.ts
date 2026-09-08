@@ -55,7 +55,6 @@ test('runtime config ignores legacy settings configPath and malformed toml', () 
       configPath: join(userDataPath, 'custom-config', 'agentdock.toml'),
       defaultProject: '',
       autoStartService: true,
-      knowledge: {},
       plugins: {},
     }), 'utf8');
     writeFileSync(legacyPath, '[[projects]\nname = "broken"\n', 'utf8');
@@ -150,7 +149,6 @@ provider_id = "deepseek"
 
     const runtime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
     const controller = new LocalCoreController(userDataPath, runtime);
     const initialConfig = await controller.readRuntimeConfig();
@@ -172,7 +170,6 @@ provider_id = "deepseek"
 
     const reopenedRuntime = bootstrapLocalCoreRuntime({
       userDataPath,
-      enableKnowledge: false,
     });
     const storeConfig = reopenedRuntime.store.readRuntimeConfig();
     assert.equal(storeConfig.storage, 'sqlite');

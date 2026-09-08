@@ -69,6 +69,7 @@ Key capabilities:
    - `/api/local/v1/threads/*`: Conversational threads, messages, and permission requests
    - `/api/local/v1/runs/*`: ACP agent execution runs and streaming events
    - `/api/local/v1/scheduler/*`: Recurring cron jobs and automated delivery
+   - `/api/local/v1/automation/hooks/:hookId`: External inbound webhook triggers for event-driven monitors
    - `/api/local/v1/external/*`: External programmatic integration and per-run SSE streaming
 4. **Channel Gateway Webhooks**: Inbound poller and webhooks for enterprise messaging channels (Lark, WeChat Work).
 

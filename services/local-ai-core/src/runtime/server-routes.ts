@@ -29,6 +29,7 @@ export type LocalAiCoreRoute =
   | { name: 'automation.monitor.update'; monitorId: string }
   | { name: 'automation.monitor.delete'; monitorId: string }
   | { name: 'automation.monitor.decisions'; monitorId: string }
+  | { name: 'automation.hooks.trigger'; hookId: string }
   | { name: 'automations.list' }
   | { name: 'automations.create' }
   | { name: 'automation.get'; automationId: string }
@@ -177,6 +178,9 @@ export function parseLocalAiCoreRoute(method: string | undefined, path: string):
   }
   if (segments[0] === 'automation' && segments[1] === 'monitors') {
     return parseAutomationMonitorsRoute(normalizedMethod, segments);
+  }
+  if (segments[0] === 'automation' && segments[1] === 'hooks') {
+    return parseAutomationHooksRoute(normalizedMethod, segments);
   }
   if (normalizedMethod === 'GET' && segments.length === 1 && segments[0] === 'events') {
     return { name: 'events.stream' };
@@ -345,6 +349,14 @@ function parseAutomationMonitorsRoute(method: string, segments: string[]): Local
   }
   if (method === 'DELETE' && segments.length === 3) {
     return { name: 'automation.monitor.delete', monitorId };
+  }
+  return null;
+}
+
+function parseAutomationHooksRoute(method: string, segments: string[]): LocalAiCoreRoute | null {
+  if (method === 'POST' && segments.length === 3) {
+    const hookId = decodeURIComponent(segments[2] || '').trim();
+    return hookId ? { name: 'automation.hooks.trigger', hookId } : null;
   }
   return null;
 }

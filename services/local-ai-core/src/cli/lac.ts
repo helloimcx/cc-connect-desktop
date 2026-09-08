@@ -341,13 +341,24 @@ async function handleMonitorAdd(flags: Map<string, string[]>, env: NodeJS.Proces
     ...(retrospectiveDelayHours !== undefined ? { retrospectiveDelayHours } : {}),
     enabled: true,
   });
-  print(json, io.stdout, presentMonitor(monitor), [
+  const outputLines = [
     `Created monitor ${toPublicAutomationMonitorId(monitor.id)}`,
     `Title: ${monitor.title}`,
     `Source: ${monitor.sourceType}`,
     `Condition: ${formatCondition(monitor.condition)}`,
     `Execution mode: ${monitor.executionMode}`,
-  ].join('\n'));
+  ];
+  if (monitor.sourceType === 'webhook' && monitor.sourceConfig) {
+    const hookId = String(monitor.sourceConfig.hookId || monitor.id);
+    const token = String(monitor.sourceConfig.token || '');
+    const hookUrl = `${context.baseUrl}/automation/hooks/${encodeURIComponent(hookId)}`;
+    outputLines.push(
+      `Hook URL: ${hookUrl}`,
+      `Token: ${token}`,
+      `Curl example: curl -X POST -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" -d '{"event":"ping"}' "${hookUrl}"`,
+    );
+  }
+  print(json, io.stdout, presentMonitor(monitor), outputLines.join('\n'));
   return 0;
 }
 
@@ -657,6 +668,11 @@ function buildSourceConfig(sourceType: string, flags: Map<string, string[]>) {
     if (bollStdDev) config.bollStdDev = Number(bollStdDev);
     const treasuryYield = getFlag(flags, 'treasury-yield');
     if (treasuryYield) config.treasury10yYield = Number(treasuryYield);
+  } else if (sourceType === 'webhook') {
+    const hookId = getFlag(flags, 'hook-id');
+    if (hookId) config.hookId = hookId;
+    const token = getFlag(flags, 'token');
+    if (token) config.token = token;
   }
   const rawConfig = getFlag(flags, 'source-config');
   if (rawConfig) {
@@ -680,7 +696,7 @@ function printUsage(output: Pick<NodeJS.WriteStream, 'write'>) {
     '  lac scheduler edit <job-id> [--cron "<expr>"] [--message "<text>"] [--desc "<label>"] [--enabled true|false] [--execution-mode same-thread|side-thread] [--json]',
     '  lac scheduler del <job-id> [--json]',
     '  lac scheduler run <job-id> [--json]',
-    '  lac monitor add --title "<title>" --source stock.quote --symbol <symbol> --condition "change_percent >= 3" --message "<text>" [--cooldown 15m] [--cron "<expr>"] [--timezone <tz>] [--workflow direct|deep-analysis] [--retro-delay <hours>] [--execution-mode same-thread|side-thread] [--json]',
+    '  lac monitor add --title "<title>" --source stock.quote|webhook [--symbol <symbol>] [--hook-id <id>] [--token <tok>] --condition "<expr>" --message "<text>" [--cooldown 15m] [--cron "<expr>"] [--timezone <tz>] [--workflow direct|deep-analysis] [--retro-delay <hours>] [--execution-mode same-thread|side-thread] [--json]',
     '  lac monitor list [--workspace <id>] [--thread [<id>]] [--json]',
     '  lac monitor info <monitor-id> [--json]',
     '  lac monitor decisions <monitor-id> [--json]',
@@ -738,6 +754,10 @@ function formatMonitorDetails(monitor: AutomationMonitor, latestRun?: Automation
     ...(monitor.workflowTemplate ? [`Workflow: ${monitor.workflowTemplate}`] : []),
     ...(monitor.retrospectiveDelayHours ? [`Retro delay: ${monitor.retrospectiveDelayHours}h`] : []),
     `Source: ${monitor.sourceType}`,
+    ...(monitor.sourceType === 'webhook' && monitor.sourceConfig?.hookId ? [
+      `Hook ID: ${monitor.sourceConfig.hookId}`,
+      `Token: ${monitor.sourceConfig.token || '(none)'}`,
+    ] : []),
     `Condition: ${formatCondition(monitor.condition)}`,
     `Cooldown: ${monitor.cooldownMs}ms`,
     ...(monitor.schedule ? [`Schedule: ${monitor.schedule.cron} (${monitor.schedule.timezone})`] : []),

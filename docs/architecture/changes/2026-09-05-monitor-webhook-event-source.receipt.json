@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "compare",
+  "type": "architecture",
+  "comparatorVersion": 1,
+  "canonicalVersion": 1,
+  "completeness": "complete",
+  "proofLevel": "authored",
+  "base": {
+    "title": "AgentDock 系统架构图",
+    "rawSha256": "3926e652a569158dcb1c2b5763ad0f51b6a413f8e640202e6d86072717ac080f",
+    "semanticSha256": "5d34e682b901183cc74f2520a79cc113ecbc42d6a37d4e3008143dbb843db274",
+    "bytes": 7043
+  },
+  "head": {
+    "title": "AgentDock 系统架构图",
+    "rawSha256": "b7e315efbed1f8e2d5755daf09d6482e7b6ef40086161c4cee1d4c0ee1b8a206",
+    "semanticSha256": "72b095f151674ac6824fa95c244ef9a082a38fe14b207d963465c96ce97329c7",
+    "bytes": 7070
+  },
+  "summary": {
+    "components": {
+      "added": 0,
+      "changed": 2,
+      "evidenceChanged": 0,
+      "removed": 0,
+      "moved": 0
+    },
+    "connections": {
+      "added": 0,
+      "changed": 1,
+      "removed": 0,
+      "rerouted": 0
+    },
+    "boundaries": {
+      "added": 0,
+      "changed": 0,
+      "removed": 0,
+      "geometryChanged": 0
+    },
+    "presentationChanged": true,
+    "provenanceChanged": false
+  },
+  "changes": {
+    "components": [
+      {
+        "id": "external_client",
+        "baseLabel": "外部系统 / API",
+        "headLabel": "外部系统 / Webhook",
+        "status": "changed",
+        "classifications": [
+          "semantic"
+        ],
+        "changedFields": [
+          "/label",
+          "/sublabel"
+        ]
+      },
+      {
+        "id": "kernel",
+        "baseLabel": "Core 内核与插件",
+        "headLabel": "Core 内核与插件",
+        "status": "changed",
+        "classifications": [
+          "semantic"
+        ],
+        "changedFields": [
+          "/sublabel"
+        ]
+      }
+    ],
+    "connections": [
+      {
+        "id": "external-to-core",
+        "base": {
+          "from": "external_client",
+          "to": "core_api",
+          "label": "API 调用"
+        },
+        "head": {
+          "from": "external_client",
+          "to": "core_api",
+          "label": "Webhook 触发"
+        },
+        "status": "changed",
+        "classifications": [
+          "semantic"
+        ],
+        "changedFields": [
+          "/label"
+        ]
+      }
+    ],
+    "boundaries": []
+  },
+  "identity": {
+    "components": "components[].id",
+    "connections": "connections[].id (required)",
+    "boundaries": "boundaries[].kind + boundaries[].label (derived)"
+  },
+  "view": {
+    "visualPreset": "classic"
+  },
+  "limitations": [
+    "Authored Architecture IR only; no runtime impact, causality, risk, or mergeability is inferred.",
+    "Boundary identity is conservatively derived from kind + label."
+  ],
+  "artifact": {
+    "sha256": "0e4d43a11337aa4e1e7a9f9882d4ecb286bc8138a7edcef316adab8340842039",
+    "bytes": 2057598
+  },
+  "validation": {
+    "checksPassed": 28,
+    "checkCount": 28,
+    "baseComposition": "pass",
+    "headComposition": "pass"
+  }
+}

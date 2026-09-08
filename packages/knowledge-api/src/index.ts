@@ -24,12 +24,6 @@ export interface KnowledgeProvider extends KnowledgeRuntime {}
 
 export interface KnowledgeAttachmentStore extends ThreadKnowledgeAttachmentStore {}
 
-export interface KnowledgePluginFactoryOptions {
-  userDataPath: string;
-  getConfig: () => KnowledgeConfig;
-  setConfig: (input: Partial<KnowledgeConfig>) => Promise<KnowledgeConfig> | KnowledgeConfig;
-}
-
 export interface KnowledgePluginRuntime extends KnowledgeRuntimeRegistration {}
 
 const DEFAULT_CONFIG: KnowledgeConfig = {

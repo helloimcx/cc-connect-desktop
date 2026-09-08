@@ -1123,6 +1123,59 @@ test('lac monitor add supports --workflow deep-analysis and --retro-delay 24h', 
   }
 });
 
+test('lac monitor add supports webhook source and outputs hook URL and token', async () => {
+  let capturedBody: string | null = null;
+  const { restore } = withFetchMock(async (input, init) => {
+    if (init?.body) capturedBody = init.body as string;
+    return new Response(JSON.stringify({
+      ok: true,
+      data: {
+        id: 'monitor:wh-12345678',
+        workspaceId: 'workspace-a',
+        title: 'CI Webhook',
+        sourceType: 'webhook',
+        sourceConfig: { hookId: 'ci-alert', token: 'whsec_test_secret' },
+        condition: { metric: 'always', operator: '==', value: true, expression: 'always' },
+        promptTemplate: 'Analyze CI alert',
+        executionMode: 'side-thread',
+        enabled: true,
+        cooldownMs: 900000,
+      },
+    }), { headers: { 'content-type': 'application/json' } });
+  });
+  try {
+    const { io, read } = createIo();
+    const exitCode = await runCli(
+      ['monitor', 'add', '--title', 'CI Webhook', '--source', 'webhook', '--hook-id', 'ci-alert', '--token', 'whsec_test_secret', '--condition', 'always', '--message', 'Analyze CI alert'],
+      {
+        LOCAL_AI_CORE_BASE: 'http://127.0.0.1:9831/api/local/v1',
+        LOCAL_AI_WORKSPACE_ID: 'workspace-a',
+      },
+      io,
+    );
+    assert.equal(exitCode, 0);
+    assert(capturedBody);
+    assert.deepEqual(JSON.parse(capturedBody), {
+      workspaceId: 'workspace-a',
+      title: 'CI Webhook',
+      sourceType: 'webhook',
+      sourceConfig: { hookId: 'ci-alert', token: 'whsec_test_secret' },
+      condition: { metric: 'always', operator: '==', value: true, expression: 'always' },
+      promptTemplate: 'Analyze CI alert',
+      executionMode: 'side-thread',
+      cooldownMs: 900000,
+      enabled: true,
+    });
+    const stdout = read().stdout;
+    assert.match(stdout, /Created monitor wh-12345678/);
+    assert.match(stdout, /Hook URL: http:\/\/127\.0\.0\.1:9831\/api\/local\/v1\/automation\/hooks\/ci-alert/);
+    assert.match(stdout, /Token: whsec_test_secret/);
+    assert.match(stdout, /Curl example: curl -X POST/);
+  } finally {
+    restore();
+  }
+});
+
 test('lac monitor edit supports --workflow and --retro-delay', async () => {
   let capturedBody: string | null = null;
   const { restore } = withFetchMock(async (_input, init) => {
@@ -1226,5 +1279,3 @@ test('lac monitor decisions displays structured decisions', async () => {
     restore();
   }
 });
-
-

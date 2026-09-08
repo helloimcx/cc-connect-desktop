@@ -3,6 +3,14 @@ import { normalizeAutomationMonitorConditionOperator } from '@cc/superai-contrac
 
 export function parseMonitorCondition(value: string): AutomationMonitorCondition {
   const expression = String(value || '').trim();
+  if (expression === 'always') {
+    return {
+      metric: 'always',
+      operator: '==',
+      value: true,
+      expression: 'always',
+    };
+  }
   if (expression.includes('&&') || expression.includes('||')) {
     return {
       metric: 'expression',
@@ -17,10 +25,11 @@ export function parseMonitorCondition(value: string): AutomationMonitorCondition
   }
   const rawValue = String(match[3] || '').trim();
   const numeric = Number(rawValue);
+  const cleanValue = rawValue.replace(/^["']|["']$/g, '');
   return {
     metric: String(match[1] || '').trim(),
     operator: normalizeAutomationMonitorConditionOperator(match[2]),
-    value: Number.isFinite(numeric) && rawValue !== '' ? numeric : rawValue,
+    value: Number.isFinite(numeric) && rawValue !== '' ? numeric : cleanValue,
   };
 }
 
