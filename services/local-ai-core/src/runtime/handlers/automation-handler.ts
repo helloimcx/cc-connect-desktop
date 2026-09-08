@@ -1,6 +1,6 @@
 import type { RouteHandler } from '../server-helpers.js';
 import { json, rawJson, readJsonBody, readRawBody } from '../server-helpers.js';
-import type { AutomationMonitorService } from '../../automation/automation-monitor-service.js';
+import { WebhookTriggerError, type AutomationMonitorService } from '../../automation/automation-monitor-service.js';
 import type { AutomationMonitorCreateInput, AutomationMonitorUpdateInput } from '@cc/superai-contracts';
 import { validateBody } from '../request-validation.js';
 
@@ -17,7 +17,7 @@ function extractWebhookToken(req: Parameters<RouteHandler>[1], url?: URL): strin
 }
 
 async function readWebhookPayload(req: Parameters<RouteHandler>[1]): Promise<unknown> {
-  const raw = await readRawBody(req);
+  const raw = await readRawBody(req, 1 << 20);
   if (!raw.length) {
     return {};
   }
@@ -34,16 +34,8 @@ async function readWebhookPayload(req: Parameters<RouteHandler>[1]): Promise<unk
 }
 
 function handleWebhookError(res: Parameters<RouteHandler>[2], error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
-  let status = 500;
-  if (message.includes('Invalid or missing webhook token')) {
-    status = 401;
-  } else if (message.includes('Webhook monitor not found')) {
-    status = 404;
-  } else if (message.includes('Webhook monitor is disabled')) {
-    status = 400;
-  }
-  rawJson(res, status, { error: message });
+  const status = error instanceof WebhookTriggerError ? error.status : 500;
+  rawJson(res, status, { error: error instanceof Error ? error.message : String(error) });
 }
 
 export function registerAutomationHandlers(

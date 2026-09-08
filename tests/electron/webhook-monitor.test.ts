@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import { AutomationMonitorService } from '../../services/local-ai-core/src/automation/automation-monitor-service.js';
+import { AutomationMonitorService, WebhookTriggerError } from '../../services/local-ai-core/src/automation/automation-monitor-service.js';
 import { AutomationService } from '../../services/local-ai-core/src/automation/automation-service.js';
 import { WebhookMonitorProvider } from '../../services/local-ai-core/src/automation/webhook-provider.js';
 import { LocalCoreAcpStore } from '../../services/local-ai-core/src/acp/local-core-acp-store.js';
@@ -161,6 +161,42 @@ test('triggerWebhook authenticates token and evaluates condition', async () => {
     );
     assert.equal(cooldownResult.decision, 'skipped_cooldown');
     assert.equal(context.executedActions.length, 1); // No new execution
+  } finally {
+    await context.monitors.stop();
+    context.close();
+  }
+});
+
+test('triggerWebhook token compare rejects wrong-length tokens with 401', async () => {
+  const context = fixture();
+  try {
+    await context.monitors.createMonitor({
+      workspaceId: 'workspace-a',
+      title: 'Length Mismatch Hook',
+      sourceType: 'webhook',
+      sourceConfig: {
+        hookId: 'length-hook',
+        token: 'sec-deploy-token-999',
+      },
+      condition: { metric: 'always', operator: '==', value: true },
+      promptTemplate: 'Hello',
+      cooldownMs: 60_000,
+    });
+
+    // Shorter and longer wrong tokens must both reject with the typed 401
+    // error — the timing-safe compare must not throw on length mismatch.
+    await assert.rejects(
+      () => context.monitors.triggerWebhook('length-hook', { event: 't' }, 'x'),
+      (error: unknown) => error instanceof WebhookTriggerError && error.status === 401,
+    );
+    await assert.rejects(
+      () => context.monitors.triggerWebhook(
+        'length-hook',
+        { event: 't' },
+        'x'.repeat(64),
+      ),
+      (error: unknown) => error instanceof WebhookTriggerError && error.status === 401,
+    );
   } finally {
     await context.monitors.stop();
     context.close();

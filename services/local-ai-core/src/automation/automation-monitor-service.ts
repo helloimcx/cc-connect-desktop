@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type {
   AutomationMonitor,
   AutomationMonitorCreateInput,
@@ -72,6 +72,21 @@ type AutomationMonitorServiceOptions = {
 };
 const PROVIDER_EVENT_CONCURRENCY = 4;
 type MonitorLifecycleState = 'starting' | 'running' | 'stopping' | 'stopped';
+
+export class WebhookTriggerError extends Error {
+  constructor(message: string, readonly status: 400 | 401 | 404) {
+    super(message);
+    this.name = 'WebhookTriggerError';
+  }
+}
+
+// Hashing both sides first keeps the comparison constant-time regardless of
+// token length, so a wrong-length guess cannot short-circuit or throw.
+function webhookTokenEquals(provided: string, expected: string): boolean {
+  const providedDigest = createHash('sha256').update(provided).digest();
+  const expectedDigest = createHash('sha256').update(expected).digest();
+  return timingSafeEqual(providedDigest, expectedDigest);
+}
 
 export class AutomationMonitorService {
   private timer: NodeJS.Timeout | null = null;
@@ -379,16 +394,16 @@ export class AutomationMonitorService {
     const cleanHookId = String(hookId || '').trim();
     const monitor = this.getMonitorByHookId(cleanHookId);
     if (!monitor) {
-      throw new Error(`Webhook monitor not found: ${cleanHookId}`);
+      throw new WebhookTriggerError(`Webhook monitor not found: ${cleanHookId}`, 404);
     }
     if (!monitor.enabled) {
-      throw new Error(`Webhook monitor is disabled: ${cleanHookId}`);
+      throw new WebhookTriggerError(`Webhook monitor is disabled: ${cleanHookId}`, 400);
     }
 
     const expectedToken = String(monitor.sourceConfig?.token || '').trim();
     const cleanToken = String(token || '').trim();
-    if (!cleanToken || cleanToken !== expectedToken) {
-      throw new Error('Invalid or missing webhook token.');
+    if (!cleanToken || !expectedToken || !webhookTokenEquals(cleanToken, expectedToken)) {
+      throw new WebhookTriggerError('Invalid or missing webhook token.', 401);
     }
 
     const body = (typeof payload === 'object' && payload !== null)
