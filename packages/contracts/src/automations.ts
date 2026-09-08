@@ -300,6 +300,43 @@ function normalizeAutomationExecutionMode(value: unknown): AutomationAction['exe
   throw new Error('Automation action executionMode must be same-thread or side-thread.');
 }
 
+function normalizeWorkflowTemplate(value: unknown): AutomationAction['workflowTemplate'] {
+  if (value === undefined) return undefined;
+  if (value === 'direct' || value === 'deep-analysis') return value;
+  throw new Error('Automation workflowTemplate must be direct or deep-analysis.');
+}
+
+function normalizeRetrospectiveDelayHours(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new Error('Automation retrospectiveDelayHours must be a positive number.');
+  }
+  return value;
+}
+
+function normalizeRetrospectiveTarget(value: unknown): AutomationAction['retrospectiveTarget'] {
+  if (value === undefined) return undefined;
+  const target = asRecord(value, 'Automation retrospectiveTarget');
+  return {
+    monitorId: requiredString(target.monitorId, 'Automation retrospectiveTarget monitorId'),
+    decisionId: requiredString(target.decisionId, 'Automation retrospectiveTarget decisionId'),
+  };
+}
+
+function normalizeAutomationAction(action: Record<string, unknown>): AutomationAction {
+  const workflowTemplate = normalizeWorkflowTemplate(action.workflowTemplate);
+  const retrospectiveDelayHours = normalizeRetrospectiveDelayHours(action.retrospectiveDelayHours);
+  const retrospectiveTarget = normalizeRetrospectiveTarget(action.retrospectiveTarget);
+  return {
+    kind: 'agent-prompt',
+    promptTemplate: requiredString(action.promptTemplate, 'Automation promptTemplate'),
+    executionMode: normalizeAutomationExecutionMode(action.executionMode),
+    ...(workflowTemplate !== undefined ? { workflowTemplate } : {}),
+    ...(retrospectiveDelayHours !== undefined ? { retrospectiveDelayHours } : {}),
+    ...(retrospectiveTarget !== undefined ? { retrospectiveTarget } : {}),
+  };
+}
+
 function normalizeRoute(value: unknown): ScheduledJobRoute {
   const route = asRecord(value, 'Automation delivery route');
   const normalized: ScheduledJobRoute = {
@@ -380,7 +417,6 @@ export function normalizeAutomationDefinition(value: unknown): AutomationDefinit
   const input = asRecord(value, 'Automation definition');
   const action = asRecord(input.action, 'Automation action');
   if (action.kind !== 'agent-prompt') throw new Error('Automation action kind must be agent-prompt.');
-  const executionMode = normalizeAutomationExecutionMode(action.executionMode);
   const delivery = asRecord(input.delivery, 'Automation delivery');
   const policies = asRecord(input.policies, 'Automation policies');
   if (policies.concurrency !== 'skip-if-running') {
@@ -399,11 +435,7 @@ export function normalizeAutomationDefinition(value: unknown): AutomationDefinit
     health: input.health,
     activation: normalizeAutomationActivation(input.activation),
     condition: normalizeAutomationCondition(input.condition),
-    action: {
-      kind: 'agent-prompt',
-      promptTemplate: requiredString(action.promptTemplate, 'Automation promptTemplate'),
-      executionMode,
-    },
+    action: normalizeAutomationAction(action),
     delivery: {
       platform: requiredString(delivery.platform, 'Automation delivery platform').toLowerCase(),
       route: normalizeRoute(delivery.route),

@@ -90,7 +90,10 @@ export function registerAutomationHandlers(
       json(res, 200, { decisions: [] });
       return;
     }
-    json(res, 200, { decisions: await decisionLogService.listDecisions(monitorId) });
+    // Decisions are keyed under the internal monitor id; the API accepts the
+    // public short id (or the internal id) so resolve before lookup.
+    const resolvedId = automationMonitors.resolveRequiredMonitorId(monitorId);
+    json(res, 200, { decisions: await decisionLogService.listDecisions(resolvedId) });
   });
   map.set('automation.hooks.trigger', async (route, req, res, url) => {
     const hookId = (route as { hookId: string }).hookId;

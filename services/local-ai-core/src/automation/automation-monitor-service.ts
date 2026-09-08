@@ -981,7 +981,7 @@ export class AutomationMonitorService {
     return matches[0]?.id || '';
   }
 
-  private resolveRequiredMonitorId(monitorId: string): string {
+  resolveRequiredMonitorId(monitorId: string): string {
     const resolved = this.resolveMonitorId(monitorId);
     if (!resolved) throw new Error(`Automation monitor not found: ${monitorId}`);
     return resolved;

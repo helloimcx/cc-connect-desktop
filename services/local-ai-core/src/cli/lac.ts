@@ -307,6 +307,18 @@ function requireWorkspaceContext(flags: Map<string, string[]>, env: NodeJS.Proce
   return context;
 }
 
+function parseWorkflowFlags(flags: Map<string, string[]>): Partial<AutomationMonitorUpdateInput> {
+  const workflowFlag = getFlag(flags, 'workflow');
+  if (workflowFlag && workflowFlag !== 'direct' && workflowFlag !== 'deep-analysis') {
+    throw new Error('--workflow must be "direct" or "deep-analysis".');
+  }
+  const retroDelayFlag = getFlag(flags, 'retro-delay');
+  return {
+    ...(workflowFlag ? { workflowTemplate: workflowFlag as 'direct' | 'deep-analysis' } : {}),
+    ...(retroDelayFlag ? { retrospectiveDelayHours: parseRetroDelayHours(retroDelayFlag) } : {}),
+  };
+}
+
 async function handleMonitorAdd(flags: Map<string, string[]>, env: NodeJS.ProcessEnv, io: StdIo, json: boolean) {
   const context = resolveContext(flags, env);
   if (!context.workspaceId) {
@@ -320,12 +332,6 @@ async function handleMonitorAdd(flags: Map<string, string[]>, env: NodeJS.Proces
   const cronFlag = getFlag(flags, 'cron');
   const timezoneFlag = getFlag(flags, 'timezone');
   if (timezoneFlag && !cronFlag) throw new Error('--timezone requires --cron.');
-  const workflowFlag = getFlag(flags, 'workflow');
-  if (workflowFlag && workflowFlag !== 'direct' && workflowFlag !== 'deep-analysis') {
-    throw new Error('--workflow must be "direct" or "deep-analysis".');
-  }
-  const retroDelayFlag = getFlag(flags, 'retro-delay');
-  const retrospectiveDelayHours = retroDelayFlag ? parseRetroDelayHours(retroDelayFlag) : undefined;
   const monitor = await request<AutomationMonitor>(context.baseUrl, 'POST', '/automation/monitors', {
     workspaceId: context.workspaceId,
     ...(context.threadId ? { threadId: context.threadId } : {}),
@@ -337,8 +343,7 @@ async function handleMonitorAdd(flags: Map<string, string[]>, env: NodeJS.Proces
     executionMode: getMonitorExecutionMode(flags),
     cooldownMs: parseDurationMs(getFlag(flags, 'cooldown') || '15m'),
     ...(cronFlag ? { schedule: parseMonitorSchedule(cronFlag, timezoneFlag) } : {}),
-    ...(workflowFlag ? { workflowTemplate: workflowFlag as 'direct' | 'deep-analysis' } : {}),
-    ...(retrospectiveDelayHours !== undefined ? { retrospectiveDelayHours } : {}),
+    ...parseWorkflowFlags(flags),
     enabled: true,
   });
   const outputLines = [
@@ -402,19 +407,13 @@ async function handleMonitorEdit(monitorId: string, flags: Map<string, string[]>
   const cronFlag = getFlag(flags, 'cron');
   const timezoneFlag = getFlag(flags, 'timezone');
   if (timezoneFlag && !cronFlag) throw new Error('--timezone requires --cron.');
-  const workflowFlag = getFlag(flags, 'workflow');
-  if (workflowFlag && workflowFlag !== 'direct' && workflowFlag !== 'deep-analysis') {
-    throw new Error('--workflow must be "direct" or "deep-analysis".');
-  }
-  const retroDelayFlag = getFlag(flags, 'retro-delay');
   if (title) input.title = title;
   if (typeof promptTemplate === 'string' && promptTemplate) input.promptTemplate = promptTemplate;
   if (condition) input.condition = parseMonitorCondition(condition);
   if (typeof enabled === 'boolean') input.enabled = enabled;
   if (executionMode) input.executionMode = normalizeScheduledJobExecutionMode(executionMode);
   if (cooldown) input.cooldownMs = parseDurationMs(cooldown);
-  if (workflowFlag) input.workflowTemplate = workflowFlag as 'direct' | 'deep-analysis';
-  if (retroDelayFlag) input.retrospectiveDelayHours = parseRetroDelayHours(retroDelayFlag);
+  Object.assign(input, parseWorkflowFlags(flags));
   if (cronFlag === 'off') input.schedule = null;
   else if (cronFlag) input.schedule = parseMonitorSchedule(cronFlag, timezoneFlag);
   if (Object.keys(input).length === 0) {

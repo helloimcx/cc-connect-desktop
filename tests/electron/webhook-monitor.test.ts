@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { AutomationMonitorService, WebhookTriggerError } from '../../services/local-ai-core/src/automation/automation-monitor-service.js';
 import { AutomationService } from '../../services/local-ai-core/src/automation/automation-service.js';
+import { DecisionLogService } from '../../services/local-ai-core/src/automation/decision-log-service.js';
+import { toPublicAutomationMonitorId } from '../../services/local-ai-core/src/automation/monitor-id.js';
 import { WebhookMonitorProvider } from '../../services/local-ai-core/src/automation/webhook-provider.js';
 import { LocalCoreAcpStore } from '../../services/local-ai-core/src/acp/local-core-acp-store.js';
 import { LocalCoreEventBus } from '../../services/local-ai-core/src/kernel/event-bus.js';
@@ -366,5 +368,67 @@ test('parseMonitorCondition correctly parses quoted string literals without doub
   assert.equal(parsedSingle.metric, 'env');
   assert.equal(parsedSingle.operator, '==');
   assert.equal(parsedSingle.value, 'production');
+});
+
+test('automation.monitor.decisions resolves public short monitor ids to internal decision keys', async () => {
+  const context = fixture();
+  try {
+    const monitor = await context.monitors.createMonitor({
+      workspaceId: 'workspace-a',
+      title: 'Webhook Decision Hook',
+      sourceType: 'webhook',
+      sourceConfig: { hookId: 'decision-hook', token: 'sec-decision' },
+      condition: { metric: 'always', operator: '==', value: true },
+      promptTemplate: 'Analyze the webhook event.',
+    });
+
+    const workspacePath = join(context.path, 'workspace');
+    const decisionService = new DecisionLogService({ getWorkspacePath: () => workspacePath });
+    await decisionService.appendDecision({
+      id: 'dec_9f2e4a6b8c3d4e5f',
+      monitorId: monitor.id,
+      workspaceId: 'workspace-a',
+      runId: `run:agentdock::${monitor.id}:1756950000000`,
+      threadId: 'thread:workspace-a::11111111-2222-3333-4444-555555555555',
+      action: 'BUY',
+      confidence: 70,
+      thesis: 'Lower-band entry with a dividend cushion.',
+      bullPoints: ['Boll %B 0.04'],
+      bearPoints: [],
+      keyAssumptions: ['Dividend stays >= 4%'],
+      dataSnapshot: { symbol: 'AAPL' },
+      createdAt: '2026-09-09T08:00:00.000Z',
+      retrospectiveStatus: 'pending',
+    });
+
+    const handlers = new Map<string, RouteHandler>();
+    registerAutomationHandlers(handlers, context.monitors, decisionService);
+    const handler = handlers.get('automation.monitor.decisions');
+    assert.ok(handler, 'automation.monitor.decisions handler must be registered');
+
+    const publicId = toPublicAutomationMonitorId(monitor.id);
+    assert.notEqual(publicId, monitor.id);
+
+    const res = {
+      statusCode: 200,
+      bodyData: '',
+      setHeader() {},
+      writeHead(code: number) { this.statusCode = code; },
+      end(data?: unknown) { this.bodyData = String(data || ''); },
+      get body() { return this.bodyData ? JSON.parse(this.bodyData) : null; },
+    };
+    await handler(
+      { name: 'automation.monitor.decisions', monitorId: publicId } as any,
+      {} as any,
+      res as any,
+      new URL(`http://127.0.0.1/api/local/v1/automation/monitors/${publicId}/decisions`),
+    );
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.decisions.length, 1);
+    assert.equal(res.body.data.decisions[0].id, 'dec_9f2e4a6b8c3d4e5f');
+  } finally {
+    await context.monitors.stop();
+    context.close();
+  }
 });
 

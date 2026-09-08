@@ -12,6 +12,8 @@ export type MonitorFormState = {
   token: string;
   condition: string;
   promptTemplate: string;
+  workflowTemplate: 'direct' | 'deep-analysis';
+  retrospectiveDelayHours: string;
   cooldownMinutes: string;
   executionMode: 'same-thread' | 'side-thread';
   enabled: boolean;
@@ -26,6 +28,8 @@ export const DEFAULT_FORM: MonitorFormState = {
   token: '',
   condition: 'abs_change_percent >= 3',
   promptTemplate: '',
+  workflowTemplate: 'direct',
+  retrospectiveDelayHours: '24',
   cooldownMinutes: '15',
   executionMode: 'side-thread',
   enabled: true,
@@ -100,6 +104,8 @@ export function toForm(monitor?: Monitor | null): MonitorFormState {
     token: String(monitor.sourceConfig.token || ''),
     condition: conditionToText(monitor),
     promptTemplate: monitor.promptTemplate,
+    workflowTemplate: monitor.workflowTemplate || 'direct',
+    retrospectiveDelayHours: String(monitor.retrospectiveDelayHours ?? 24),
     cooldownMinutes: String(Math.round(monitor.cooldownMs / 60000)),
     executionMode: monitor.executionMode as MonitorFormState['executionMode'],
     enabled: monitor.enabled,
@@ -110,6 +116,7 @@ export function toPayload(form: MonitorFormState): MonitorCreateInput {
   const condition = parseCondition(form.condition);
   if (!condition) throw new Error('Invalid condition');
   const sourceDef = sourceDefinitions[form.sourceType];
+  const retroHours = Number(form.retrospectiveDelayHours);
   return {
     workspaceId: form.workspaceId,
     title: form.title,
@@ -117,6 +124,13 @@ export function toPayload(form: MonitorFormState): MonitorCreateInput {
     sourceConfig: sourceDef.buildConfig(form),
     condition,
     promptTemplate: form.promptTemplate,
+    workflowTemplate: form.workflowTemplate,
+    retrospectiveDelayHours:
+      form.workflowTemplate === 'deep-analysis'
+        ? Number.isFinite(retroHours) && retroHours >= 1
+          ? Math.floor(retroHours)
+          : 24
+        : undefined,
     executionMode: form.executionMode,
     cooldownMs: Math.max(0, Number(form.cooldownMinutes || '0') * 60000),
     enabled: form.enabled,
@@ -158,6 +172,16 @@ function SourceConfigInputs({
       <Input label="Token" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} placeholder="留空自动生成" />
     </div>
   );
+}
+
+function nextFormForSourceType(form: MonitorFormState, nextSource: MonitorFormState['sourceType']): MonitorFormState {
+  let condition = form.condition;
+  if (nextSource === 'webhook' && form.condition.includes('change_percent')) {
+    condition = 'always';
+  } else if (nextSource === 'stock.quote' && form.condition === 'always') {
+    condition = 'abs_change_percent >= 3';
+  }
+  return { ...form, sourceType: nextSource, condition };
 }
 
 function ConditionPresetSelector({
@@ -203,16 +227,6 @@ export default function MonitorModal({ open, editingMonitor, workspaces, onClose
     [workspaces],
   );
 
-  const handleSourceTypeChange = (nextSource: MonitorFormState['sourceType']) => {
-    let nextCondition = form.condition;
-    if (nextSource === 'webhook' && form.condition.includes('change_percent')) {
-      nextCondition = 'always';
-    } else if (nextSource === 'stock.quote' && form.condition === 'always') {
-      nextCondition = 'abs_change_percent >= 3';
-    }
-    setForm({ ...form, sourceType: nextSource, condition: nextCondition });
-  };
-
   const handleSave = async () => {
     if (!form.workspaceId || !form.title.trim() || !form.promptTemplate.trim() || !parseCondition(form.condition)) {
       return;
@@ -238,7 +252,7 @@ export default function MonitorModal({ open, editingMonitor, workspaces, onClose
           {selectedWorkspaceOptions}
         </Select>
         <Input label={t('monitors.monitorTitle')} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-        <Select label="Source" value={form.sourceType} onChange={(e) => handleSourceTypeChange(e.target.value as MonitorFormState['sourceType'])}>
+        <Select label="Source" value={form.sourceType} onChange={(e) => setForm(nextFormForSourceType(form, e.target.value as MonitorFormState['sourceType']))}>
           {Object.entries(sourceDefinitions).map(([key, def]) => (
             <option key={key} value={key}>{def.label}</option>
           ))}
@@ -256,6 +270,25 @@ export default function MonitorModal({ open, editingMonitor, workspaces, onClose
             Condition should look like &apos;always&apos;, metric &gt;= value, or a boolean expression.
           </p>
         ) : null}
+        <div className="grid grid-cols-2 gap-3">
+          <Select
+            label="Workflow"
+            value={form.workflowTemplate}
+            onChange={(e) => setForm({ ...form, workflowTemplate: e.target.value as MonitorFormState['workflowTemplate'] })}
+          >
+            <option value="direct">Direct (Standard alert)</option>
+            <option value="deep-analysis">Deep Analysis (Bull/Bear debate)</option>
+          </Select>
+          {form.workflowTemplate === 'deep-analysis' ? (
+            <Input
+              label="Retro delay (hours)"
+              type="number"
+              min="1"
+              value={form.retrospectiveDelayHours}
+              onChange={(e) => setForm({ ...form, retrospectiveDelayHours: e.target.value })}
+            />
+          ) : null}
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <Input label={t('monitors.cooldown')} value={form.cooldownMinutes} onChange={(e) => setForm({ ...form, cooldownMinutes: e.target.value })} />
           <Select label="Execution" value={form.executionMode} onChange={(e) => setForm({ ...form, executionMode: e.target.value as MonitorFormState['executionMode'] })}>

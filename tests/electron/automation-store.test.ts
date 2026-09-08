@@ -74,6 +74,48 @@ test('creates, reads, updates, and persists trusted automation state', () => {
   }
 });
 
+test('decision workflow action fields survive the real store create/read/update round-trip', () => {
+  const context = fixture();
+  try {
+    const created = context.store.create(createInput({
+      title: 'AAPL Bull/Bear deep analysis',
+      action: {
+        kind: 'agent-prompt',
+        promptTemplate: 'Conduct the bull/bear debate and record a decision.',
+        executionMode: 'side-thread',
+        workflowTemplate: 'deep-analysis',
+        retrospectiveDelayHours: 24,
+      },
+    }));
+
+    const reloaded = context.store.get(created.id);
+    assert.equal(reloaded?.action.workflowTemplate, 'deep-analysis');
+    assert.equal(reloaded?.action.retrospectiveDelayHours, 24);
+
+    const updated = context.store.update(created.id, {
+      action: {
+        kind: 'agent-prompt',
+        promptTemplate: 'Evaluate the decision against realized data.',
+        executionMode: 'side-thread',
+        retrospectiveTarget: {
+          monitorId: created.id,
+          decisionId: 'dec_9f2e4a6b8c3d4e5f',
+        },
+      },
+    });
+    assert.deepEqual(updated.action.retrospectiveTarget, {
+      monitorId: created.id,
+      decisionId: 'dec_9f2e4a6b8c3d4e5f',
+    });
+    assert.equal(
+      context.store.get(created.id)?.action.retrospectiveTarget?.decisionId,
+      'dec_9f2e4a6b8c3d4e5f',
+    );
+  } finally {
+    context.close();
+  }
+});
+
 test('listDueAutomationIds returns only automations whose next_check_at is at or before now', () => {
   const context = fixture();
   try {
