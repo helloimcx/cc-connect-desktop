@@ -33,6 +33,7 @@ import type { WorkspaceRouter } from '../router/workspace-router.js';
 import type { ScheduledJobApplicationService } from '../scheduler/scheduled-job-application-service.js';
 import type { AutomationMonitorService } from '../automation/automation-monitor-service.js';
 import type { AutomationService } from '../automation/automation-service.js';
+import type { DecisionLogService } from '../automation/decision-log-service.js';
 import type { RuntimeDetectionService } from './runtime-detection-service.js';
 import type { LocalCoreErrorReporter } from '../kernel/local-core-errors.js';
 import type { ChannelService } from './channel-service.js';
@@ -86,6 +87,7 @@ export interface LocalAiCoreServerBindings {
   readonly scheduledJobs: ScheduledJobApplicationService;
   readonly automationMonitors: AutomationMonitorService;
   readonly automations?: AutomationService;
+  readonly decisionLogService?: DecisionLogService;
   readonly costService?: CostService;
   readonly store: LocalCoreAcpStore;
   readonly runtimeDetection: RuntimeDetectionService;
@@ -175,7 +177,7 @@ export class LocalAiCoreServer {
     registerSecurityHandlers(this.handlers, b.workspaceRouter);
     registerTaskHandlers(this.handlers, b.workspaceRouter);
     registerSchedulerHandlers(this.handlers, b.scheduledJobs);
-    registerAutomationHandlers(this.handlers, b.automationMonitors);
+    registerAutomationHandlers(this.handlers, b.automationMonitors, b.decisionLogService);
     if (b.automations) {
       registerUnifiedAutomationHandlers(this.handlers, {
         automations: b.automations,

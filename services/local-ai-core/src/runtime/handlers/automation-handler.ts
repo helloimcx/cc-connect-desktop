@@ -1,6 +1,7 @@
 import type { RouteHandler } from '../server-helpers.js';
 import { json, rawJson, readJsonBody, readRawBody } from '../server-helpers.js';
 import { WebhookTriggerError, type AutomationMonitorService } from '../../automation/automation-monitor-service.js';
+import type { DecisionLogService } from '../../automation/decision-log-service.js';
 import type { AutomationMonitorCreateInput, AutomationMonitorUpdateInput } from '@cc/superai-contracts';
 import { validateBody } from '../request-validation.js';
 
@@ -41,6 +42,7 @@ function handleWebhookError(res: Parameters<RouteHandler>[2], error: unknown): v
 export function registerAutomationHandlers(
   map: Map<string, RouteHandler>,
   automationMonitors: AutomationMonitorService,
+  decisionLogService?: DecisionLogService,
 ) {
   map.set('automation.monitors.list', async (_route, _req, res, url) => {
     const workspaceId = String(url.searchParams.get('workspace_id') || '');
@@ -52,6 +54,8 @@ export function registerAutomationHandlers(
       sourceType: { kind: 'string', required: true }, sourceConfig: 'object', condition: { kind: 'object', required: true },
       promptTemplate: { kind: 'string', required: true }, platform: 'string', route: 'object', threadId: 'string',
       executionMode: 'string', enabled: 'boolean', cooldownMs: 'number',
+      workflowTemplate: { kind: 'string', allowedValues: ['direct', 'deep-analysis'] },
+      retrospectiveDelayHours: 'number',
     });
     json(res, 200, await automationMonitors.createMonitor(body));
   });
@@ -72,11 +76,24 @@ export function registerAutomationHandlers(
     const body = validateBody<AutomationMonitorUpdateInput>(await readJsonBody(req), {
       title: 'string', sourceConfig: 'object', condition: 'object', promptTemplate: 'string', route: 'object',
       executionMode: 'string', enabled: 'boolean', cooldownMs: 'number',
+      workflowTemplate: { kind: 'string', allowedValues: ['direct', 'deep-analysis'] },
+      retrospectiveDelayHours: 'number',
     });
     json(res, 200, await automationMonitors.updateMonitor((route as { monitorId: string }).monitorId, body));
   });
   map.set('automation.monitor.delete', async (route, _req, res) => {
     json(res, 200, await automationMonitors.deleteMonitor((route as { monitorId: string }).monitorId));
+  });
+  map.set('automation.monitor.decisions', async (route, _req, res) => {
+    const monitorId = (route as { monitorId: string }).monitorId;
+    if (!decisionLogService) {
+      json(res, 200, { decisions: [] });
+      return;
+    }
+    // Decisions are keyed under the internal monitor id; the API accepts the
+    // public short id (or the internal id) so resolve before lookup.
+    const resolvedId = automationMonitors.resolveRequiredMonitorId(monitorId);
+    json(res, 200, { decisions: await decisionLogService.listDecisions(resolvedId) });
   });
   map.set('automation.hooks.trigger', async (route, req, res, url) => {
     const hookId = (route as { hookId: string }).hookId;

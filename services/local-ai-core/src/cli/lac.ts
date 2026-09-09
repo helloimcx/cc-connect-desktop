@@ -8,13 +8,14 @@ import type {
   ScheduledJob,
   ScheduledJobRun,
   ScheduledJobUpdateInput,
+  AutomationDecisionRecord,
 } from '@cc/superai-contracts';
 import { normalizeChannelPlatform, normalizeScheduledJobExecutionMode } from '@cc/superai-contracts';
 import { toPublicScheduledJobId } from '../scheduler/job-id.js';
 import { getChannelPlatformBase, getChannelPlatformInstanceId, scheduledJobMatchesCliContext } from '../scheduler/scheduled-job-route.js';
 import { toPublicAutomationMonitorId } from '../automation/monitor-id.js';
 import { automationMonitorToScheduledJob } from '../automation/automation-schedule-utils.js';
-import { parseDurationMs, parseMonitorCondition, parseMonitorSchedule } from './monitor-cli-parsers.js';
+import { parseDurationMs, parseMonitorCondition, parseMonitorSchedule, parseRetroDelayHours } from './monitor-cli-parsers.js';
 import { formatSafeError } from '../kernel/local-core-errors.js';
 import { runSkillDomain } from './skill-cli-handlers.js';
 import type { StdIo, ParsedFlags, CliContext } from './cli-helpers.js';
@@ -76,6 +77,7 @@ async function runMonitorDomain(action: string, maybeId: string, flags: ParsedFl
     case 'del':
     case 'delete': return await handleMonitorDelete(maybeId, flags, env, io, json);
     case 'run': return await handleMonitorRun(maybeId, flags, env, io, json);
+    case 'decisions': return await handleMonitorDecisions(maybeId, flags, env, io, json);
     default: printUsage(io.stderr); return 2;
   }
 }
@@ -305,6 +307,18 @@ function requireWorkspaceContext(flags: Map<string, string[]>, env: NodeJS.Proce
   return context;
 }
 
+function parseWorkflowFlags(flags: Map<string, string[]>): Partial<AutomationMonitorUpdateInput> {
+  const workflowFlag = getFlag(flags, 'workflow');
+  if (workflowFlag && workflowFlag !== 'direct' && workflowFlag !== 'deep-analysis') {
+    throw new Error('--workflow must be "direct" or "deep-analysis".');
+  }
+  const retroDelayFlag = getFlag(flags, 'retro-delay');
+  return {
+    ...(workflowFlag ? { workflowTemplate: workflowFlag as 'direct' | 'deep-analysis' } : {}),
+    ...(retroDelayFlag ? { retrospectiveDelayHours: parseRetroDelayHours(retroDelayFlag) } : {}),
+  };
+}
+
 async function handleMonitorAdd(flags: Map<string, string[]>, env: NodeJS.ProcessEnv, io: StdIo, json: boolean) {
   const context = resolveContext(flags, env);
   if (!context.workspaceId) {
@@ -329,6 +343,7 @@ async function handleMonitorAdd(flags: Map<string, string[]>, env: NodeJS.Proces
     executionMode: getMonitorExecutionMode(flags),
     cooldownMs: parseDurationMs(getFlag(flags, 'cooldown') || '15m'),
     ...(cronFlag ? { schedule: parseMonitorSchedule(cronFlag, timezoneFlag) } : {}),
+    ...parseWorkflowFlags(flags),
     enabled: true,
   });
   const outputLines = [
@@ -398,6 +413,7 @@ async function handleMonitorEdit(monitorId: string, flags: Map<string, string[]>
   if (typeof enabled === 'boolean') input.enabled = enabled;
   if (executionMode) input.executionMode = normalizeScheduledJobExecutionMode(executionMode);
   if (cooldown) input.cooldownMs = parseDurationMs(cooldown);
+  Object.assign(input, parseWorkflowFlags(flags));
   if (cronFlag === 'off') input.schedule = null;
   else if (cronFlag) input.schedule = parseMonitorSchedule(cronFlag, timezoneFlag);
   if (Object.keys(input).length === 0) {
@@ -426,6 +442,37 @@ async function handleMonitorRun(monitorId: string, flags: Map<string, string[]>,
   const context = resolveContext(flags, env);
   const run = await request<AutomationMonitorRun>(context.baseUrl, 'POST', `/automation/monitors/${encodeURIComponent(monitorId)}/run`);
   print(json, io.stdout, run, `Triggered monitor ${monitorId}: ${run.status}`);
+  return 0;
+}
+
+async function handleMonitorDecisions(monitorId: string, flags: Map<string, string[]>, env: NodeJS.ProcessEnv, io: StdIo, json: boolean) {
+  if (!monitorId) {
+    throw new Error('monitor decisions requires a monitor id.');
+  }
+  const context = resolveContext(flags, env);
+  const response = await request<{ decisions: AutomationDecisionRecord[] }>(
+    context.baseUrl,
+    'GET',
+    `/automation/monitors/${encodeURIComponent(monitorId)}/decisions`,
+  );
+  const decisions = response.decisions || [];
+  print(
+    json,
+    io.stdout,
+    { decisions },
+    decisions.length === 0
+      ? 'No decision records found.'
+      : decisions.map((d) => [
+          `[${d.createdAt}] Run: ${d.runId || 'unknown'}`,
+          `Action: ${d.action} (Confidence: ${d.confidence}%)`,
+          `Thesis: ${d.thesis}`,
+          `Bull: ${d.bullPoints.join('; ')}`,
+          `Bear: ${d.bearPoints.join('; ')}`,
+          d.retrospectiveOutcome
+            ? `Retrospective: Accuracy=${d.retrospectiveOutcome.accuracy} | Realized=${d.retrospectiveOutcome.realizedOutcome} | Reflection=${d.retrospectiveOutcome.reflection}`
+            : `Retrospective: ${d.retrospectiveStatus}`,
+        ].join('\n')).join('\n---\n'),
+  );
   return 0;
 }
 
@@ -648,10 +695,11 @@ function printUsage(output: Pick<NodeJS.WriteStream, 'write'>) {
     '  lac scheduler edit <job-id> [--cron "<expr>"] [--message "<text>"] [--desc "<label>"] [--enabled true|false] [--execution-mode same-thread|side-thread] [--json]',
     '  lac scheduler del <job-id> [--json]',
     '  lac scheduler run <job-id> [--json]',
-    '  lac monitor add --title "<title>" --source stock.quote|webhook [--symbol <symbol>] [--hook-id <id>] [--token <tok>] --condition "<expr>" --message "<text>" [--cooldown 15m] [--cron "<expr>"] [--timezone <tz>] [--execution-mode same-thread|side-thread] [--json]',
+    '  lac monitor add --title "<title>" --source stock.quote|webhook [--symbol <symbol>] [--hook-id <id>] [--token <tok>] --condition "<expr>" --message "<text>" [--cooldown 15m] [--cron "<expr>"] [--timezone <tz>] [--workflow direct|deep-analysis] [--retro-delay <hours>] [--execution-mode same-thread|side-thread] [--json]',
     '  lac monitor list [--workspace <id>] [--thread [<id>]] [--json]',
     '  lac monitor info <monitor-id> [--json]',
-    '  lac monitor edit <monitor-id> [--title "<title>"] [--condition "<expr>"] [--message "<text>"] [--enabled true|false] [--cooldown 15m] [--cron "<expr>"|off] [--timezone <tz>] [--execution-mode same-thread|side-thread] [--json]',
+    '  lac monitor decisions <monitor-id> [--json]',
+    '  lac monitor edit <monitor-id> [--title "<title>"] [--condition "<expr>"] [--message "<text>"] [--enabled true|false] [--cooldown 15m] [--cron "<expr>"|off] [--timezone <tz>] [--workflow direct|deep-analysis] [--retro-delay <hours>] [--execution-mode same-thread|side-thread] [--json]',
     '  lac monitor del <monitor-id> [--json]',
     '  lac monitor run <monitor-id> [--json]',
     '  lac automation add --title "<title>" --script-id <script-id> --script-version <approved-version-id> --interval <duration> --message "<prompt>" [--json]',
@@ -702,6 +750,8 @@ function formatMonitorDetails(monitor: AutomationMonitor, latestRun?: Automation
     `Platform: ${monitor.platform}`,
     `Thread: ${monitor.route.threadId || ''}`,
     `Execution mode: ${monitor.executionMode}`,
+    ...(monitor.workflowTemplate ? [`Workflow: ${monitor.workflowTemplate}`] : []),
+    ...(monitor.retrospectiveDelayHours ? [`Retro delay: ${monitor.retrospectiveDelayHours}h`] : []),
     `Source: ${monitor.sourceType}`,
     ...(monitor.sourceType === 'webhook' && monitor.sourceConfig?.hookId ? [
       `Hook ID: ${monitor.sourceConfig.hookId}`,
@@ -735,7 +785,7 @@ function monitorMatchesCliContext(monitor: AutomationMonitor, context: CliContex
 }
 
 void (async () => {
-  if (require.main !== module) {
+  if (typeof require === 'undefined' || require.main !== module) {
     return;
   }
   const exitCode = await runCli(process.argv.slice(2));

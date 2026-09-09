@@ -306,6 +306,8 @@ export class AutomationMonitorService {
       enabled: input.enabled ?? existing.enabled,
       cooldownMs: input.cooldownMs ?? existing.cooldownMs,
       schedule: input.schedule === undefined ? existing.schedule : input.schedule || undefined,
+      workflowTemplate: input.workflowTemplate ?? existing.workflowTemplate,
+      retrospectiveDelayHours: input.retrospectiveDelayHours === null ? undefined : (input.retrospectiveDelayHours ?? existing.retrospectiveDelayHours),
     });
     const mapped = monitorToAutomationInput(resolved);
     const { workspaceId: _workspaceId, originKind: _originKind, ...update } = mapped;
@@ -979,7 +981,7 @@ export class AutomationMonitorService {
     return matches[0]?.id || '';
   }
 
-  private resolveRequiredMonitorId(monitorId: string): string {
+  resolveRequiredMonitorId(monitorId: string): string {
     const resolved = this.resolveMonitorId(monitorId);
     if (!resolved) throw new Error(`Automation monitor not found: ${monitorId}`);
     return resolved;

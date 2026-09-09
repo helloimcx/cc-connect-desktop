@@ -142,12 +142,42 @@ export interface AutomationMonitor {
   cooldownMs: number;
   concurrencyPolicy: 'skip_if_running';
   schedule?: AutomationMonitorSchedule;
+  workflowTemplate?: 'direct' | 'deep-analysis';
+  retrospectiveDelayHours?: number;
   lastState?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
   lastTriggeredAt?: string;
   lastStatus?: AutomationMonitorStatus;
   lastError?: string;
+}
+
+export type AutomationDecisionAction = 'BUY' | 'SELL' | 'HOLD' | 'WATCH' | 'ALERT' | 'REDUCE' | 'IGNORE';
+
+export interface AutomationDecisionRecord {
+  id: string;
+  monitorId: string;
+  workspaceId: string;
+  runId?: string;
+  threadId?: string;
+  action: AutomationDecisionAction;
+  confidence: number;
+  thesis: string;
+  bullPoints: string[];
+  bearPoints: string[];
+  keyAssumptions: string[];
+  invalidationTriggers?: string[];
+  dataSnapshot: Record<string, unknown>;
+  createdAt: string;
+  retrospectiveStatus: 'pending' | 'completed' | 'skipped';
+  retrospectiveScheduledAt?: string;
+  retrospectiveEvaluatedAt?: string;
+  retrospectiveOutcome?: {
+    accuracy: 'correct' | 'incorrect' | 'neutral';
+    realizedOutcome: string;
+    reflection: string;
+    lessons: string[];
+  };
 }
 
 export interface AutomationMonitorRun {
@@ -181,6 +211,8 @@ export interface AutomationMonitorCreateInput {
   enabled?: boolean;
   cooldownMs?: number;
   schedule?: AutomationMonitorSchedule;
+  workflowTemplate?: 'direct' | 'deep-analysis';
+  retrospectiveDelayHours?: number;
 }
 
 export interface AutomationMonitorUpdateInput {
@@ -193,6 +225,8 @@ export interface AutomationMonitorUpdateInput {
   enabled?: boolean;
   cooldownMs?: number;
   schedule?: AutomationMonitorSchedule | null;
+  workflowTemplate?: 'direct' | 'deep-analysis';
+  retrospectiveDelayHours?: number | null;
 }
 
 export function normalizeAutomationMonitorStatus(value: unknown, fallback: AutomationMonitorStatus = 'queued'): AutomationMonitorStatus {

@@ -42,6 +42,8 @@ export class AutomationConversationExecutor {
           kind: 'agent-prompt',
           promptTemplate: monitor.promptTemplate,
           executionMode: monitor.executionMode === 'same-thread' ? 'same-thread' : 'side-thread',
+          workflowTemplate: monitor.workflowTemplate,
+          retrospectiveDelayHours: monitor.retrospectiveDelayHours,
         },
         delivery: { platform: monitor.platform, route: monitor.route },
         policies: { concurrency: 'skip-if-running', cooldownMs: monitor.cooldownMs },

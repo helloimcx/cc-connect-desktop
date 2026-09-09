@@ -1067,6 +1067,62 @@ test('lac skill add, list, verify, update, and remove commands', async () => {
   }
 });
 
+test('lac monitor add supports --workflow deep-analysis and --retro-delay 24h', async () => {
+  let capturedBody: string | null = null;
+  const { restore } = withFetchMock(async (_input, init) => {
+    if (init?.body) capturedBody = init.body as string;
+    return new Response(JSON.stringify({
+      ok: true,
+      data: {
+        id: 'monitor:decision-test-1',
+        workspaceId: 'ws-1',
+        title: 'AAPL Bull/Bear',
+        sourceType: 'stock.quote',
+        sourceConfig: { symbol: 'AAPL' },
+        condition: { metric: 'abs_change_percent', operator: '>=', value: 5 },
+        promptTemplate: 'Conduct deep analysis',
+        platform: 'local',
+        route: { type: 'local.thread', channelId: 'ws-1' },
+        executionMode: 'side-thread',
+        workflowTemplate: 'deep-analysis',
+        retrospectiveDelayHours: 24,
+        enabled: true,
+        cooldownMs: 900000,
+        createdAt: '2026-09-06T12:00:00.000Z',
+        updatedAt: '2026-09-06T12:00:00.000Z',
+      },
+    }), { headers: { 'content-type': 'application/json' } });
+  });
+  try {
+    const { io, read } = createIo();
+    const exitCode = await runCli(
+      [
+        'monitor', 'add',
+        '--title', 'AAPL Bull/Bear',
+        '--source', 'stock.quote',
+        '--symbol', 'AAPL',
+        '--condition', 'abs_change_percent >= 5',
+        '--message', 'Conduct deep analysis',
+        '--workflow', 'deep-analysis',
+        '--retro-delay', '24h',
+      ],
+      {
+        LOCAL_AI_CORE_BASE: 'http://127.0.0.1:9831/api/local/v1',
+        LOCAL_AI_WORKSPACE_ID: 'ws-1',
+      },
+      io,
+    );
+    assert.equal(exitCode, 0);
+    assert(capturedBody);
+    const parsed = JSON.parse(capturedBody);
+    assert.equal(parsed.workflowTemplate, 'deep-analysis');
+    assert.equal(parsed.retrospectiveDelayHours, 24);
+    assert.match(read().stdout, /Created monitor decision-test-1/);
+  } finally {
+    restore();
+  }
+});
+
 test('lac monitor add supports webhook source and outputs hook URL and token', async () => {
   let capturedBody: string | null = null;
   const { restore } = withFetchMock(async (input, init) => {
@@ -1120,3 +1176,106 @@ test('lac monitor add supports webhook source and outputs hook URL and token', a
   }
 });
 
+test('lac monitor edit supports --workflow and --retro-delay', async () => {
+  let capturedBody: string | null = null;
+  const { restore } = withFetchMock(async (_input, init) => {
+    if (init?.body) capturedBody = init.body as string;
+    return new Response(JSON.stringify({
+      ok: true,
+      data: {
+        id: 'monitor:decision-test-1',
+        workspaceId: 'ws-1',
+        title: 'AAPL Bull/Bear',
+        sourceType: 'stock.quote',
+        condition: { metric: 'change_percent', operator: '>=', value: 3 },
+        promptTemplate: 'analyze',
+        workflowTemplate: 'deep-analysis',
+        retrospectiveDelayHours: 48,
+        platform: 'local',
+        route: { type: 'local.thread', channelId: 'ws-1' },
+        executionMode: 'side-thread',
+        enabled: true,
+        cooldownMs: 900000,
+        createdAt: '2026-09-06T12:00:00.000Z',
+        updatedAt: '2026-09-06T12:00:00.000Z',
+      },
+    }), { headers: { 'content-type': 'application/json' } });
+  });
+  try {
+    const { io, read } = createIo();
+    const exitCode = await runCli(
+      [
+        'monitor', 'edit', 'monitor:decision-test-1',
+        '--workflow', 'deep-analysis',
+        '--retro-delay', '48h',
+      ],
+      {
+        LOCAL_AI_CORE_BASE: 'http://127.0.0.1:9831/api/local/v1',
+      },
+      io,
+    );
+    assert.equal(exitCode, 0);
+    assert(capturedBody);
+    const parsed = JSON.parse(capturedBody);
+    assert.equal(parsed.workflowTemplate, 'deep-analysis');
+    assert.equal(parsed.retrospectiveDelayHours, 48);
+    assert.match(read().stdout, /Updated monitor decision-test-1/);
+  } finally {
+    restore();
+  }
+});
+
+test('lac monitor decisions displays structured decisions', async () => {
+  const { restore } = withFetchMock(async (input) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url.includes('/decisions')) {
+      return new Response(JSON.stringify({
+        ok: true,
+        data: {
+          decisions: [
+            {
+              id: 'dec-1',
+              monitorId: 'monitor:decision-test-1',
+              workspaceId: 'ws-1',
+              runId: 'run:agentdock::111:222',
+              action: 'BUY',
+              confidence: 78,
+              thesis: 'Strong Q3 margin upside outweighs supply chain bumpiness',
+              bullPoints: ['Services revenue growth accelerate', 'Valuation compression priced in'],
+              bearPoints: ['High multiple versus peers'],
+              keyAssumptions: ['Services gross margin remains > 70%'],
+              dataSnapshot: { symbol: 'AAPL', current_price: 180 },
+              createdAt: '2026-09-06T12:00:00.000Z',
+              retrospectiveStatus: 'completed',
+              retrospectiveOutcome: {
+                accuracy: 'correct',
+                realizedOutcome: 'AAPL rose to 192 at T+1',
+                reflection: 'Services expansion drove sentiment rebound as projected',
+                lessons: ['Hardware slowdown had already been priced in'],
+              },
+            },
+          ],
+        },
+      }), { headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ ok: false }), { status: 404 });
+  });
+  try {
+    const { io, read } = createIo();
+    const exitCode = await runCli(
+      ['monitor', 'decisions', 'monitor:decision-test-1'],
+      {
+        LOCAL_AI_CORE_BASE: 'http://127.0.0.1:9831/api/local/v1',
+      },
+      io,
+    );
+    assert.equal(exitCode, 0);
+    const output = read().stdout;
+    assert.match(output, /Action: BUY \(Confidence: 78%\)/);
+    assert.match(output, /Thesis: Strong Q3 margin upside/);
+    assert.match(output, /Bull: Services revenue growth accelerate/);
+    assert.match(output, /Retrospective: Accuracy=correct/);
+  } finally {
+    restore();
+  }
+});

@@ -4,7 +4,7 @@ import type { LocalCoreAcpStore } from '../acp/local-core-acp-store.js';
 import type { WorkspaceRouter } from '../router/workspace-router.js';
 import type { CostService } from '../cost/cost-service.js';
 import { BACKGROUND_AGENT_EXECUTION_TIMEOUT_MS } from '../agents/shared/execution-timeouts.js';
-import { ScheduledBridgeSession } from '../scheduler/scheduled-bridge-session.js';
+import { ScheduledBridgeSession, type ScheduledBridgeSessionHandle } from '../scheduler/scheduled-bridge-session.js';
 import { buildPlatformRuntimeEnv, getChannelPlatformBase } from '../scheduler/scheduled-job-route.js';
 import { waitForRunCompletion } from '../scheduler/run-polling.js';
 import { getLatestAssistantFinalContent, threadExists } from '../scheduler/thread-resolution.js';
@@ -18,6 +18,15 @@ export interface AutomationActionExecutionInput {
   promptVariables: Record<string, unknown>;
 }
 
+import type { AutomationDecisionRecord } from '@cc/superai-contracts';
+import {
+  composeDeepAnalysisPrompt,
+  extractDecisionRecord,
+  composeRetrospectivePrompt,
+  extractRetrospectiveReflection,
+} from './decision-workflow.js';
+import { DecisionLogService } from './decision-log-service.js';
+
 export interface AutomationActionExecutionResult {
   threadId: string;
   acpRunId: string;
@@ -26,6 +35,17 @@ export interface AutomationActionExecutionResult {
   deliveryStatus?: 'succeeded' | 'failed';
   deliveryError?: string;
   lastBridgeEventAt?: string;
+  decision?: AutomationDecisionRecord;
+  retrospectiveOutcome?: {
+    accuracy: 'correct' | 'incorrect' | 'neutral';
+    realizedOutcome: string;
+    reflection: string;
+    lessons: string[];
+  };
+}
+
+interface AutomationCreatorService {
+  create: (definition: any) => any;
 }
 
 export type AutomationActionExecutorOptions = {
@@ -33,7 +53,75 @@ export type AutomationActionExecutorOptions = {
   getWorkspaceRouter: () => WorkspaceRouter;
   getChannelRuntime: (platform: string) => ChannelRuntime | undefined;
   costService?: CostService;
+  decisionLogService?: DecisionLogService;
+  getAutomationService?: () => AutomationCreatorService;
 };
+
+function extractChannelId(route: unknown): string | undefined {
+  if (typeof route === 'object' && route && 'channelId' in route) {
+    const raw = (route as Record<string, unknown>).channelId;
+    return raw ? String(raw) : undefined;
+  }
+  return undefined;
+}
+
+function checkBudgetPreflight(costService: CostService | undefined, automation: AutomationDefinition): void {
+  if (!costService) return;
+  const preflight = costService.checkBudgetPreflight({
+    workspaceId: automation.workspaceId,
+    channelId: extractChannelId(automation.delivery.route),
+    sourceId: automation.id,
+  });
+  if (!preflight.allowed) {
+    throw new Error(`budget_exceeded: ${preflight.budget?.name || 'budget limit reached'}`);
+  }
+}
+
+async function resolveExecutionPrompt(
+  automation: AutomationDefinition,
+  input: AutomationActionExecutionInput,
+  decisionService: DecisionLogService,
+  workspacePath?: string,
+): Promise<string> {
+  const basePrompt = renderAutomationPrompt(automation.action.promptTemplate, input.promptVariables);
+  if (automation.action.workflowTemplate !== 'deep-analysis') {
+    return basePrompt;
+  }
+  const priorLessons = await decisionService.getPriorLessons(automation.id, workspacePath);
+  return composeDeepAnalysisPrompt(basePrompt, input.promptVariables, priorLessons, automation.title);
+}
+
+async function openExecutionBridge(
+  automation: AutomationDefinition,
+  promptVariables: Record<string, unknown>,
+  threadId: string,
+  workspaceRouter: WorkspaceRouter,
+  getChannelRuntime: (platform: string) => ChannelRuntime | undefined,
+): Promise<ScheduledBridgeSessionHandle | undefined> {
+  if (automation.delivery.platform === 'local') {
+    return undefined;
+  }
+  const channelRuntime = getChannelRuntime(automation.delivery.platform);
+  if (!channelRuntime) {
+    return undefined;
+  }
+  const isStock = automation.originKind === 'automation-monitor' && promptVariables.sourceType === 'stock.quote';
+  return ScheduledBridgeSession.open({
+    target: {
+      id: automation.id,
+      workspaceId: automation.workspaceId,
+      platform: automation.delivery.platform,
+      route: automation.delivery.route,
+      title: automation.title,
+      promptTemplate: automation.action.promptTemplate,
+    },
+    threadId,
+    workspaceRouter,
+    getChannelRuntime: () => channelRuntime,
+    noticeIcon: isStock ? '📈' : '🔔',
+    noticeTitle: automation.title,
+  });
+}
 
 export class AutomationActionExecutor {
   constructor(private readonly options: AutomationActionExecutorOptions) {}
@@ -43,44 +131,24 @@ export class AutomationActionExecutor {
     timeoutMs = BACKGROUND_AGENT_EXECUTION_TIMEOUT_MS,
   ): Promise<AutomationActionExecutionResult> {
     const { automation } = input;
+    checkBudgetPreflight(this.options.costService, automation);
 
-    if (this.options.costService) {
-      const channelId = typeof automation.delivery.route === 'object' && automation.delivery.route && 'channelId' in automation.delivery.route
-        ? String((automation.delivery.route as unknown as Record<string, unknown>).channelId || '')
-        : undefined;
-      const preflight = this.options.costService.checkBudgetPreflight({
-        workspaceId: automation.workspaceId,
-        channelId: channelId || undefined,
-        sourceId: automation.id,
-      });
-      if (!preflight.allowed) {
-        throw new Error(`budget_exceeded: ${preflight.budget?.name || 'budget limit reached'}`);
-      }
-    }
     const workspaceRouter = this.options.getWorkspaceRouter();
     const threadId = await this.resolveThread(automation);
-    const prompt = renderAutomationPrompt(automation.action.promptTemplate, input.promptVariables);
-    const channelRuntime = automation.delivery.platform === 'local'
-      ? undefined
-      : this.options.getChannelRuntime(automation.delivery.platform);
-    const bridge = channelRuntime
-      ? await ScheduledBridgeSession.open({
-          target: {
-            id: automation.id,
-            workspaceId: automation.workspaceId,
-            platform: automation.delivery.platform,
-            route: automation.delivery.route,
-            title: automation.title,
-            promptTemplate: automation.action.promptTemplate,
-          },
-          threadId,
-          workspaceRouter,
-          getChannelRuntime: () => channelRuntime,
-          noticeIcon: automation.originKind === 'automation-monitor'
-            && input.promptVariables.sourceType === 'stock.quote' ? '📈' : '🔔',
-          noticeTitle: automation.title,
-        })
-      : undefined;
+    const workspacePath = this.options.store.getWorkspaceRegistryEntry?.(automation.workspaceId)?.path;
+    const decisionService = this.options.decisionLogService
+      || new DecisionLogService({ getWorkspacePath: (id) => this.options.store.getWorkspaceRegistryEntry?.(id)?.path });
+
+    const isDeepAnalysis = automation.action.workflowTemplate === 'deep-analysis';
+    const prompt = await resolveExecutionPrompt(automation, input, decisionService, workspacePath);
+
+    const bridge = await openExecutionBridge(
+      automation,
+      input.promptVariables,
+      threadId,
+      workspaceRouter,
+      this.options.getChannelRuntime,
+    );
     try {
       const sendResult = await workspaceRouter.sendThreadMessage(threadId, prompt, {
         permissionMode: AUTOMATION_RUN_PERMISSION_MODE,
@@ -95,6 +163,19 @@ export class AutomationActionExecutor {
       });
       const thread = await workspaceRouter.getThread(threadId);
       const replyText = getLatestAssistantFinalContent(thread);
+
+      const { decision, retrospectiveOutcome } = await processPostRunDecision({
+        automation,
+        replyText,
+        runId: sendResult.runId,
+        threadId,
+        dataSnapshot: input.promptVariables,
+        decisionService,
+        workspacePath,
+        isDeepAnalysis,
+        getAutomationService: this.options.getAutomationService,
+      });
+
       return {
         threadId,
         acpRunId: sendResult.runId,
@@ -102,6 +183,8 @@ export class AutomationActionExecutor {
         deliveryMode: bridge ? 'bridge-stream' : 'thread-only',
         deliveryStatus: 'succeeded',
         lastBridgeEventAt: bridge ? new Date().toISOString() : undefined,
+        ...(decision ? { decision } : {}),
+        ...(retrospectiveOutcome ? { retrospectiveOutcome } : {}),
       };
     } finally {
       await bridge?.close();
@@ -139,6 +222,90 @@ export class AutomationActionExecutor {
     }
     return (await workspaceRouter.createThread(automation.workspaceId, title)).id;
   }
+}
+
+async function processPostRunDecision(options: {
+  automation: AutomationDefinition;
+  replyText?: string;
+  runId: string;
+  threadId: string;
+  dataSnapshot: Record<string, unknown>;
+  decisionService: DecisionLogService;
+  workspacePath?: string;
+  isDeepAnalysis: boolean;
+  getAutomationService?: () => AutomationCreatorService;
+}): Promise<{
+  decision?: AutomationDecisionRecord;
+  retrospectiveOutcome?: AutomationActionExecutionResult['retrospectiveOutcome'];
+}> {
+  const {
+    automation,
+    replyText,
+    runId,
+    threadId,
+    dataSnapshot,
+    decisionService,
+    workspacePath,
+    isDeepAnalysis,
+    getAutomationService,
+  } = options;
+
+  let decision: AutomationDecisionRecord | undefined;
+  let retrospectiveOutcome: AutomationActionExecutionResult['retrospectiveOutcome'];
+
+  if (automation.action.retrospectiveTarget) {
+    retrospectiveOutcome = extractRetrospectiveReflection(replyText);
+    await decisionService.recordRetrospective(
+      automation.action.retrospectiveTarget.monitorId,
+      automation.action.retrospectiveTarget.decisionId,
+      retrospectiveOutcome,
+      workspacePath,
+    );
+  } else if (isDeepAnalysis) {
+    decision = extractDecisionRecord({
+      replyText,
+      monitorId: automation.id,
+      workspaceId: automation.workspaceId,
+      runId,
+      threadId,
+      dataSnapshot,
+    });
+    await decisionService.appendDecision(decision, workspacePath);
+
+    const delayHours = automation.action.retrospectiveDelayHours;
+    if (delayHours !== undefined && delayHours > 0) {
+      const automationService = getAutomationService?.();
+      if (automationService) {
+        const delayMs = delayHours * 60 * 60 * 1000;
+        const runAt = new Date(Date.now() + delayMs).toISOString();
+        const retroPrompt = composeRetrospectivePrompt({
+          monitorTitle: automation.title,
+          decision,
+          currentSnapshot: dataSnapshot,
+        });
+        automationService.create({
+          workspaceId: automation.workspaceId,
+          title: `[Retrospective] ${automation.title}`,
+          enabled: true,
+          activation: { kind: 'once', runAt },
+          condition: { kind: 'always' },
+          action: {
+            kind: 'agent-prompt',
+            promptTemplate: retroPrompt,
+            executionMode: 'side-thread',
+            retrospectiveTarget: {
+              monitorId: automation.id,
+              decisionId: decision.id,
+            },
+          },
+          delivery: automation.delivery,
+          policies: { concurrency: 'skip-if-running', cooldownMs: 0 },
+        });
+      }
+    }
+  }
+
+  return { decision, retrospectiveOutcome };
 }
 
 export function renderAutomationPrompt(template: string, values: Record<string, unknown>): string {

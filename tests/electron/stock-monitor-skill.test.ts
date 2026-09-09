@@ -48,6 +48,13 @@ test('stock monitor skill defines comprehensive market formats, metrics, strateg
   assert.match(content, /lac monitor edit/);
   assert.match(content, /lac monitor del/);
   assert.match(content, /lac monitor run/);
+
+  // Decision Workflow & Retrospective
+  assert.match(content, /--workflow\s+deep-analysis/);
+  assert.match(content, /--retro-delay\s+24h/);
+  assert.match(content, /lac monitor decisions/);
+  assert.match(content, /GROUNDED DATA CONTRACT/);
+  assert.match(content, /多空博弈/);
 });
 
 test('managed skill catalog loads exact source stock-monitor skill', () => {

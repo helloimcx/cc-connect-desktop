@@ -42,6 +42,14 @@ AgentDock 由 Electron 桌面壳、React/Web 渲染入口、Local AI Core、Open
 
 ## New
 
+### 2026-09-06
+
+- **事件触发型监控深度决策工作流（Issue #112）**：
+  - **严格事实履约契约 (`[GROUNDED DATA CONTRACT]`)**：事件触发 Agent 研判时自动绑定行情快照与技术指标，强制多空分析引用真实快照数据，严格杜绝虚构价格与财务指标。
+  - **单会话多空博弈辩论 (`deep-analysis`)**：在单 ACP 会话内引导 Agent 展开多头论据 (Bull Case)、空头质疑 (Bear Case) 与综合判定 (Final Adjudication)，输出规范化操作建议、置信度、核心逻辑与可证伪假设。
+  - **工作区可证伪决策日志与定时闭环复盘**：自动将决策归档至 `<workspace>/.agentdock/decisions/<monitor-id>.md`；在 T+1（默认 24h，可配置 `--retro-delay`）自动发起定向轻量复盘，对比实际行情验证判定准确度，提炼反思心得并自动反哺后续触发分析。
+  - **CLI、技能与 UI 统一支持**：`lac monitor add/edit` 支持 `--workflow direct|deep-analysis` 与 `--retro-delay <hours>`；新增 `lac monitor decisions <id>` 命令行查询；更新 `stock-monitor` 技能与前端自动化监控看板。
+
 ### 2026-09-05
 
 - 开放式 Monitor 事件总线与 Inbound Webhook 触发器支持（Issue #102）：

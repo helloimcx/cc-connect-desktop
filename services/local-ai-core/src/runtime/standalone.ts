@@ -18,6 +18,7 @@ async function main() {
     scheduledJobs: controller.scheduledJobs,
     automationMonitors: controller.automationMonitors,
     automations: controller.automations,
+    decisionLogService: controller.decisionLogService,
     store: controller.store,
     runtimeDetection: controller.runtimeDetection,
     kernel: controller.kernel,

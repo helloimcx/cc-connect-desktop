@@ -28,6 +28,7 @@ export type LocalAiCoreRoute =
   | { name: 'automation.monitor.run'; monitorId: string }
   | { name: 'automation.monitor.update'; monitorId: string }
   | { name: 'automation.monitor.delete'; monitorId: string }
+  | { name: 'automation.monitor.decisions'; monitorId: string }
   | { name: 'automation.hooks.trigger'; hookId: string }
   | { name: 'automations.list' }
   | { name: 'automations.create' }
@@ -336,6 +337,9 @@ function parseAutomationMonitorsRoute(method: string, segments: string[]): Local
   }
   if (method === 'GET' && segments.length === 4 && segments[3] === 'runs') {
     return { name: 'automation.monitor.runs', monitorId };
+  }
+  if (method === 'GET' && segments.length === 4 && segments[3] === 'decisions') {
+    return { name: 'automation.monitor.decisions', monitorId };
   }
   if (method === 'POST' && segments.length === 4 && segments[3] === 'run') {
     return { name: 'automation.monitor.run', monitorId };

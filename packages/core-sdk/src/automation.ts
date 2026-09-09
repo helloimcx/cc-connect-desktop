@@ -1,4 +1,5 @@
 import type {
+  AutomationDecisionRecord,
   AutomationMonitor,
   AutomationMonitorCreateInput,
   AutomationMonitorRun,
@@ -33,4 +34,8 @@ export function runAutomationMonitor(monitorId: string) {
 
 export function listAutomationMonitorRuns(monitorId: string) {
   return coreRequest<{ runs: AutomationMonitorRun[] }>('GET', `/automation/monitors/${encodeURIComponent(monitorId)}/runs`);
+}
+
+export function listAutomationMonitorDecisions(monitorId: string) {
+  return coreRequest<{ decisions: AutomationDecisionRecord[] }>('GET', `/automation/monitors/${encodeURIComponent(monitorId)}/decisions`);
 }

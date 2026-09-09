@@ -55,3 +55,22 @@ export function parseMonitorSchedule(cron: string, timezone: string | undefined)
   };
 }
 
+export function parseRetroDelayHours(value: string): number {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) {
+    throw new Error('Retro delay must not be empty.');
+  }
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const hours = Number(trimmed);
+    if (hours <= 0) throw new Error('Retro delay must be greater than 0 hours.');
+    return hours;
+  }
+  const ms = parseDurationMs(trimmed);
+  const hours = ms / (60 * 60 * 1000);
+  if (hours <= 0) {
+    throw new Error('Retro delay must be greater than 0 hours.');
+  }
+  return hours;
+}
+
+

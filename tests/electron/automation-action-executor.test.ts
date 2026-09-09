@@ -1,15 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type { AutomationDefinition, AutomationEvaluation } from '../../packages/contracts/src/automations.js';
 import {
   AutomationActionExecutor,
   renderAutomationPrompt,
 } from '../../services/local-ai-core/src/automation/automation-action-executor.js';
+import { DecisionLogService } from '../../services/local-ai-core/src/automation/decision-log-service.js';
 import {
   ACP_PROMPT_TIMEOUT_MS,
   BACKGROUND_AGENT_EXECUTION_TIMEOUT_MS,
 } from '../../services/local-ai-core/src/agents/shared/execution-timeouts.js';
+import { LocalCoreAcpStore } from '../../services/local-ai-core/src/acp/local-core-acp-store.js';
+import { LocalAutomationStore } from '../../services/local-ai-core/src/acp/store/automation-store.js';
 
 function definition(platform = 'lark'): AutomationDefinition {
   return {
@@ -194,4 +200,99 @@ test('side-thread executor reuses the thread when the workspace agent matches', 
   });
   assert.equal(createCalls, 0);
   assert.equal(result.threadId, 'matching-thread');
+});
+
+test('deep-analysis run records a decision and schedules a working retrospective through the real store', async () => {
+  const userDataPath = mkdtempSync(join(tmpdir(), 'automation-executor-'));
+  const workspacePath = join(tmpdir(), 'automation-executor-ws');
+  const facade = new LocalCoreAcpStore(userDataPath);
+  try {
+    const store = new LocalAutomationStore(
+      (facade as unknown as { db: ConstructorParameters<typeof LocalAutomationStore>[0] }).db,
+    );
+    const decisionService = new DecisionLogService({ getWorkspacePath: () => workspacePath });
+    const created = store.create({
+      workspaceId: 'workspace-1',
+      title: 'AAPL Bull/Bear debate',
+      enabled: true,
+      activation: { kind: 'cron', expression: '*/5 * * * *', timezone: 'UTC' },
+      condition: { kind: 'always' },
+      action: {
+        kind: 'agent-prompt',
+        promptTemplate: 'Debate the AAPL weekly setup.',
+        executionMode: 'side-thread',
+        workflowTemplate: 'deep-analysis',
+        retrospectiveDelayHours: 24,
+      },
+      delivery: { platform: 'local', route: { type: 'local.thread', channelId: 'workspace-1' } },
+      policies: { concurrency: 'skip-if-running', cooldownMs: 0 },
+    });
+
+    let replyText = JSON.stringify({
+      action: 'BUY',
+      confidence: 72,
+      thesis: 'Weekly lower-band tag with a high dividend cushion.',
+      bullPoints: ['Boll %B 0.04'],
+      bearPoints: [],
+      keyAssumptions: ['Dividend stays >= 4%'],
+    });
+    let createdRetro: AutomationDefinition | undefined;
+    const executor = new AutomationActionExecutor({
+      store: {
+        getPlatformThreadBinding: () => undefined,
+        getRun: () => ({ status: 'completed' }),
+        getWorkspaceRegistryEntry: () => ({ path: workspacePath }),
+      },
+      getWorkspaceRouter: () => ({
+        listThreads: async () => [],
+        createThread: async () => ({ id: 'thread-1' }),
+        getThread: async () => ({ messages: [{ role: 'assistant', kind: 'final', content: replyText }] }),
+        sendThreadMessage: async () => ({ runId: 'acp-run-1' }),
+      }),
+      getChannelRuntime: () => undefined,
+      decisionLogService: decisionService,
+      getAutomationService: () => ({
+        create: (job: AutomationDefinition) => {
+          createdRetro = store.create(job);
+          return createdRetro;
+        },
+      }),
+    } as any);
+
+    const result = await executor.execute({
+      automation: store.get(created.id)!,
+      evaluation,
+      promptVariables: { sourceType: 'stock.quote' },
+    });
+
+    assert.ok(result.decision, 'deep-analysis run should record a decision');
+    assert.match(result.decision.id, /^dec_[0-9a-f]{16}$/);
+    assert.ok(createdRetro, 'deep-analysis run should schedule a retrospective once-job');
+    assert.deepEqual(store.get(createdRetro.id)?.action.retrospectiveTarget, {
+      monitorId: created.id,
+      decisionId: result.decision.id,
+    });
+
+    replyText = JSON.stringify({
+      accuracy: 'correct',
+      realizedOutcome: 'AAPL closed +4.1% within the week.',
+      reflection: 'Lower-band entry held; the dividend assumption held.',
+      lessons: ['Wait for weekly close confirmation.'],
+    });
+    const retroResult = await executor.execute({
+      automation: store.get(createdRetro.id)!,
+      evaluation: { ...evaluation, automationId: createdRetro.id, activationKind: 'once' },
+      promptVariables: {},
+    });
+    assert.equal(retroResult.retrospectiveOutcome?.accuracy, 'correct');
+
+    const decisions = await decisionService.listDecisions(created.id);
+    assert.equal(decisions.length, 1);
+    assert.equal(decisions[0]?.retrospectiveStatus, 'completed');
+    assert.equal(decisions[0]?.retrospectiveOutcome?.realizedOutcome, 'AAPL closed +4.1% within the week.');
+  } finally {
+    facade.close();
+    rmSync(userDataPath, { recursive: true, force: true });
+    rmSync(workspacePath, { recursive: true, force: true });
+  }
 });

@@ -15,6 +15,35 @@ import { Badge, Button, Card, EmptyState, PageHeader, RowActions } from '@/compo
 import { formatTime } from '@/lib/utils';
 import MonitorModal, { conditionToText, sourceDefinitions } from './MonitorModal';
 
+function WebhookEndpointRow({
+  monitor,
+  copiedId,
+  onCopyCurl,
+}: {
+  monitor: Monitor;
+  copiedId: string | null;
+  onCopyCurl: (monitor: Monitor) => void;
+}) {
+  if (monitor.sourceType !== 'webhook' || !monitor.sourceConfig.hookId) return null;
+  const copied = copiedId === monitor.id;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-3 rounded-lg border border-black/5 bg-black/[0.02] px-3 py-1.5 text-xs dark:border-white/5 dark:bg-white/[0.02]">
+      <span className="font-mono text-gray-600 dark:text-gray-300">
+        Endpoint: <code>/api/local/v1/automation/hooks/{String(monitor.sourceConfig.hookId)}</code>
+      </span>
+      <button
+        type="button"
+        onClick={() => onCopyCurl(monitor)}
+        className="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+        title="Copy curl command"
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+        {copied ? 'Copied' : 'Copy curl'}
+      </button>
+    </div>
+  );
+}
+
 export default function MonitorList() {
   const { t } = useTranslation();
   const [monitors, setMonitors] = useState<Monitor[]>([]);
@@ -111,6 +140,9 @@ export default function MonitorList() {
                   <div className="mb-1 flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-gray-900 dark:text-white">{monitor.title}</span>
                     <Badge variant={monitor.enabled ? 'success' : 'default'}>{monitor.enabled ? t('monitors.enabled') : 'disabled'}</Badge>
+                    {monitor.workflowTemplate === 'deep-analysis' && (
+                      <Badge variant="info">Deep Analysis</Badge>
+                    )}
                     <Badge variant="default">{monitor.sourceType}</Badge>
                     <Badge variant="default">{monitor.platform}</Badge>
                     {monitor.lastStatus && <Badge variant={monitor.lastStatus === 'failed' ? 'danger' : 'default'}>{monitor.lastStatus}</Badge>}
@@ -120,25 +152,13 @@ export default function MonitorList() {
                     <span><strong>Subject:</strong> {sourceDefinitions[monitor.sourceType as keyof typeof sourceDefinitions]?.renderSummary(monitor) || monitor.sourceType}</span>
                     <span><strong>Condition:</strong> {conditionToText(monitor)}</span>
                     <span><strong>Execution:</strong> {monitor.executionMode}</span>
+                    {monitor.workflowTemplate === 'deep-analysis' && (
+                      <span><strong>Retrospective:</strong> T+{monitor.retrospectiveDelayHours ?? 24}h</span>
+                    )}
                     <span><strong>Cooldown:</strong> {Math.round(monitor.cooldownMs / 60000)}m</span>
                     {monitor.lastTriggeredAt && <span><strong>{t('monitors.lastRun')}:</strong> {formatTime(monitor.lastTriggeredAt)}</span>}
                   </div>
-                  {monitor.sourceType === 'webhook' && Boolean(monitor.sourceConfig.hookId) && (
-                    <div className="mt-2 flex flex-wrap items-center gap-3 rounded-lg border border-black/5 bg-black/[0.02] px-3 py-1.5 text-xs dark:border-white/5 dark:bg-white/[0.02]">
-                      <span className="font-mono text-gray-600 dark:text-gray-300">
-                        Endpoint: <code>/api/local/v1/automation/hooks/{String(monitor.sourceConfig.hookId)}</code>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyCurl(monitor)}
-                        className="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                        title="Copy curl command"
-                      >
-                        {copiedId === monitor.id ? <Check size={12} /> : <Copy size={12} />}
-                        {copiedId === monitor.id ? 'Copied' : 'Copy curl'}
-                      </button>
-                    </div>
-                  )}
+                  <WebhookEndpointRow monitor={monitor} copiedId={copiedId} onCopyCurl={handleCopyCurl} />
                   <p className="mt-3 line-clamp-3 rounded-[16px] bg-black/[0.035] px-3 py-2 text-sm leading-6 text-gray-700 dark:bg-white/[0.05] dark:text-gray-300">{monitor.promptTemplate}</p>
                   {monitor.lastError && <p className="mt-2 text-xs text-red-500">{monitor.lastError}</p>}
                 </div>

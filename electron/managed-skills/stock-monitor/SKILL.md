@@ -1,6 +1,6 @@
 ---
 name: stock-monitor
-description: 股票行情与量化盯盘自动化技能。支持 A 股、港股、美股实时行情与技术/基本面指标监控（如周线布林带、动态股息率、股债利差 ERP、涨跌幅预警），并提供自动化的条件触发与分析。
+description: 股票行情与量化盯盘自动化技能。支持 A 股、港股、美股实时行情与技术/基本面指标监控（如周线布林带、动态股息率、股债利差 ERP、涨跌幅预警），并提供支持多空博弈辩论、事实履约契约与定时闭环复盘的深度决策工作流。
 allowed-tools: Bash(lac monitor:*)
 triggers:
   - 股票监控
@@ -11,11 +11,15 @@ triggers:
   - 股息率
   - 股债利差
   - stock.quote
+  - 多空博弈
+  - 深度分析
+  - 决策复盘
+  - deep-analysis
 ---
 
 # Stock Monitor (股票行情与量化盯盘技能)
 
-用于为用户配置基于真实行情的股票自动化盯盘、量化指标预警与智能分析任务。
+用于为用户配置基于真实行情的股票自动化盯盘、量化指标预警与深度决策分析任务。
 
 ## 1. 支持的市场与代码格式
 
@@ -62,21 +66,55 @@ triggers:
 
 ---
 
-## 4. CLI 命令操作规范 (使用 Bash 工具)
+## 4. 深度决策分析与复盘工作流 (`--workflow deep-analysis`)
+
+当用户需要严谨的投资研判、多空博弈论证与闭环复盘追踪时，指定 `--workflow deep-analysis`。
+
+### 深度工作流核心机制：
+1. **数据履约契约 (`[GROUNDED DATA CONTRACT]`)**:
+   - 自动绑定触发瞬间的真实行情快照与指标。
+   - Agent 必须在多空分析中显式引用真实快照数据，严格禁止虚构、猜测财务数字或现价。
+2. **多空博弈辩论 (Bull / Bear Adversarial Debate)**:
+   - **Bull Case**: 论述看多催化剂、估值安全边际与业绩驱动。
+   - **Bear Case**: 针锋相对地指出多头假设盲区、潜在下行风险与估值泡沫。
+   - **Final Adjudication**: 综合裁决，给出明确操作建议（`BUY` / `SELL` / `HOLD` / `WATCH` / `ALERT` / `REDUCE` / `IGNORE`）、置信度百分比、核心论点及关键可证伪假设。
+3. **工作区决策日志 (Decision Log)**:
+   - 自动持久化至工作区 `.agentdock/decisions/<monitor-id>.md`，形成可审计的历史决策轨迹。
+4. **闭环定时复盘 (Scheduled Retrospective Loop)**:
+   - 自动于指定延迟时间后（默认 `--retro-delay 24h`）在侧边线程自动触发定向复盘。
+   - 对比最新行情与当时判定，评估准确度（`correct` / `incorrect` / `neutral`），提炼经验教训并自动注入后续触发分析。
+
+---
+
+## 5. CLI 命令操作规范 (使用 Bash 工具)
 
 ### 创建股票监控任务
 ```bash
+# 基础即时提醒监控
 lac monitor add \
   --title "<任务简短标题>" \
   --source stock.quote \
   --symbol "<标的代码>" \
   --condition "<条件表达式>" \
-  --message "<触发时发给 Agent 执行的详细分析 Prompt>" \
+  --message "<触发时发给 Agent 执行的 Prompt>" \
   --cooldown 15m \
+  --execution-mode side-thread
+
+# 深度决策分析监控（多空博弈 + 决策归档 + 24小时自动复盘）
+lac monitor add \
+  --title "<标的> 多空深度决策盯盘" \
+  --source stock.quote \
+  --symbol "<标的代码>" \
+  --condition "<条件表达式>" \
+  --message "请结合当前触发指标，对该标的进行深度多空分析并给出建议" \
+  --workflow deep-analysis \
+  --retro-delay 24h \
+  --cooldown 30m \
   --execution-mode side-thread
 ```
 > **最佳实践**：
-> - 推荐使用 `--execution-mode side-thread`，触发分析时在后台侧边线程执行，不中断当前对话。
+> - 推荐使用 `--execution-mode side-thread`，触发分析时在后台侧边线程执行，不打扰主对话。
+> - 涉及重要买卖点研判时，优先推荐 `--workflow deep-analysis`。
 > - 推荐指定 `--cooldown 15m`（或 `30m`、`1h`），避免同一天内行情在临界点反复震荡造成消息风暴。
 
 ### 查看与管理监控任务
@@ -84,14 +122,18 @@ lac monitor add \
 # 列出当前所有监控任务
 lac monitor list
 
-# 查看单条监控详情及最新行情快照
+# 查看单条监控详情（包含工作流模式与复盘周期）
 lac monitor info <monitor-id>
+
+# 查看历史决策日志与复盘结果
+lac monitor decisions <monitor-id>
+lac monitor decisions <monitor-id> --json
 
 # 手动立即试运行一次
 lac monitor run <monitor-id>
 
-# 编辑监控条件或 Prompt
-lac monitor edit <monitor-id> [--title "<新标题>"] [--condition "<新条件>"] [--message "<新Prompt>"]
+# 编辑监控条件、工作流或 Prompt
+lac monitor edit <monitor-id> [--title "<新标题>"] [--condition "<新条件>"] [--workflow deep-analysis] [--retro-delay 48h]
 
 # 删除监控任务
 lac monitor del <monitor-id>
@@ -99,9 +141,12 @@ lac monitor del <monitor-id>
 
 ---
 
-## 5. Agent 交互引导 SOP
+## 6. Agent 交互引导 SOP
 
 当用户提出股票盯盘相关需求时，请按以下步骤主动引导：
 1. **明确标的**：若用户未指定完整代码（如“帮我盯腾讯”），主动确认代码为 `00700`。
 2. **推荐适配策略**：根据标的属性（科技成长股推荐“周线布林超跌买点/上轨止盈”，红利高股息股推荐“股息率/双重共振”），主动给出 2~3 个精选条件表达式供用户选择。
-3. **一键自动化创建**：用户确认后，直接调用 `lac monitor add` 创建监控，并向用户展示创建结果（Monitor ID、监控标的、触发条件及冷却时间）。
+3. **推荐深度决策工作流**：若用户意图偏向“买卖决策”、“仓位调整”或“深度研判”，主动建议启用 `--workflow deep-analysis` 及 `--retro-delay 24h`，获得多空博弈报告及次日闭环复盘。
+4. **一键自动化创建**：用户确认后，直接调用 `lac monitor add` 创建监控，并向用户展示创建结果（Monitor ID、监控标的、触发条件、工作流模式及冷却时间）。
+5. **决策查询与回顾**：当用户询问某标的历史表现或复盘时，使用 `lac monitor decisions <id>` 调取历史决策与复盘心得。
+

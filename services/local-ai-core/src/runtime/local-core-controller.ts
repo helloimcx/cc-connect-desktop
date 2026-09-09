@@ -19,6 +19,7 @@ import type { ScheduledJobApplicationService } from '../scheduler/scheduled-job-
 import type { AutomationMonitorService } from '../automation/automation-monitor-service.js';
 import type { AutomationService } from '../automation/automation-service.js';
 import type { AutomationActionExecutor } from '../automation/automation-action-executor.js';
+import { DecisionLogService } from '../automation/decision-log-service.js';
 import { CostService } from '../cost/cost-service.js';
 import { RuntimeDetectionService, type RuntimeDetectionEvent } from './runtime-detection-service.js';
 import type { LocalCoreAcpStore } from '../acp/local-core-acp-store.js';
@@ -37,6 +38,7 @@ export class LocalCoreController extends EventEmitter {
   readonly automationMonitors: AutomationMonitorService;
   readonly automations: AutomationService;
   readonly automationActionExecutor?: AutomationActionExecutor;
+  readonly decisionLogService: DecisionLogService;
   readonly costService: CostService;
   readonly runtimeDetection: RuntimeDetectionService;
   readonly kernel: LocalCoreKernel;
@@ -104,6 +106,7 @@ export class LocalCoreController extends EventEmitter {
       getRuntimeStatus: () => ({ status: 'stopped' }),
     } as unknown as AutomationService;
     this.automationActionExecutor = this.runtime.automationActionExecutor;
+    this.decisionLogService = this.runtime.decisionLogService || new DecisionLogService(this.store);
     this.errorReporter = new LocalCoreErrorReporter((message) => this.handleLog(message));
     this.runtimeDetection = new RuntimeDetectionService({
       userDataPath,

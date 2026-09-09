@@ -126,6 +126,10 @@ export function monitorToAutomationInput(input: ResolvedMonitorInput): LegacyAut
       kind: 'agent-prompt',
       promptTemplate: requireText(input.promptTemplate, 'Automation monitor promptTemplate'),
       executionMode: legacyExecutionMode(input.executionMode, 'side-thread'),
+      ...(input.workflowTemplate ? { workflowTemplate: input.workflowTemplate } : {}),
+      ...(input.retrospectiveDelayHours !== undefined && input.retrospectiveDelayHours !== null
+        ? { retrospectiveDelayHours: input.retrospectiveDelayHours }
+        : {}),
     },
     delivery: { platform: requireText(input.platform, 'Automation monitor platform'), route: input.route },
     policies: { concurrency: 'skip-if-running', cooldownMs: input.cooldownMs ?? 15 * 60 * 1_000 },
@@ -165,6 +169,8 @@ export function automationToMonitor(
     enabled: automation.enabled,
     cooldownMs: automation.policies.cooldownMs,
     concurrencyPolicy: 'skip_if_running',
+    ...(automation.action.workflowTemplate ? { workflowTemplate: automation.action.workflowTemplate } : {}),
+    ...(automation.action.retrospectiveDelayHours !== undefined ? { retrospectiveDelayHours: automation.action.retrospectiveDelayHours } : {}),
     ...(automation.activation.schedule ? { schedule: automation.activation.schedule } : {}),
     ...(lastState ? { lastState } : {}),
     createdAt: automation.createdAt,

@@ -1,0 +1,194 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "AgentDock 监控触发决策工作流与事后复盘闭环",
+    "locale": "zh-CN",
+    "output": "docs/architecture/changes/2026-09-06-monitor-decision-workflow.html",
+    "quality_profile": "showcase",
+    "animation": "trace",
+    "views": [
+      {
+        "id": "grounded-debate",
+        "label": "数据接地与牛熊对抗",
+        "focus": ["monitor_event", "grounded_contract", "bull_pass", "bear_pass", "adjudicate_decision"],
+        "note": "严格基于真实事件快照，经多头与空头对抗后输出结构化裁决"
+      },
+      {
+        "id": "decision-logging",
+        "label": "决策留痕与任务挂载",
+        "focus": ["adjudicate_decision", "decision_log", "retrospective_loop"],
+        "note": "追加持久化 Markdown/JSON 决策日志，并按 T+1/T+5 挂载单次复盘"
+      },
+      {
+        "id": "retrospective-feedback",
+        "label": "复盘归因与教训回流",
+        "focus": ["retrospective_loop", "grounded_contract"],
+        "note": "到期自动拉取最新指标检验对错，教训沉淀并回流至后续分析 Prompt"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "ingress", "label": "监控事件源与契约 (Monitor Ingress)" },
+    { "id": "debate", "label": "牛熊对抗辩论与裁决 (Bull/Bear Debate)" },
+    { "id": "retrospective", "label": "决策日志与复盘调度 (Decision & Retro)" }
+  ],
+  "phases": [
+    { "id": "phase_grounding", "label": "事件接入与数据接地", "fromCol": 0, "toCol": 1 },
+    { "id": "phase_debate", "label": "牛熊对抗辩论", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "phase_adjudicate", "label": "综合裁决", "fromCol": 4, "toCol": 4 },
+    { "id": "phase_logging", "label": "留痕与复盘回流", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": [
+    "monitor_event",
+    "grounded_contract",
+    "bull_pass",
+    "bear_pass",
+    "adjudicate_decision",
+    "decision_log",
+    "retrospective_loop"
+  ],
+  "nodes": [
+    {
+      "id": "monitor_event",
+      "lane": "ingress",
+      "col": 0,
+      "type": "frontend",
+      "label": "监控事件触发",
+      "sublabel": "股票/行情/Webhook 阈值",
+      "width": 140
+    },
+    {
+      "id": "grounded_contract",
+      "lane": "ingress",
+      "col": 1,
+      "type": "security",
+      "label": "数据接地契约",
+      "sublabel": "提取真实快照，严禁捏造",
+      "width": 140
+    },
+    {
+      "id": "bull_pass",
+      "lane": "debate",
+      "col": 2,
+      "type": "backend",
+      "label": "多头充分论证",
+      "sublabel": "催化剂、估值与安全边际",
+      "width": 140
+    },
+    {
+      "id": "bear_pass",
+      "lane": "debate",
+      "col": 3,
+      "type": "backend",
+      "label": "空头充分论证",
+      "sublabel": "下行风险与证伪边界",
+      "width": 140
+    },
+    {
+      "id": "adjudicate_decision",
+      "lane": "debate",
+      "col": 4,
+      "type": "backend",
+      "label": "综合裁决输出",
+      "sublabel": "动作/置信度/关键假设",
+      "width": 140
+    },
+    {
+      "id": "decision_log",
+      "lane": "debate",
+      "col": 5,
+      "type": "database",
+      "label": "追加决策日志",
+      "sublabel": "decisions/<monitor-id>.md",
+      "width": 140
+    },
+    {
+      "id": "retrospective_loop",
+      "lane": "retrospective",
+      "col": 5,
+      "type": "backend",
+      "label": "T+1/T+5 延时复盘",
+      "sublabel": "拉取现值检验胜率与教训",
+      "width": 140
+    }
+  ],
+  "edges": [
+    {
+      "id": "event-to-grounding",
+      "from": "monitor_event",
+      "to": "grounded_contract",
+      "label": "事件 Payload",
+      "variant": "emphasis"
+    },
+    {
+      "id": "grounding-to-bull",
+      "from": "grounded_contract",
+      "to": "bull_pass",
+      "label": "可信快照注入",
+      "variant": "default"
+    },
+    {
+      "id": "bull-to-bear",
+      "from": "bull_pass",
+      "to": "bear_pass",
+      "label": "对抗性辩论",
+      "variant": "emphasis"
+    },
+    {
+      "id": "bear-to-adjudicate",
+      "from": "bear_pass",
+      "to": "adjudicate_decision",
+      "label": "归纳裁决",
+      "variant": "emphasis"
+    },
+    {
+      "id": "adjudicate-to-log",
+      "from": "adjudicate_decision",
+      "to": "decision_log",
+      "label": "结构化提取",
+      "variant": "emphasis"
+    },
+    {
+      "id": "log-to-retro",
+      "from": "decision_log",
+      "to": "retrospective_loop",
+      "label": "调度注册",
+      "variant": "default"
+    },
+    {
+      "id": "retro-to-grounding",
+      "from": "retrospective_loop",
+      "to": "grounded_contract",
+      "label": "历史教训回流",
+      "role": "return",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "数据接地契约 (Grounded Data)",
+      "items": [
+        "所有量化指标（最新价、布林轨、股息率、ERP 等）必须严格源自事件 Snapshot，严禁模型捏造虚假数字",
+        "结构化注入 Verified Snapshot 上下文，建立数据引用强制检查约束"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "牛熊对抗辩论 (Bull/Bear Debate)",
+      "items": [
+        "在单线程 ACP 会话内结构化要求 Agent 进行多头与空头两阶段对抗辩论，破除单视角确认偏误",
+        "输出统一规格裁决：动作（BUY/SELL/HOLD 等）、置信度百分比、关键假设与证伪触发条件"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "决策留痕与自动复盘 (Retrospective Loop)",
+      "items": [
+        "自动写入工作区 decisions/<monitor-id>.md，长期留存可追溯决策脉络",
+        "调度器自动挂载 T+1/T+5 延时复盘任务，重新拉取行情检验假设并生成教训，自动回流注入下一次分析"
+      ]
+    }
+  ]
+}
